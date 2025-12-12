@@ -11,7 +11,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # ---------------- 시트/컬럼 설정 ----------------
-SHEETS_SPREADSHEET_ID = "1dMATU2zJirS-QFSHso-9Fll2Y_HrO4Xsb76TsDl1QcM"  # [web:22]
+SHEETS_SPREADSHEET_ID = "SHEETS_SPREADSHEET_ID"  # [web:22]
 SHEETS_WORKSHEET_NAME = "소싱목록"  # [web:22]
 D_COL_INDEX = 4  # [web:22]
 H_COL_INDEX = 8  # [web:22]
@@ -87,9 +87,9 @@ EXCLUDE_KEYWORDS = [
 # ---------------- 환경/웹후크 ----------------
 load_dotenv()  # [web:22]
 DEFAULT_WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL", "").strip()  # [web:22]
-OLIVE_WEBHOOK = "https://discord.com/api/webhooks/1430243318528344115/BAXLmSdU-xarKWgkhRz25wG6gw8iY395JtFUuzquejwg6SHFpF2hphKHUzKKiTsSvHM2".strip()  # [web:22]
-GMARKET_WEBHOOK = "https://discord.com/api/webhooks/1432278178440941620/hQrrsGk0jXauEWTYTUOKA_V98gTTRAF9LOY7hFJpRunsT1uGoEnUyV-j9g1VpjigcX0N".strip()  # [web:22]
-TWENTYNINE_WEBHOOK = "https://discord.com/api/webhooks/1433003928911347762/CDQA-wmK1YYJchXl4joMKIEosfvmlPCZ_O9-yfZlBZatKD4QtuLR0b_qreHuPTgmttEG".strip()  # [web:22]
+OLIVE_WEBHOOK = "OLIVE_WEBHOOK".strip()  # [web:22]
+GMARKET_WEBHOOK = "GMARKET_WEBHOOK".strip()  # [web:22]
+TWENTYNINE_WEBHOOK = "TWENTYNINE_WEBHOOK".strip()  # [web:22]
 GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "safe/service_account.json").strip()  # [web:22]
 
 state = {}  # [web:22]
