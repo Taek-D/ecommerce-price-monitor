@@ -19,16 +19,11 @@ J_COL_INDEX = 10  # [web:22]
 URLS_START_ROW = 4  # [web:22]
 
 # ---------------- 무신사 ----------------
-MUSINSA_EXACT_PRICE_SELECTOR = (
-    "#root > div.Layout__Container-sc-3weaze-0.cbLSDw > div.FixedArea__Container-sc-1puoja0-0.lgLQzE > div > "
-    "div.Price__PriceTotalWrap-sc-1hw5bl8-0.dVSBxK > div > div.Price__PriceTitle-sc-1hw5bl8-2.huUdoo > "
-    "div.Price__CurrentPrice-sc-1hw5bl8-6.jKlNAj > "
-    "span.text-title_18px_semi.Price__CalculatedPrice-sc-1hw5bl8-10.hFRHDV.text-black.font-pretendard"
-)  # [web:22]
-MUSINSA_SOLDOUT_SELECTOR = (
-    "#root > div.Layout__Container-sc-3weaze-0.cbLSDw > div.FixedArea__Container-sc-1puoja0-0.lgLQzE > div > "
-    "div.Purchase__Container-sc-16dm5t2-0.kTNNsy > button > span"
-)  # [web:22]
+# 가격: 'Price__CalculatedPrice'라는 글자가 클래스 이름에 포함된 span 태그를 찾음
+MUSINSA_EXACT_PRICE_SELECTOR = 'span[class*="Price__CalculatedPrice"]'
+
+# 품절/구매 버튼: 'Purchase__Container' 내부의 버튼 텍스트
+MUSINSA_SOLDOUT_SELECTOR = 'div[class*="Purchase__Container"] button span'
 
 # ---------------- 올리브영 ----------------
 OLIVE_PRICE_SELECTOR = "#Contents > div.prd_detail_box.renew > div.right_area > div > div.price > span.price-2"  # [web:22]
@@ -538,3 +533,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
