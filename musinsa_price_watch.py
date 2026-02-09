@@ -194,11 +194,6 @@ def _open_sheet():
 def _normalize_url(u: str) -> str:
     return (u or "").strip()
 
-def is_supported_by_any_adapter(u: str) -> bool:
-    for ad in ADAPTERS:
-        if ad.matches(u): return True
-    return False
-
 def load_urls_from_sheet() -> list[str]:
     ws = _open_sheet()
     col_vals = ws.col_values(D_COL_INDEX)
@@ -207,7 +202,6 @@ def load_urls_from_sheet() -> list[str]:
         if idx < URLS_START_ROW: continue
         v = _normalize_url(val)
         if not v: continue
-        if not is_supported_by_any_adapter(v): continue
         urls.append(v)
     return list(dict.fromkeys(urls))
 
@@ -524,6 +518,56 @@ class ElevenStAdapter(BaseAdapter):
         except Exception:
             return ("error", None)
 
+# ---------------- Universal (catch-all) ----------------
+class UniversalAdapter(BaseAdapter):
+    name = "universal"
+    SOLDOUT_KEYWORDS = ["품절", "일시품절", "판매종료", "매진", "sold out", "out of stock"]
+    SOLDOUT_SELECTORS = [
+        ".btn_soldout", ".btnSoldout", ".soldout", ".sold_out",
+        "button[disabled]", "[aria-disabled='true']",
+        ".layer_soldout", ".box__supply .text__state",
+    ]
+
+    def matches(self, url: str) -> bool:
+        return True
+
+    def webhook_url(self) -> str:
+        return DEFAULT_WEBHOOK
+
+    async def is_sold_out(self, page) -> bool:
+        for sel in self.SOLDOUT_SELECTORS:
+            try:
+                if await page.is_visible(sel):
+                    txt = await page.locator(sel).first.text_content() or ""
+                    if any(kw in txt for kw in self.SOLDOUT_KEYWORDS):
+                        return True
+            except Exception:
+                continue
+        try:
+            body_text = await page.locator("body").text_content() or ""
+            lower = body_text[:3000].lower()
+            if "품절" in lower or "sold out" in lower:
+                for sel in ["button:has-text('품절')", "span:has-text('품절')", "div:has-text('품절')>> nth=0"]:
+                    try:
+                        if await page.is_visible(sel):
+                            return True
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+        return False
+
+    async def extract(self, page, url: str):
+        try:
+            await page.goto(url, wait_until="domcontentloaded", timeout=WEB_TIMEOUT)
+            await asyncio.sleep(1.0)
+            if await self.is_sold_out(page):
+                return ("soldout", None)
+            p = await extract_price_fallback_generic(page)
+            return ("price", p)
+        except Exception:
+            return ("error", None)
+
 # ---------------- 라우팅 ----------------
 ADAPTERS: list[BaseAdapter] = [
     MusinsaAdapter(),
@@ -532,12 +576,13 @@ ADAPTERS: list[BaseAdapter] = [
     TwentyNineCMAdapter(),
     AuctionAdapter(),
     ElevenStAdapter(),
+    UniversalAdapter(),
 ]
 
-def pick_adapter(url: str) -> BaseAdapter | None:
+def pick_adapter(url: str) -> BaseAdapter:
     for ad in ADAPTERS:
         if ad.matches(url): return ad
-    return None
+    return ADAPTERS[-1]  # UniversalAdapter (catch-all)
 
 # ---------------- 상태/주기 작업 ----------------
 def load_state():
@@ -579,11 +624,6 @@ async def check_once():
         for url in list(URLS):
             try:
                 ad = pick_adapter(url)
-                if ad is None:
-                    # 미지원은 삭제 후 스킵
-                    URLS.remove(url)
-                    continue
-
                 kind, value = await ad.extract(page, url)
                 if kind == "error":
                     # 에러 발생 시 로그만 찍고 다음 루프
@@ -605,7 +645,20 @@ async def check_once():
                     if changed:
                         await post_webhook(ad.webhook_url(), f"[{ad.name}] 품절 감지: {url}\n매입가격 칸에 [품절] 기록")
                 else:
-                    if changed and curr is not None:
+                    is_restock = (url in state and prev is None and curr is not None)
+                    if is_restock:
+                        embeds = [{
+                            "title": f"🔔 {ad.name} 재입고 감지!",
+                            "description": url,
+                            "color": 3066993,
+                            "fields": [
+                                {"name": "상태", "value": "품절 → 재입고", "inline": True},
+                                {"name": "현재 가격", "value": f"{curr:,}원", "inline": True},
+                                {"name": "시각(UTC)", "value": ts, "inline": False},
+                            ]
+                        }]
+                        await post_webhook(ad.webhook_url(), "재입고 알림", embeds=embeds)
+                    elif changed and curr is not None:
                         diff = None if (prev is None or curr is None) else curr - prev
                         sign = "" if diff is None else ("+" if diff > 0 else "")
                         color = 3066993 if (diff is not None and diff < 0) else 15158332
