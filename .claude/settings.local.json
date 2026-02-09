@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install *)",
+      "Bash(pip freeze *)",
+      "Bash(python musinsa_price_watch.py)",
+      "Bash(playwright install *)",
+      "Bash(python -m pytest *)",
+      "Bash(python -c *)",
+      "Bash(ruff *)",
+      "Bash(python -m py_compile *)",
+      "WebSearch"
+    ],
+    "deny": []
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ruff format --quiet $CLAUDE_FILE_PATHS || true"
+          },
+          {
+            "type": "command",
+            "command": "ruff check --quiet --no-fix $CLAUDE_FILE_PATHS || true"
+          }
+        ]
+      }
+    ]
+  }
+}
