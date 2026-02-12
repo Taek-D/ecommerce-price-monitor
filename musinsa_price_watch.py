@@ -1,5 +1,7 @@
 import os, re, json, asyncio, random
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+
+KST = timezone(timedelta(hours=9))
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
@@ -609,7 +611,7 @@ async def reload_urls_from_sheet_job():
         await post_webhook(DEFAULT_WEBHOOK, f"URL 목록 재로딩 실패: {e}")
 
 async def check_once():
-    ts = datetime.now(timezone.utc).isoformat()
+    ts = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True, args=["--no-sandbox"])
         context = await browser.new_context(
@@ -654,7 +656,7 @@ async def check_once():
                             "fields": [
                                 {"name": "상태", "value": "품절 → 재입고", "inline": True},
                                 {"name": "현재 가격", "value": f"{curr:,}원", "inline": True},
-                                {"name": "시각(UTC)", "value": ts, "inline": False},
+                                {"name": "시각(KST)", "value": ts, "inline": False},
                             ]
                         }]
                         await post_webhook(ad.webhook_url(), "재입고 알림", embeds=embeds)
@@ -670,7 +672,7 @@ async def check_once():
                                 {"name": "이전", "value": f"{prev:,}원" if prev is not None else "N/A", "inline": True},
                                 {"name": "현재", "value": f"{curr:,}원" if curr is not None else "N/A", "inline": True},
                                 {"name": "변동", "value": f"{sign}{(diff or 0):,}원" if diff is not None else "N/A", "inline": True},
-                                {"name": "시각(UTC)", "value": ts, "inline": False},
+                                {"name": "시각(KST)", "value": ts, "inline": False},
                             ]
                         }]
                         await post_webhook(ad.webhook_url(), "가격 변동 알림", embeds=embeds)
