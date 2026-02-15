@@ -1,3 +1,15 @@
 safe/
 price_state.json
 .env
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# OS / local artifacts
+.DS_Store
+
+# Local agent/runtime state
+docs/.bkit-memory.json
+docs/.pdca-status.json
+.claude/settings.local.json
