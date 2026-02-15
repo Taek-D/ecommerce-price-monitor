@@ -1,5 +1,6 @@
 import os, re, json, asyncio, random
 from datetime import datetime, timezone, timedelta
+from urllib.parse import urlparse
 
 KST = timezone(timedelta(hours=9))
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -12,27 +13,27 @@ from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 import gspread
 from google.oauth2.service_account import Credentials
 
-# ---------------- 시트/컬럼 설정 ----------------
+# ---------------- ?쒗듃/而щ읆 ?ㅼ젙 ----------------
 SHEETS_SPREADSHEET_ID = "1ck2R9T2YXOM01xRDt74KM8xrQrBg6yjDMCHm5MvbiTQ"
 SHEETS_WORKSHEET_NAME = "소싱목록"
-D_COL_INDEX = 4  # URL 열
-H_COL_INDEX = 8  # 매입가격 열
-J_COL_INDEX = 10 # 업데이트 시각 열
+D_COL_INDEX = 4  # URL ??
+H_COL_INDEX = 8  # 留ㅼ엯媛寃???
+J_COL_INDEX = 10 # ?낅뜲?댄듃 ?쒓컖 ??
 URLS_START_ROW = 4
 
-# ---------------- 무신사 ----------------
-# 가격: 'Price__CalculatedPrice'라는 글자가 클래스 이름에 포함된 span 태그를 찾음
+# ---------------- 臾댁떊??----------------
+# 媛寃? 'Price__CalculatedPrice'?쇰뒗 湲?먭? ?대옒???대쫫???ы븿??span ?쒓렇瑜?李얠쓬
 MUSINSA_EXACT_PRICE_SELECTOR = 'span[class*="Price__CalculatedPrice"]'
 
-# 품절/구매 버튼: 'Purchase__Container' 내부의 버튼 텍스트
+# ?덉젅/援щℓ 踰꾪듉: 'Purchase__Container' ?대???踰꾪듉 ?띿뒪??
 MUSINSA_SOLDOUT_SELECTOR = 'div[class*="Purchase__Container"] button span'
 
-# ---------------- 올리브영 ----------------
+# ---------------- ?щ━釉뚯쁺 ----------------
 OLIVE_PRICE_SELECTOR = "#Contents > div.prd_detail_box.renew > div.right_area > div > div.price > span.price-2"
 OLIVE_SOLDOUT_PRIMARY = "#Contents > div.prd_detail_box.renew > div.right_area > div > div.prd_btn_area.new-style.type1 > button.btnSoldout.recoPopBtn.temprecobell"
 OLIVE_SOLDOUT_FALLBACKS = ".btnSoldout, button[disabled], .soldout, .btnL.stSoldOut"
 
-# ---------------- 지마켓 (XPath) ----------------
+# ---------------- 吏留덉폆 (XPath) ----------------
 GMARKET_COUPON_XPATH = "xpath=//*[@id='itemcase_basic']//span[contains(@class,'price_innerwrap-coupon')]//strong"
 GMARKET_NORMAL_XPATH = "xpath=//*[@id='itemcase_basic']//div[contains(@class,'box__price')]//strong[contains(@class,'price_real')]"
 GMARKET_SOLDOUT_SELECTOR = ".btn_soldout, .soldout, button[disabled], .box__supply .text__state, .layer_soldout, [aria-disabled='true']"
@@ -41,15 +42,15 @@ GMARKET_SOLDOUT_SELECTOR = ".btn_soldout, .soldout, button[disabled], .box__supp
 TWENTYNINE_PRICE_SELECTOR = "#pdp_product_price"
 TWENTYNINE_SOLDOUT_SELECTOR = "#pdp_buy_now > span"
 
-# ---------------- 옥션 (Auction) [신규] ----------------
+# ---------------- ?μ뀡 (Auction) [?좉퇋] ----------------
 AUCTION_PRICE_SELECTOR = "#frmMain > div.box__item-info > div.price_wrap > div:nth-child(2) > strong"
 AUCTION_SOLDOUT_SELECTOR = ".btn_soldout, .layer_soldout, .soldout, button[disabled]"
 
-# ---------------- 11번가 (11st) [신규] ----------------
+# ---------------- 11踰덇? (11st) [?좉퇋] ----------------
 ELEVENST_PRICE_SELECTOR = "#finalDscPrcArea > dd.price > strong > span.value"
 ELEVENST_SOLDOUT_SELECTOR = ".btn_soldout, .sold_out, button:has-text('품절'), span:has-text('판매종료')"
 
-# ---------------- 도메인 프리픽스 ----------------
+# ---------------- ?꾨찓???꾨━?쎌뒪 ----------------
 MUSINSA_PREFIXES = ["https://www.musinsa.com/products/"]
 OLIVE_PREFIXES = [
     "https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do",
@@ -75,7 +76,7 @@ ELEVENST_PREFIXES = [
     "http://www.11st.co.kr/products/",
 ]
 
-# ---------------- 동작 파라미터 ----------------
+# ---------------- ?숈옉 ?뚮씪誘명꽣 ----------------
 STATE_FILE = "price_state.json"
 MIN_PRICE = 5000
 WEB_TIMEOUT = 120000
@@ -93,19 +94,48 @@ PRICE_SECTION_SELECTORS = [
     "[class*='price']",
 ]
 EXCLUDE_KEYWORDS = [
-    "적립","포인트","포인트적립","쿠폰","배송","배송비","리뷰","평점",
-    "적용","최대","%","기간","혜택","사이즈","수량","옵션","남은",
-    "품절","무이자","카드","스마일","네이버","카카오","머니",
+    "적립", "포인트", "포인트적립", "쿠폰", "배송", "배송비", "리뷰", "평점",
+    "적용", "최대", "%", "기간", "혜택", "사이즈", "수량", "옵션", "남은",
+    "품절", "무이자", "카드", "스마일", "네이버", "카카오", "머니",
+    "coupon", "shipping", "delivery", "review", "rating",
+    "benefit", "point", "signin", "login", "max",
+    "period", "option", "quantity", "sold out",
+    "card", "pay", "money", "event", "notice",
 ]
 
-# ---------------- 환경/웹후크 ----------------
+# ---------------- ?섍꼍/?뱁썑??----------------
 load_dotenv()
+
+def _env_int(name: str, default: int, min_value: int = 1) -> int:
+    try:
+        return max(min_value, int((os.getenv(name, str(default)) or "").strip()))
+    except Exception:
+        return default
+
+def _env_float(name: str, default: float, min_value: float = 0.0) -> float:
+    try:
+        return max(min_value, float((os.getenv(name, str(default)) or "").strip()))
+    except Exception:
+        return default
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = (os.getenv(name, "") or "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "t", "yes", "y", "on"}
+
+MAX_CONCURRENCY = _env_int("MAX_CONCURRENCY", 5, min_value=1)
+PER_DOMAIN_CONCURRENCY = _env_int("PER_DOMAIN_CONCURRENCY", 2, min_value=1)
+URL_RETRY_COUNT = _env_int("URL_RETRY_COUNT", 2, min_value=1)
+RETRY_BACKOFF_BASE_SECONDS = _env_float("RETRY_BACKOFF_BASE_SECONDS", 0.6, min_value=0.0)
+DRY_RUN = _env_bool("DRY_RUN", default=False)
+
 DEFAULT_WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
 OLIVE_WEBHOOK = "https://discord.com/api/webhooks/1430243318528344115/BAXLmSdU-xarKWgkhRz25wG6gw8iY395JtFUuzquejwg6SHFpF2hphKHUzKKiTsSvHM2".strip()
 GMARKET_WEBHOOK = "https://discord.com/api/webhooks/1432278178440941620/hQrrsGk0jXauEWTYTUOKA_V98gTTRAF9LOY7hFJpRunsT1uGoEnUyV-j9g1VpjigcX0N".strip()
 TWENTYNINE_WEBHOOK = "https://discord.com/api/webhooks/1433003928911347762/CDQA-wmK1YYJchXl4joMKIEosfvmlPCZ_O9-yfZlBZatKD4QtuLR0b_qreHuPTgmttEG".strip()
 
-# [신규] 옥션, 11번가 웹후크
+# [?좉퇋] ?μ뀡, 11踰덇? ?뱁썑??
 AUCTION_WEBHOOK = "https://discord.com/api/webhooks/1453584864505757696/yVQ_N53gxs3T95ApH2w-BHFxRHU5lgiPMfLZ1ffS5tiuNa-zGbHaiOi4Npdjtkqf4R_3".strip()
 ELEVENST_WEBHOOK = "https://discord.com/api/webhooks/1453584653167624223/L2Kg2tDwRPjv9O6NoZtPzG1MOx6lZ4gxIWmUs3dKqrW2ZF7yGYxTrX2hlmb3a0JEzwgN".strip()
 
@@ -114,10 +144,15 @@ GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "safe/ser
 state = {}
 URLS: list[str] = []
 
-# ---------------- 공통 유틸 ----------------
+# ---------------- 怨듯넻 ?좏떥 ----------------
 async def post_webhook(url: str, content: str, embeds=None):
+    if DRY_RUN:
+        preview = (content or "").replace("\n", " ")[:120]
+        print(f"[DRY_RUN] webhook skipped: {preview}")
+        return
+
     if not url:
-        print(f"[Webhook 미설정] {content}")
+        print(f"[Webhook not configured] {content}")
         return
     async with httpx.AsyncClient(timeout=20) as client:
         payload = {"content": content}
@@ -126,7 +161,7 @@ async def post_webhook(url: str, content: str, embeds=None):
             r = await client.post(url, json=payload)
             r.raise_for_status()
         except Exception as e:
-            print(f"[Webhook 전송 실패] {e}")
+            print(f"[Webhook send failed] {e}")
 
 def normalize_price(text: str) -> int | None:
     if not text: return None
@@ -215,6 +250,12 @@ def _find_row_for_url_in_column(ws, url: str, col_index: int) -> int | None:
     return None
 
 def update_sheet_price_and_time(url: str, value, ts_iso: str, write_time: bool) -> bool:
+    if DRY_RUN:
+        print(
+            f"[DRY_RUN] sheet update skipped (legacy): url={url}, value={value}, write_time={write_time}"
+        )
+        return True
+
     try:
         ws = _open_sheet()
         row = _find_row_for_url_in_column(ws, url, D_COL_INDEX)
@@ -226,10 +267,48 @@ def update_sheet_price_and_time(url: str, value, ts_iso: str, write_time: bool) 
         print(f"[Sheet Update Error] {e}")
         return False
 
-# ---------------- 폴백 가격 스캔 ----------------
+def build_sheet_row_index(ws):
+    url_col = ws.col_values(D_COL_INDEX)
+    price_col = ws.col_values(H_COL_INDEX)
+    row_by_url: dict[str, int] = {}
+    price_by_url: dict[str, str] = {}
+
+    for idx, raw in enumerate(url_col, start=1):
+        if idx < URLS_START_ROW:
+            continue
+        normalized = _normalize_url(raw)
+        if not normalized:
+            continue
+        row_by_url[normalized] = idx
+        price_by_url[normalized] = (price_col[idx - 1] if idx - 1 < len(price_col) else "").strip()
+
+    return row_by_url, price_by_url
+
+def is_blank_sheet_value(v) -> bool:
+    return ("" if v is None else str(v)).strip() == ""
+
+def update_sheet_row(ws, row: int, value, ts_iso: str, write_time: bool, write_price: bool = True) -> bool:
+    if DRY_RUN:
+        print(
+            f"[DRY_RUN] sheet row update skipped: row={row}, value={value}, "
+            f"write_price={write_price}, write_time={write_time}"
+        )
+        return True
+
+    try:
+        if write_price and value is not None:
+            ws.update_cell(row, H_COL_INDEX, value)
+        if write_time:
+            ws.update_cell(row, J_COL_INDEX, ts_iso)
+        return True
+    except Exception as e:
+        print(f"[Sheet Row Update Error] row={row} error={e}")
+        return False
+
+# ---------------- ?대갚 媛寃??ㅼ틪 ----------------
 async def extract_price_fallback_generic(page) -> int | None:
     candidates: list[int] = []
-    # 1. 일반적인 가격 섹션 시도
+    # 1. ?쇰컲?곸씤 媛寃??뱀뀡 ?쒕룄
     if await wait_any_selector(page, PRICE_SECTION_SELECTORS, timeout_each=2000):
         for sel in PRICE_SECTION_SELECTORS:
             loc = page.locator(sel)
@@ -239,7 +318,7 @@ async def extract_price_fallback_generic(page) -> int | None:
                 if not looks_like_price_text(t): continue
                 p = normalize_price(t)
                 if valid_price_value(p): candidates.append(p)
-    # 2. 광범위한 태그 시도
+    # 2. 愿묐쾾?꾪븳 ?쒓렇 ?쒕룄
     if not candidates:
         for sel in ["[class*='price']", "[class*='Price']", "[class*='cost']", "strong", "b", "em", "span"]:
             try:
@@ -252,7 +331,7 @@ async def extract_price_fallback_generic(page) -> int | None:
             
     return min(candidates) if candidates else None
 
-# ---------------- 어댑터 베이스 ----------------
+# ---------------- ?대뙌??踰좎씠??----------------
 class BaseAdapter:
     ALLOWED_PREFIXES: list[str] = []
     name: str = "base"
@@ -434,7 +513,7 @@ class TwentyNineCMAdapter(BaseAdapter):
             p = await extract_price_fallback_generic(page)
         return ("price", p)
 
-# ---------------- Auction (옥션) ----------------
+# ---------------- Auction (?μ뀡) ----------------
 class AuctionAdapter(BaseAdapter):
     name = "auction"
     ALLOWED_PREFIXES = AUCTION_PREFIXES
@@ -447,7 +526,7 @@ class AuctionAdapter(BaseAdapter):
         try:
             if await page.is_visible(self.SOLDOUT_SELECTOR):
                 return True
-            # 텍스트로도 확인
+            # ?띿뒪?몃줈???뺤씤
             txt = await page.locator(".item_top_info").text_content()
             return "품절" in (txt or "")
         except Exception:
@@ -478,7 +557,7 @@ class AuctionAdapter(BaseAdapter):
         except Exception:
              return ("error", None)
 
-# ---------------- 11st (11번가) ----------------
+# ---------------- 11st (11踰덇?) ----------------
 class ElevenStAdapter(BaseAdapter):
     name = "11st"
     ALLOWED_PREFIXES = ELEVENST_PREFIXES
@@ -570,7 +649,7 @@ class UniversalAdapter(BaseAdapter):
         except Exception:
             return ("error", None)
 
-# ---------------- 라우팅 ----------------
+# ---------------- ?쇱슦??----------------
 ADAPTERS: list[BaseAdapter] = [
     MusinsaAdapter(),
     OliveYoungAdapter(),
@@ -586,7 +665,7 @@ def pick_adapter(url: str) -> BaseAdapter:
         if ad.matches(url): return ad
     return ADAPTERS[-1]  # UniversalAdapter (catch-all)
 
-# ---------------- 상태/주기 작업 ----------------
+# ---------------- ?곹깭/二쇨린 ?묒뾽 ----------------
 def load_state():
     global state
     try:
@@ -599,6 +678,10 @@ def load_state():
         state = {}
 
 def save_state():
+    if DRY_RUN:
+        print("[DRY_RUN] state save skipped.")
+        return
+
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
@@ -606,97 +689,247 @@ async def reload_urls_from_sheet_job():
     global URLS
     try:
         URLS = load_urls_from_sheet()
-        await post_webhook(DEFAULT_WEBHOOK, f"URL 목록 재로딩 완료: {len(URLS)}건")
+        await post_webhook(DEFAULT_WEBHOOK, f"URL list reloaded: {len(URLS)}")
     except Exception as e:
-        await post_webhook(DEFAULT_WEBHOOK, f"URL 목록 재로딩 실패: {e}")
+        await post_webhook(DEFAULT_WEBHOOK, f"URL reload failed: {e}")
+
+def _domain_key(url: str) -> str:
+    try:
+        return (urlparse(url).netloc or "").lower()
+    except Exception:
+        return ""
+
+async def process_one_url(
+    url: str,
+    context,
+    global_sem: asyncio.Semaphore,
+    domain_sems: dict[str, asyncio.Semaphore],
+):
+    ad = pick_adapter(url)
+    domain_sem = domain_sems.get(_domain_key(url))
+
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    last_error = None
+
+    for attempt in range(1, URL_RETRY_COUNT + 1):
+        page = None
+        try:
+            if domain_sem is None:
+                async with global_sem:
+                    page = await context.new_page()
+                    kind, value = await ad.extract(page, url)
+            else:
+                async with global_sem:
+                    async with domain_sem:
+                        page = await context.new_page()
+                        kind, value = await ad.extract(page, url)
+
+            if kind != "error":
+                elapsed = loop.time() - started
+                print(f"[{ad.name}] {url} -> {kind} ({elapsed:.2f}s)")
+                return {
+                    "url": url,
+                    "adapter": ad,
+                    "kind": kind,
+                    "value": value,
+                    "elapsed": elapsed,
+                }
+
+            last_error = "extract returned error"
+        except Exception as e:
+            last_error = str(e)
+        finally:
+            if page is not None:
+                try:
+                    await page.close()
+                except Exception:
+                    pass
+
+        if attempt < URL_RETRY_COUNT:
+            backoff = (RETRY_BACKOFF_BASE_SECONDS * attempt) + random.uniform(0, 0.35)
+            await asyncio.sleep(backoff)
+
+    elapsed = loop.time() - started
+    print(f"[{ad.name}] {url} -> error ({elapsed:.2f}s) reason={last_error}")
+    return {
+        "url": url,
+        "adapter": ad,
+        "kind": "error",
+        "value": None,
+        "elapsed": elapsed,
+        "error": last_error,
+    }
 
 async def check_once():
+    if not URLS:
+        print("[Check] URL list is empty; skip.")
+        save_state()
+        return
+
     ts = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+    run_started = asyncio.get_running_loop().time()
+    urls_snapshot = list(URLS)
+
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True, args=["--no-sandbox"])
         context = await browser.new_context(
-            user_agent=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/124.0.0.0 Safari/537.36"),
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
             timezone_id="Asia/Seoul",
-            locale="ko-KR"
+            locale="ko-KR",
         )
-        page = await context.new_page()
 
-        for url in list(URLS):
-            try:
-                ad = pick_adapter(url)
-                kind, value = await ad.extract(page, url)
-                if kind == "error":
-                    # 에러 발생 시 로그만 찍고 다음 루프
-                    print(f"[{ad.name}] Error extracting {url}")
-                    continue
+        global_sem = asyncio.Semaphore(MAX_CONCURRENCY)
+        domain_sems: dict[str, asyncio.Semaphore] = {}
+        for u in urls_snapshot:
+            key = _domain_key(u)
+            if key and key not in domain_sems:
+                domain_sems[key] = asyncio.Semaphore(PER_DOMAIN_CONCURRENCY)
 
-                prev = state.get(url)
-                curr = None if kind == "soldout" else value
-                sheet_value = "품절" if kind == "soldout" else curr
-                changed = (prev != curr)
-
-                updated = update_sheet_price_and_time(url, sheet_value, ts, write_time=changed)
-                if not updated:
-                    # 시트에서 사라진 URL
-                    if url in URLS: URLS.remove(url)
-                    continue
-
-                if kind == "soldout":
-                    if changed:
-                        await post_webhook(ad.webhook_url(), f"[{ad.name}] 품절 감지: {url}\n매입가격 칸에 [품절] 기록")
-                else:
-                    is_restock = (url in state and prev is None and curr is not None)
-                    if is_restock:
-                        embeds = [{
-                            "title": f"🔔 {ad.name} 재입고 감지!",
-                            "description": url,
-                            "color": 3066993,
-                            "fields": [
-                                {"name": "상태", "value": "품절 → 재입고", "inline": True},
-                                {"name": "현재 가격", "value": f"{curr:,}원", "inline": True},
-                                {"name": "시각(KST)", "value": ts, "inline": False},
-                            ]
-                        }]
-                        await post_webhook(ad.webhook_url(), "재입고 알림", embeds=embeds)
-                    elif changed and curr is not None:
-                        diff = None if (prev is None or curr is None) else curr - prev
-                        sign = "" if diff is None else ("+" if diff > 0 else "")
-                        color = 3066993 if (diff is not None and diff < 0) else 15158332
-                        embeds = [{
-                            "title": f"{ad.name} 가격 변동 감지",
-                            "description": url,
-                            "color": color,
-                            "fields": [
-                                {"name": "이전", "value": f"{prev:,}원" if prev is not None else "N/A", "inline": True},
-                                {"name": "현재", "value": f"{curr:,}원" if curr is not None else "N/A", "inline": True},
-                                {"name": "변동", "value": f"{sign}{(diff or 0):,}원" if diff is not None else "N/A", "inline": True},
-                                {"name": "시각(KST)", "value": ts, "inline": False},
-                            ]
-                        }]
-                        await post_webhook(ad.webhook_url(), "가격 변동 알림", embeds=embeds)
-
-                state[url] = curr
-                await asyncio.sleep(1.0)
-            except Exception as e:
-                # 개별 URL 실패 시 전체 중단 방지
-                print(f"[Check Loop Error] {url} : {e}")
+        tasks = [
+            asyncio.create_task(process_one_url(url, context, global_sem, domain_sems))
+            for url in urls_snapshot
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
         await context.close()
         await browser.close()
 
-    save_state()
+    try:
+        ws = _open_sheet()
+        row_by_url, sheet_price_by_url = build_sheet_row_index(ws)
+    except Exception as e:
+        print(f"[Sheet Open Error] {e}")
+        save_state()
+        return
 
-# ---------------- 진입점 ----------------
+    removed_count = 0
+    changed_count = 0
+    filled_blank_count = 0
+    error_count = 0
+
+    for result in results:
+        if isinstance(result, Exception):
+            print(f"[Task Error] {result}")
+            error_count += 1
+            continue
+
+        url = result["url"]
+        ad = result["adapter"]
+        kind = result["kind"]
+        value = result.get("value")
+
+        if kind == "error":
+            print(f"[{ad.name}] Error extracting {url}: {result.get('error')}")
+            error_count += 1
+            continue
+
+        row = row_by_url.get(url)
+        if row is None:
+            if url in URLS:
+                URLS.remove(url)
+                removed_count += 1
+            continue
+
+        prev = state.get(url)
+        curr = None if kind == "soldout" else value
+        changed = prev != curr
+
+        existing_sheet_price = sheet_price_by_url.get(url, "")
+        blank_sheet_price = is_blank_sheet_value(existing_sheet_price)
+        write_price = False
+        write_time = changed
+        filled_blank = False
+        sheet_value = None
+
+        if kind == "soldout":
+            if changed or blank_sheet_price:
+                write_price = True
+                sheet_value = "품절"
+        else:
+            if changed:
+                write_price = True
+                sheet_value = curr
+            elif curr is not None and blank_sheet_price:
+                write_price = True
+                write_time = False
+                filled_blank = True
+                sheet_value = curr
+
+        if write_price or write_time:
+            updated = update_sheet_row(
+                ws=ws,
+                row=row,
+                value=sheet_value,
+                ts_iso=ts,
+                write_time=write_time,
+                write_price=write_price,
+            )
+            if not updated:
+                continue
+
+        if kind == "soldout":
+            if changed:
+                await post_webhook(ad.webhook_url(), f"[{ad.name}] 품절 감지: {url}\n매입가격 칸에 [품절] 기록")
+        else:
+            is_restock = url in state and prev is None and curr is not None
+            if is_restock:
+                embeds = [{
+                    "title": f"{ad.name} 재입고 감지",
+                    "description": url,
+                    "color": 3066993,
+                    "fields": [
+                        {"name": "상태", "value": "품절 -> 재입고", "inline": True},
+                        {"name": "현재 가격", "value": f"{curr:,}원", "inline": True},
+                        {"name": "시간(KST)", "value": ts, "inline": False},
+                    ],
+                }]
+                await post_webhook(ad.webhook_url(), "재입고 알림", embeds=embeds)
+            elif changed and curr is not None:
+                diff = None if (prev is None or curr is None) else curr - prev
+                sign = "" if diff is None else ("+" if diff > 0 else "")
+                color = 3066993 if (diff is not None and diff < 0) else 15158332
+                embeds = [{
+                    "title": f"{ad.name} 가격 변동 감지",
+                    "description": url,
+                    "color": color,
+                    "fields": [
+                        {"name": "이전", "value": f"{prev:,}원" if prev is not None else "N/A", "inline": True},
+                        {"name": "현재", "value": f"{curr:,}원" if curr is not None else "N/A", "inline": True},
+                        {"name": "변동", "value": f"{sign}{(diff or 0):,}원" if diff is not None else "N/A", "inline": True},
+                        {"name": "시간(KST)", "value": ts, "inline": False},
+                    ],
+                }]
+                await post_webhook(ad.webhook_url(), "가격 변동 알림", embeds=embeds)
+
+        state[url] = curr
+        if changed:
+            changed_count += 1
+        if filled_blank:
+            filled_blank_count += 1
+            print(f"[Sheet Fill] {url} -> {curr}")
+
+    save_state()
+    elapsed = asyncio.get_running_loop().time() - run_started
+    print(
+        f"[Check Summary] total={len(urls_snapshot)} changed={changed_count} "
+        f"filled_blank={filled_blank_count} removed={removed_count} "
+        f"errors={error_count} concurrency={MAX_CONCURRENCY} dry_run={DRY_RUN} elapsed={elapsed:.2f}s"
+    )
+# ---------------- 吏꾩엯??----------------
 async def main():
     global URLS
+    print(f"[Mode] DRY_RUN={DRY_RUN}")
     load_state()
     try:
         URLS = load_urls_from_sheet()
-        await post_webhook(DEFAULT_WEBHOOK, f"초기 URL 로딩 완료: {len(URLS)}건")
+        await post_webhook(DEFAULT_WEBHOOK, f"Initial URL load complete: {len(URLS)}")
     except Exception as e:
-        await post_webhook(DEFAULT_WEBHOOK, f"초기 URL 로딩 실패: {e}")
+        await post_webhook(DEFAULT_WEBHOOK, f"Initial URL load failed: {e}")
         URLS = []
 
     await check_once()
@@ -711,3 +944,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
