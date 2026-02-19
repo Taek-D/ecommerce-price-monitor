@@ -355,13 +355,13 @@ async def check_once():
                 updated = update_sheet_price_and_time(url, sheet_value, ts, write_time=changed)
                 if not updated:
                     if url in URLS: URLS.remove(url)
-                    await post_webhook(ad.webhook_url(), f"시트에 URL 없음 → 감시 제외: {url}")
+                    await post_webhook(ad.webhook_url(), f"시트에 URL 없음 -> 감시 제외: {url}")
                     continue
 
                 # 알림(변경 시에만)
                 if changed:
                     if kind == "soldout":
-                        await post_webhook(ad.webhook_url(), f"[{ad.name}] 품절 감지: {url} → H열=품절, J열=갱신")
+                        await post_webhook(ad.webhook_url(), f"[{ad.name}] 품절 감지: {url} -> H열=품절, J열=갱신")
                     else:
                         if curr is not None:
                             diff = None if (prev is None or curr is None) else curr - prev

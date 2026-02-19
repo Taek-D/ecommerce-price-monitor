@@ -13,44 +13,46 @@ from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 import gspread
 from google.oauth2.service_account import Credentials
 
-# ---------------- ?쒗듃/而щ읆 ?ㅼ젙 ----------------
+# ---------------- 시트/컬럼 설정 ----------------
 SHEETS_SPREADSHEET_ID = "1ck2R9T2YXOM01xRDt74KM8xrQrBg6yjDMCHm5MvbiTQ"
 SHEETS_WORKSHEET_NAME = "소싱목록"
-D_COL_INDEX = 4  # URL ??
-H_COL_INDEX = 8  # 留ㅼ엯媛寃???
-J_COL_INDEX = 10 # ?낅뜲?댄듃 ?쒓컖 ??
+D_COL_INDEX = 4  # URL 열
+H_COL_INDEX = 8  # 매입가격 열
+J_COL_INDEX = 10 # 업데이트 시각 열
 URLS_START_ROW = 4
 
-# ---------------- 臾댁떊??----------------
-# 媛寃? 'Price__CalculatedPrice'?쇰뒗 湲?먭? ?대옒???대쫫???ы븿??span ?쒓렇瑜?李얠쓬
+# ---------------- 무신사 ----------------
+# 가격: 'Price__CalculatedPrice'가 포함된 클래스의 span 텍스트 탐색
 MUSINSA_EXACT_PRICE_SELECTOR = 'span[class*="Price__CalculatedPrice"]'
 
-# ?덉젅/援щℓ 踰꾪듉: 'Purchase__Container' ?대???踰꾪듉 ?띿뒪??
+# 품절/구매 버튼: 'Purchase__Container' 영역의 버튼 텍스트
 MUSINSA_SOLDOUT_SELECTOR = 'div[class*="Purchase__Container"] button span'
 
-# ---------------- ?щ━釉뚯쁺 ----------------
+# ---------------- 올리브영 ----------------
 OLIVE_PRICE_SELECTOR = "#Contents > div.prd_detail_box.renew > div.right_area > div > div.price > span.price-2"
 OLIVE_SOLDOUT_PRIMARY = "#Contents > div.prd_detail_box.renew > div.right_area > div > div.prd_btn_area.new-style.type1 > button.btnSoldout.recoPopBtn.temprecobell"
 OLIVE_SOLDOUT_FALLBACKS = ".btnSoldout, button[disabled], .soldout, .btnL.stSoldOut"
 
-# ---------------- 吏留덉폆 (XPath) ----------------
+# ---------------- 지마켓 (XPath) ----------------
 GMARKET_COUPON_XPATH = "xpath=//*[@id='itemcase_basic']//span[contains(@class,'price_innerwrap-coupon')]//strong"
 GMARKET_NORMAL_XPATH = "xpath=//*[@id='itemcase_basic']//div[contains(@class,'box__price')]//strong[contains(@class,'price_real')]"
 GMARKET_SOLDOUT_SELECTOR = ".btn_soldout, .soldout, button[disabled], .box__supply .text__state, .layer_soldout, [aria-disabled='true']"
+GMARKET_PRICE_STATUS_SELECTOR = "#itemcase_basic > div > div.box__price.price > span > strong"
+GMARKET_SOLDOUT_KEYWORDS = ["품절", "일시품절", "판매종료", "매진", "sold out", "soldout", "out of stock"]
 
 # ---------------- 29CM ----------------
 TWENTYNINE_PRICE_SELECTOR = "#pdp_product_price"
 TWENTYNINE_SOLDOUT_SELECTOR = "#pdp_buy_now > span"
 
-# ---------------- ?μ뀡 (Auction) [?좉퇋] ----------------
+# ---------------- 옥션 (Auction) [추가] ----------------
 AUCTION_PRICE_SELECTOR = "#frmMain > div.box__item-info > div.price_wrap > div:nth-child(2) > strong"
 AUCTION_SOLDOUT_SELECTOR = ".btn_soldout, .layer_soldout, .soldout, button[disabled]"
 
-# ---------------- 11踰덇? (11st) [?좉퇋] ----------------
+# ---------------- 11번가 (11st) [추가] ----------------
 ELEVENST_PRICE_SELECTOR = "#finalDscPrcArea > dd.price > strong > span.value"
 ELEVENST_SOLDOUT_SELECTOR = ".btn_soldout, .sold_out, button:has-text('품절'), span:has-text('판매종료')"
 
-# ---------------- ?꾨찓???꾨━?쎌뒪 ----------------
+# ---------------- 플랫폼 프리픽스 ----------------
 MUSINSA_PREFIXES = ["https://www.musinsa.com/products/"]
 OLIVE_PREFIXES = [
     "https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do",
@@ -76,7 +78,7 @@ ELEVENST_PREFIXES = [
     "http://www.11st.co.kr/products/",
 ]
 
-# ---------------- ?숈옉 ?뚮씪誘명꽣 ----------------
+# ---------------- 동작 파라미터 ----------------
 STATE_FILE = "price_state.json"
 MIN_PRICE = 5000
 WEB_TIMEOUT = 120000
@@ -103,7 +105,7 @@ EXCLUDE_KEYWORDS = [
     "card", "pay", "money", "event", "notice",
 ]
 
-# ---------------- ?섍꼍/?뱁썑??----------------
+# ---------------- 환경/웹훅 ----------------
 load_dotenv()
 
 def _env_int(name: str, default: int, min_value: int = 1) -> int:
@@ -135,7 +137,7 @@ OLIVE_WEBHOOK = "https://discord.com/api/webhooks/1430243318528344115/BAXLmSdU-x
 GMARKET_WEBHOOK = "https://discord.com/api/webhooks/1432278178440941620/hQrrsGk0jXauEWTYTUOKA_V98gTTRAF9LOY7hFJpRunsT1uGoEnUyV-j9g1VpjigcX0N".strip()
 TWENTYNINE_WEBHOOK = "https://discord.com/api/webhooks/1433003928911347762/CDQA-wmK1YYJchXl4joMKIEosfvmlPCZ_O9-yfZlBZatKD4QtuLR0b_qreHuPTgmttEG".strip()
 
-# [?좉퇋] ?μ뀡, 11踰덇? ?뱁썑??
+# [추가] 옥션, 11번가 웹훅
 AUCTION_WEBHOOK = "https://discord.com/api/webhooks/1453584864505757696/yVQ_N53gxs3T95ApH2w-BHFxRHU5lgiPMfLZ1ffS5tiuNa-zGbHaiOi4Npdjtkqf4R_3".strip()
 ELEVENST_WEBHOOK = "https://discord.com/api/webhooks/1453584653167624223/L2Kg2tDwRPjv9O6NoZtPzG1MOx6lZ4gxIWmUs3dKqrW2ZF7yGYxTrX2hlmb3a0JEzwgN".strip()
 
@@ -144,7 +146,7 @@ GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "safe/ser
 state = {}
 URLS: list[str] = []
 
-# ---------------- 怨듯넻 ?좏떥 ----------------
+# ---------------- 공통 유틸 ----------------
 async def post_webhook(url: str, content: str, embeds=None):
     if DRY_RUN:
         preview = (content or "").replace("\n", " ")[:120]
@@ -287,6 +289,15 @@ def build_sheet_row_index(ws):
 def is_blank_sheet_value(v) -> bool:
     return ("" if v is None else str(v)).strip() == ""
 
+def is_soldout_sheet_value(v) -> bool:
+    txt = ("" if v is None else str(v)).strip().lower()
+    if not txt:
+        return False
+    return any(
+        keyword in txt
+        for keyword in ("품절", "일시품절", "매진", "판매종료", "sold out", "out of stock")
+    )
+
 def update_sheet_row(ws, row: int, value, ts_iso: str, write_time: bool, write_price: bool = True) -> bool:
     if DRY_RUN:
         print(
@@ -305,10 +316,10 @@ def update_sheet_row(ws, row: int, value, ts_iso: str, write_time: bool, write_p
         print(f"[Sheet Row Update Error] row={row} error={e}")
         return False
 
-# ---------------- ?대갚 媛寃??ㅼ틪 ----------------
+# ---------------- 범용 가격 추출 ----------------
 async def extract_price_fallback_generic(page) -> int | None:
     candidates: list[int] = []
-    # 1. ?쇰컲?곸씤 媛寃??뱀뀡 ?쒕룄
+    # 1. 일반적인 가격 섹션 시도
     if await wait_any_selector(page, PRICE_SECTION_SELECTORS, timeout_each=2000):
         for sel in PRICE_SECTION_SELECTORS:
             loc = page.locator(sel)
@@ -318,7 +329,7 @@ async def extract_price_fallback_generic(page) -> int | None:
                 if not looks_like_price_text(t): continue
                 p = normalize_price(t)
                 if valid_price_value(p): candidates.append(p)
-    # 2. 愿묐쾾?꾪븳 ?쒓렇 ?쒕룄
+    # 2. 광범위한 태그 시도
     if not candidates:
         for sel in ["[class*='price']", "[class*='Price']", "[class*='cost']", "strong", "b", "em", "span"]:
             try:
@@ -331,7 +342,7 @@ async def extract_price_fallback_generic(page) -> int | None:
             
     return min(candidates) if candidates else None
 
-# ---------------- ?대뙌??踰좎씠??----------------
+# ---------------- 어댑터 베이스 ----------------
 class BaseAdapter:
     ALLOWED_PREFIXES: list[str] = []
     name: str = "base"
@@ -433,13 +444,33 @@ class GmarketAdapter(BaseAdapter):
     COUPON_XPATH = GMARKET_COUPON_XPATH
     NORMAL_XPATH = GMARKET_NORMAL_XPATH
     SOLDOUT_SELECTOR = GMARKET_SOLDOUT_SELECTOR
+    PRICE_STATUS_SELECTOR = GMARKET_PRICE_STATUS_SELECTOR
+    SOLDOUT_KEYWORDS = GMARKET_SOLDOUT_KEYWORDS
     def webhook_url(self) -> str: return GMARKET_WEBHOOK or DEFAULT_WEBHOOK
-    async def is_sold_out(self, page) -> bool:
+
+    async def _selector_has_soldout_keyword(self, page, selector: str) -> bool:
         try:
-            await page.wait_for_selector(self.SOLDOUT_SELECTOR, state="visible", timeout=2500)
-            txts = await page.locator(self.SOLDOUT_SELECTOR).all_text_contents()
-            txt = " ".join(txts) if txts else ""
-            return any(k in txt for k in ["품절", "일시품절", "판매종료", "매진"])
+            loc = page.locator(selector)
+            if await loc.count() == 0:
+                return False
+            txts = await loc.all_text_contents()
+            txt = " ".join((t or "").strip().lower() for t in txts)
+            return any(k in txt for k in self.SOLDOUT_KEYWORDS)
+        except Exception:
+            return False
+
+    async def is_sold_out(self, page) -> bool:
+        if await self._selector_has_soldout_keyword(page, self.SOLDOUT_SELECTOR):
+            return True
+
+        # Some sold-out items keep a visible price block but render "SOLD OUT" in this area.
+        for sel in [self.PRICE_STATUS_SELECTOR, "#itemcase_basic .box__price strong", "#itemcase_basic .box__price"]:
+            if await self._selector_has_soldout_keyword(page, sel):
+                return True
+
+        try:
+            txt = (await page.locator("#itemcase_basic").inner_text() or "").lower()
+            return any(k in txt for k in self.SOLDOUT_KEYWORDS)
         except Exception:
             return False
     async def extract_precise(self, page) -> int | None:
@@ -513,7 +544,7 @@ class TwentyNineCMAdapter(BaseAdapter):
             p = await extract_price_fallback_generic(page)
         return ("price", p)
 
-# ---------------- Auction (?μ뀡) ----------------
+# ---------------- Auction (옥션) ----------------
 class AuctionAdapter(BaseAdapter):
     name = "auction"
     ALLOWED_PREFIXES = AUCTION_PREFIXES
@@ -526,7 +557,7 @@ class AuctionAdapter(BaseAdapter):
         try:
             if await page.is_visible(self.SOLDOUT_SELECTOR):
                 return True
-            # ?띿뒪?몃줈???뺤씤
+            # 텍스트로도 확인
             txt = await page.locator(".item_top_info").text_content()
             return "품절" in (txt or "")
         except Exception:
@@ -557,7 +588,7 @@ class AuctionAdapter(BaseAdapter):
         except Exception:
              return ("error", None)
 
-# ---------------- 11st (11踰덇?) ----------------
+# ---------------- 11st (11번가) ----------------
 class ElevenStAdapter(BaseAdapter):
     name = "11st"
     ALLOWED_PREFIXES = ELEVENST_PREFIXES
@@ -649,7 +680,7 @@ class UniversalAdapter(BaseAdapter):
         except Exception:
             return ("error", None)
 
-# ---------------- ?쇱슦??----------------
+# ---------------- 라우팅 ----------------
 ADAPTERS: list[BaseAdapter] = [
     MusinsaAdapter(),
     OliveYoungAdapter(),
@@ -665,7 +696,7 @@ def pick_adapter(url: str) -> BaseAdapter:
         if ad.matches(url): return ad
     return ADAPTERS[-1]  # UniversalAdapter (catch-all)
 
-# ---------------- ?곹깭/二쇨린 ?묒뾽 ----------------
+# ---------------- 상태/주기 작업 ----------------
 def load_state():
     global state
     try:
@@ -841,20 +872,21 @@ async def check_once():
 
         existing_sheet_price = sheet_price_by_url.get(url, "")
         blank_sheet_price = is_blank_sheet_value(existing_sheet_price)
+        soldout_sheet_price = is_soldout_sheet_value(existing_sheet_price)
         write_price = False
         write_time = changed
         filled_blank = False
         sheet_value = None
 
         if kind == "soldout":
-            if changed or blank_sheet_price:
+            if changed or blank_sheet_price or not soldout_sheet_price:
                 write_price = True
                 sheet_value = "품절"
         else:
             if changed:
                 write_price = True
                 sheet_value = curr
-            elif curr is not None and blank_sheet_price:
+            elif curr is not None and (blank_sheet_price or soldout_sheet_price):
                 write_price = True
                 write_time = False
                 filled_blank = True
@@ -920,7 +952,7 @@ async def check_once():
         f"filled_blank={filled_blank_count} removed={removed_count} "
         f"errors={error_count} concurrency={MAX_CONCURRENCY} dry_run={DRY_RUN} elapsed={elapsed:.2f}s"
     )
-# ---------------- 吏꾩엯??----------------
+# ---------------- 진입점 ----------------
 async def main():
     global URLS
     print(f"[Mode] DRY_RUN={DRY_RUN}")
