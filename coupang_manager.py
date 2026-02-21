@@ -2,7 +2,7 @@
 coupang_manager.py
 쿠팡 Open API 자동화 모듈
 - 주문 자동화:    결제완료 감지 → 발주확인 → 마이문자 SMS → 상품준비중
-- 발송처리 자동화: 시트 송장번호 감지 → 쿠팡 배송중 처리 → 고객 SMS
+- 발송처리 자동화: 시트 송장번호 감지 → 쿠팡 배송중 처리
 - 재고 자동 품절: 쿠팡 실재고 0 감지 → 판매중지 API 자동 호출
 - 정산/매출 집계: 주문 데이터 집계 → 정산집계 탭 자동 갱신
 - 판매가 변경:    구글 시트 감지 → 쿠팡 가격 API
@@ -840,7 +840,7 @@ async def process_shipping():
     - K열(송장번호) + L열(택배사코드) 입력되고
     - G열(상태)이 '상품준비중'이고
     - M열(발송처리일시) 비어있는 행 처리
-    흐름: 쿠팡 배송중 API → 시트 상태 갱신 → 고객 SMS
+    흐름: 쿠팡 배송중 API → 시트 상태 갱신
     """
     print(f"[Ship] 배송처리 대기 주문 확인... ({_now_kst_str()})")
 
@@ -902,16 +902,6 @@ async def process_shipping():
                 ws.update_cell(i, COL_ORDER_SHIP_DATE, ts)
             except Exception as e:
                 print(f"[Ship] 시트 갱신 실패: {e}")
-
-            # 고객 SMS (배송 출발 안내)
-            if phone:
-                sms_msg = (
-                    f"[배송출발] {buyer_name}님, 상품이 발송되었습니다.\n"
-                    f"상품: {product_name}\n"
-                    f"택배사: {carrier} | 송장: {invoice}\n"
-                    f"배송조회: https://www.coupang.com"
-                )
-                await send_sms(phone, sms_msg, msg_type="lms")
 
             # Discord 알림
             embeds = [{
@@ -1196,7 +1186,7 @@ async def sourcing_price_job():
         print(f"[SourcingSync Job] 오류: {e}")
 
 async def shipping_job():
-    """5분마다 실행: 시트 송장번호 감지 → 쿠팡 배송중 처리 → 고객 SMS"""
+    """5분마다 실행: 시트 송장번호 감지 → 쿠팡 배송중 처리"""
     try:
         await process_shipping()
     except Exception as e:
