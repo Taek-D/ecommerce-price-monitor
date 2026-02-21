@@ -13,3 +13,9 @@ __pycache__/
 docs/.bkit-memory.json
 docs/.pdca-status.json
 .claude/settings.local.json
+
+# Backup files
+*백업본*
+
+# Architecture / diagram images
+*.png

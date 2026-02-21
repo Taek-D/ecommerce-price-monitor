@@ -14,7 +14,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # ---------------- 시트/컬럼 설정 ----------------
-SHEETS_SPREADSHEET_ID = "1ck2R9T2YXOM01xRDt74KM8xrQrBg6yjDMCHm5MvbiTQ"
+SHEETS_SPREADSHEET_ID = ""
 SHEETS_WORKSHEET_NAME = "소싱목록"
 D_COL_INDEX = 4  # URL 열
 H_COL_INDEX = 8  # 매입가격 열
@@ -132,14 +132,15 @@ URL_RETRY_COUNT = _env_int("URL_RETRY_COUNT", 2, min_value=1)
 RETRY_BACKOFF_BASE_SECONDS = _env_float("RETRY_BACKOFF_BASE_SECONDS", 0.6, min_value=0.0)
 DRY_RUN = _env_bool("DRY_RUN", default=False)
 
-DEFAULT_WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
-OLIVE_WEBHOOK = "https://discord.com/api/webhooks/1430243318528344115/BAXLmSdU-xarKWgkhRz25wG6gw8iY395JtFUuzquejwg6SHFpF2hphKHUzKKiTsSvHM2".strip()
-GMARKET_WEBHOOK = "https://discord.com/api/webhooks/1432278178440941620/hQrrsGk0jXauEWTYTUOKA_V98gTTRAF9LOY7hFJpRunsT1uGoEnUyV-j9g1VpjigcX0N".strip()
-TWENTYNINE_WEBHOOK = "https://discord.com/api/webhooks/1433003928911347762/CDQA-wmK1YYJchXl4joMKIEosfvmlPCZ_O9-yfZlBZatKD4QtuLR0b_qreHuPTgmttEG".strip()
+SHEETS_SPREADSHEET_ID = os.getenv("SHEETS_SPREADSHEET_ID", "").strip()
+SHEETS_WORKSHEET_NAME = (os.getenv("SHEETS_WORKSHEET_NAME", SHEETS_WORKSHEET_NAME) or "").strip() or "소싱목록"
 
-# [추가] 옥션, 11번가 웹훅
-AUCTION_WEBHOOK = "https://discord.com/api/webhooks/1453584864505757696/yVQ_N53gxs3T95ApH2w-BHFxRHU5lgiPMfLZ1ffS5tiuNa-zGbHaiOi4Npdjtkqf4R_3".strip()
-ELEVENST_WEBHOOK = "https://discord.com/api/webhooks/1453584653167624223/L2Kg2tDwRPjv9O6NoZtPzG1MOx6lZ4gxIWmUs3dKqrW2ZF7yGYxTrX2hlmb3a0JEzwgN".strip()
+DEFAULT_WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
+OLIVE_WEBHOOK = os.getenv("OLIVE_WEBHOOK", "").strip()
+GMARKET_WEBHOOK = os.getenv("GMARKET_WEBHOOK", "").strip()
+TWENTYNINE_WEBHOOK = os.getenv("TWENTYNINE_WEBHOOK", "").strip()
+AUCTION_WEBHOOK = os.getenv("AUCTION_WEBHOOK", "").strip()
+ELEVENST_WEBHOOK = os.getenv("ELEVENST_WEBHOOK", "").strip()
 
 GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "safe/service_account.json").strip()
 
@@ -226,6 +227,8 @@ def google_creds():
     )
 
 def _open_sheet():
+    if not SHEETS_SPREADSHEET_ID:
+        raise RuntimeError("SHEETS_SPREADSHEET_ID is not configured")
     gc = gspread.authorize(google_creds())
     sh = gc.open_by_key(SHEETS_SPREADSHEET_ID)
     return sh.worksheet(SHEETS_WORKSHEET_NAME)
