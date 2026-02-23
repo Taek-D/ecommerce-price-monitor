@@ -16,6 +16,7 @@ from urllib.parse import urlencode, quote
 import httpx
 from dotenv import load_dotenv
 import gspread
+from gspread.utils import rowcol_to_a1
 from google.oauth2.service_account import Credentials
 
 try:
@@ -306,6 +307,31 @@ def _open_coupang_sheet(sheet_name: str):
 def _now_kst_str() -> str:
     return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
 
+
+def _queue_sheet_cell_update(pending: dict[str, object], row: int, col: int, value: object) -> None:
+    """배치 업데이트용 셀 변경사항 누적 (같은 셀은 마지막 값으로 덮어씀)."""
+    pending[rowcol_to_a1(row, col)] = value
+
+
+def _flush_sheet_cell_updates(ws, pending: dict[str, object], chunk_size: int = 200) -> None:
+    """누적된 셀 변경사항을 batch_update로 반영. 실패 시 셀 단건 업데이트로 폴백."""
+    if not pending:
+        return
+
+    items = list(pending.items())
+    for i in range(0, len(items), chunk_size):
+        chunk = items[i:i + chunk_size]
+        body = [{"range": rng, "values": [[val]]} for rng, val in chunk]
+        try:
+            ws.batch_update(body, value_input_option="USER_ENTERED")
+        except Exception as e:
+            print(f"[Sheet] batch_update 실패 (chunk={len(chunk)}): {e}")
+            for rng, val in chunk:
+                try:
+                    ws.update(rng, [[val]], value_input_option="USER_ENTERED")
+                except Exception as inner:
+                    print(f"[Sheet] 셀 업데이트 실패 ({rng}): {inner}")
+
 # ──────────────────────────────────────────────
 # 쿠팡 주문 API
 # ──────────────────────────────────────────────
@@ -394,7 +420,7 @@ async def get_order_sheet_ids() -> set[str]:
         print(f"[Sheet] 주문시트 조회 실패: {e}")
         return set()
 
-async def append_order_to_sheet(ws, order: dict, sms_sent: bool):
+async def append_order_to_sheet(ws, order: dict, sms_sent: bool, status: str = "상품준비중"):
     """주문 정보를 구글 시트에 추가 (A~M열)"""
     try:
         receiver = order.get("receiver", {})
@@ -416,7 +442,7 @@ async def append_order_to_sheet(ws, order: dict, sms_sent: bool):
             receiver.get("name", ""),                     # D: 수신자
             receiver.get("safeNumber", receiver.get("receiverNumber", "")),  # E: 연락처
             (receiver.get("addr1", "") + " " + receiver.get("addr2", "")).strip(),  # F: 주소
-            "상품준비중",                                 # G: 상태
+            status,                                     # G: 상태
             order.get("orderedAt", ""),                   # H: 주문일시
             "발송완료" if sms_sent else "미발송",         # I: SMS발송
             str(order.get("shipmentBoxId", "")),          # J: shipmentBoxId (배송처리에 필요)
@@ -448,22 +474,38 @@ async def process_new_orders():
         print("[Order] 조회된 주문 없음 (결제완료 + 상품준비중)")
         return
 
-    processed_ids = await get_order_sheet_ids()
-
     try:
         ws = _open_coupang_sheet(COUPANG_ORDER_SHEET)
+        rows = ws.get_all_values()
     except Exception as e:
         print(f"[Sheet] 주문시트 열기 실패: {e}")
         return
 
-    new_count    = 0
+    order_row_by_id: dict[str, int] = {}
+    order_status_by_id: dict[str, str] = {}
+    for row_idx, row in enumerate(rows[ORDER_START_ROW - 1:], start=ORDER_START_ROW):
+        order_id = (row[COL_ORDER_ID - 1].strip() if len(row) >= COL_ORDER_ID else "")
+        if not order_id:
+            continue
+        order_row_by_id[order_id] = row_idx
+        order_status_by_id[order_id] = (row[COL_ORDER_STATUS - 1].strip() if len(row) >= COL_ORDER_STATUS else "")
+
+    processed_ids = set(order_row_by_id.keys())
+    pending_cell_updates: dict[str, object] = {}
+
+    new_count = 0
     updated_count = 0
 
     # ── 결제완료(ACCEPT) 처리 ──
     for order in accept_orders:
         order_id = str(order.get("orderId", ""))
         if order_id in processed_ids:
-            continue  # 이미 시트에 있으면 스킵
+            row_idx = order_row_by_id.get(order_id)
+            if row_idx and order_status_by_id.get(order_id) != "결제완료":
+                _queue_sheet_cell_update(pending_cell_updates, row_idx, COL_ORDER_STATUS, "결제완료")
+                order_status_by_id[order_id] = "결제완료"
+                updated_count += 1
+            continue
 
         receiver = order.get("receiver", {})
         items    = order.get("orderItems", [{}])
@@ -479,6 +521,9 @@ async def process_new_orders():
         # 1. 발주확인 처리 (→ 상품준비중으로 자동 전환)
         vendor_item_id = str(item.get("vendorItemId", ""))
         confirmed = await confirm_order(order_id, vendor_item_id)
+        row_status = "상품준비중" if confirmed else "결제완료"
+        if not confirmed:
+            print(f"  ⚠️ 발주확인 실패 — 시트 상태를 결제완료로 유지: {order_id}")
 
         # 2. SMS 발송
         sms_sent = False
@@ -498,8 +543,8 @@ async def process_new_orders():
         elif not phone:
             print(f"  ⚠️ 수신번호 없음 — SMS 건너뜀")
 
-        # 3. 시트에 기록 (상태: 상품준비중)
-        await append_order_to_sheet(ws, order, sms_sent)
+        # 3. 시트에 기록 (발주확인 성공 시 상품준비중, 실패 시 결제완료)
+        await append_order_to_sheet(ws, order, sms_sent, status=row_status)
         processed_ids.add(order_id)
         new_count += 1
 
@@ -524,19 +569,26 @@ async def process_new_orders():
     for order in instruct_orders:
         order_id = str(order.get("orderId", ""))
         if order_id in processed_ids:
-            continue  # 이미 시트에 있으면 스킵
+            row_idx = order_row_by_id.get(order_id)
+            if row_idx and order_status_by_id.get(order_id) == "결제완료":
+                _queue_sheet_cell_update(pending_cell_updates, row_idx, COL_ORDER_STATUS, "상품준비중")
+                order_status_by_id[order_id] = "상품준비중"
+                updated_count += 1
+            continue
 
         items = order.get("orderItems", [{}])
         item  = items[0] if items else {}
         print(f"  → [상품준비중] {order_id} | {item.get('productName', '')} — 시트 추가")
 
-        await append_order_to_sheet(ws, order, sms_sent=False)
+        await append_order_to_sheet(ws, order, sms_sent=False, status="상품준비중")
         processed_ids.add(order_id)
         new_count += 1
         await asyncio.sleep(0.3)
 
-    print(f"[Order] 완료 — 신규 추가 {new_count}건")
-    if new_count == 0:
+    _flush_sheet_cell_updates(ws, pending_cell_updates)
+
+    print(f"[Order] 완료 — 신규 추가 {new_count}건, 상태갱신 {updated_count}건")
+    if new_count == 0 and updated_count == 0:
         print("[Order] 모든 주문이 이미 시트에 동기화되어 있음")
 
 # ──────────────────────────────────────────────
@@ -687,6 +739,7 @@ async def sync_products_from_sheet():
         print("[Sync] 최초 동기화: 기준 상태만 적재하고 API 반영은 생략")
     
     changes = []
+    pending_cell_updates: dict[str, object] = {}
     
     for i, row in enumerate(data_rows, start=PRODUCT_START_ROW):
         # 빈 행 스킵
@@ -725,11 +778,7 @@ async def sync_products_from_sheet():
             success = await update_sale_price(vendor_item_id, new_price)
             if success:
                 row_changes.append(f"판매가: {prev_price:,}원 → {new_price:,}원" if prev_price else f"판매가: {new_price:,}원 설정")
-                # 시트 업데이트 시각 갱신
-                try:
-                    ws.update_cell(i, COL_UPDATED_AT, ts)
-                except Exception:
-                    pass
+                _queue_sheet_cell_update(pending_cell_updates, i, COL_UPDATED_AT, ts)
             await asyncio.sleep(0.3)  # API 속도제한 방지
         
         # ── 재고 / 품절 처리 ──
@@ -739,11 +788,8 @@ async def sync_products_from_sheet():
                 success = await update_sale_status(vendor_item_id, False)
                 if success:
                     row_changes.append("품절 처리 (판매중지)")
-                    try:
-                        ws.update_cell(i, COL_SALE_STATUS, "품절")
-                        ws.update_cell(i, COL_UPDATED_AT, ts)
-                    except Exception:
-                        pass
+                    _queue_sheet_cell_update(pending_cell_updates, i, COL_SALE_STATUS, "품절")
+                    _queue_sheet_cell_update(pending_cell_updates, i, COL_UPDATED_AT, ts)
             else:
                 # 재고 복구 → 판매 재개
                 if prev_stock == 0 or not prev_stock:
@@ -754,11 +800,8 @@ async def sync_products_from_sheet():
                 success_stock = await update_stock(vendor_item_id, new_stock)
                 if success_stock:
                     row_changes.append(f"재고: {new_stock}개")
-                    try:
-                        ws.update_cell(i, COL_SALE_STATUS, "판매중")
-                        ws.update_cell(i, COL_UPDATED_AT, ts)
-                    except Exception:
-                        pass
+                    _queue_sheet_cell_update(pending_cell_updates, i, COL_SALE_STATUS, "판매중")
+                    _queue_sheet_cell_update(pending_cell_updates, i, COL_UPDATED_AT, ts)
             
             await asyncio.sleep(0.3)
         
@@ -770,6 +813,8 @@ async def sync_products_from_sheet():
                 "name": product_name or vendor_item_id,
                 "changes": row_changes,
             })
+
+    _flush_sheet_cell_updates(ws, pending_cell_updates)
     
     if changes:
         # Discord 알림
@@ -1224,6 +1269,7 @@ async def process_shipping():
 
     data_rows = rows[ORDER_START_ROW - 1:]
     shipped_count = 0
+    pending_cell_updates: dict[str, object] = {}
     # Prevent duplicate API calls within the same run using stable business keys.
     processed_keys_in_run: set[str] = set()
 
@@ -1286,11 +1332,8 @@ async def process_shipping():
 
         if success:
             # 시트 갱신: 쿠팡은 배송처리 API 호출 시 '배송지시' 상태로 변경됨
-            try:
-                ws.update_cell(i, COL_ORDER_STATUS, "배송지시")
-                ws.update_cell(i, COL_ORDER_SHIP_DATE, ts)
-            except Exception as e:
-                print(f"[Ship] 시트 갱신 실패: {e}")
+            _queue_sheet_cell_update(pending_cell_updates, i, COL_ORDER_STATUS, "배송지시")
+            _queue_sheet_cell_update(pending_cell_updates, i, COL_ORDER_SHIP_DATE, ts)
 
             # Discord 알림
             embeds = [{
@@ -1311,6 +1354,8 @@ async def process_shipping():
             shipped_count += 1
         
         await asyncio.sleep(0.5)
+
+    _flush_sheet_cell_updates(ws, pending_cell_updates)
 
     if shipped_count == 0:
         print("[Ship] 처리할 배송 없음")
@@ -1360,6 +1405,7 @@ async def auto_stock_out_check():
 
     data_rows = rows[PRODUCT_START_ROW - 1:]
     alerts = []
+    pending_cell_updates: dict[str, object] = {}
 
     for i, row in enumerate(data_rows, start=PRODUCT_START_ROW):
         if not row or not row[COL_VENDOR_ITEM_ID - 1].strip():
@@ -1389,12 +1435,9 @@ async def auto_stock_out_check():
             success = await update_sale_status(vendor_item_id, False)
             if success:
                 _stock_status[vendor_item_id] = False
-                try:
-                    ws.update_cell(i, COL_SALE_STATUS, "품절")
-                    ws.update_cell(i, COL_STOCK, "0")
-                    ws.update_cell(i, COL_UPDATED_AT, ts)
-                except Exception:
-                    pass
+                _queue_sheet_cell_update(pending_cell_updates, i, COL_SALE_STATUS, "품절")
+                _queue_sheet_cell_update(pending_cell_updates, i, COL_STOCK, "0")
+                _queue_sheet_cell_update(pending_cell_updates, i, COL_UPDATED_AT, ts)
                 alerts.append({"type": "품절", "name": product_name, "vid": vendor_item_id})
 
         elif real_stock > 0 and not on_sale and prev_on_sale is False:
@@ -1403,17 +1446,16 @@ async def auto_stock_out_check():
             success = await update_sale_status(vendor_item_id, True)
             if success:
                 _stock_status[vendor_item_id] = True
-                try:
-                    ws.update_cell(i, COL_SALE_STATUS, "판매중")
-                    ws.update_cell(i, COL_STOCK, str(real_stock))
-                    ws.update_cell(i, COL_UPDATED_AT, ts)
-                except Exception:
-                    pass
+                _queue_sheet_cell_update(pending_cell_updates, i, COL_SALE_STATUS, "판매중")
+                _queue_sheet_cell_update(pending_cell_updates, i, COL_STOCK, str(real_stock))
+                _queue_sheet_cell_update(pending_cell_updates, i, COL_UPDATED_AT, ts)
                 alerts.append({"type": "판매재개", "name": product_name, "stock": real_stock})
         else:
             _stock_status[vendor_item_id] = on_sale
 
         await asyncio.sleep(0.3)  # API 속도제한
+
+    _flush_sheet_cell_updates(ws, pending_cell_updates)
 
     if alerts:
         lines = []
