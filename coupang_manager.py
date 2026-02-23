@@ -195,6 +195,18 @@ async def _coupang_post(path: str, body: dict) -> dict:
 # ──────────────────────────────────────────────
 # 마이문자 SMS 발송
 # ──────────────────────────────────────────────
+ORDER_PRIVACY_SMS_MESSAGE = (
+    "[에스티리테일]개인정보 수집/이용 안내\n\n"
+    "고객님, 쿠팡(에스티리테일)을 통해 주문하신 내역이 [오픈마켓]에 접수되어 "
+    "개인정보보호법 제 20조 2항에 의거하여 개인정보 수집 출처를 안내드립니다.\n\n"
+    "출처 : 오픈마켓\n"
+    "목적 : 주문 이행/배송 및 CS 처리\n"
+    "항목 : 주문자 및 배송정보\n\n"
+    "고객님께서는 개인정보 처리의 정지를 요청하실 수 있으며, 이 경우 에스티리테일을 통해 "
+    "주문하신 상품의 주문이행 및 사후처리가 제한될 수 있습니다."
+)
+
+
 async def send_sms(phone: str, message: str, msg_type: str = "sms") -> dict:
     """
     마이문자 SMS/LMS 발송
@@ -244,6 +256,12 @@ async def send_sms(phone: str, message: str, msg_type: str = "sms") -> dict:
     except Exception as e:
         print(f"[SMS] Exception: {e}")
         return {"code": "ERROR", "msg": str(e)}
+
+
+async def send_order_privacy_sms(phone: str) -> bool:
+    """주문 개인정보 고지 LMS 발송."""
+    result = await send_sms(phone, ORDER_PRIVACY_SMS_MESSAGE, msg_type="lms")
+    return result.get("code") == "0000"
 
 async def send_sms_bulk(phones: list[str], messages: list[str]) -> dict:
     """여러 수신자에게 각각 다른 메시지 발송 (__LINE__ 구분자 사용)"""
@@ -444,7 +462,7 @@ async def append_order_to_sheet(ws, order: dict, sms_sent: bool, status: str = "
             (receiver.get("addr1", "") + " " + receiver.get("addr2", "")).strip(),  # F: 주소
             status,                                     # G: 상태
             order.get("orderedAt", ""),                   # H: 주문일시
-            "발송완료" if sms_sent else "미발송",         # I: SMS발송
+            "발송완료" if sms_sent else "미완료",         # I: SMS발송
             str(order.get("shipmentBoxId", "")),          # J: shipmentBoxId (배송처리에 필요)
             "",                                           # K: 송장번호 (수기입력)
             "",                                           # L: 택배사코드 (수기입력)
@@ -483,12 +501,16 @@ async def process_new_orders():
 
     order_row_by_id: dict[str, int] = {}
     order_status_by_id: dict[str, str] = {}
+    order_sms_by_id: dict[str, str] = {}
+    order_phone_by_id: dict[str, str] = {}
     for row_idx, row in enumerate(rows[ORDER_START_ROW - 1:], start=ORDER_START_ROW):
         order_id = (row[COL_ORDER_ID - 1].strip() if len(row) >= COL_ORDER_ID else "")
         if not order_id:
             continue
         order_row_by_id[order_id] = row_idx
         order_status_by_id[order_id] = (row[COL_ORDER_STATUS - 1].strip() if len(row) >= COL_ORDER_STATUS else "")
+        order_sms_by_id[order_id] = (row[COL_ORDER_SMS - 1].strip() if len(row) >= COL_ORDER_SMS else "")
+        order_phone_by_id[order_id] = (row[COL_ORDER_PHONE - 1].strip() if len(row) >= COL_ORDER_PHONE else "")
 
     processed_ids = set(order_row_by_id.keys())
     pending_cell_updates: dict[str, object] = {}
@@ -499,27 +521,52 @@ async def process_new_orders():
     # ── 결제완료(ACCEPT) 처리 ──
     for order in accept_orders:
         order_id = str(order.get("orderId", ""))
-        if order_id in processed_ids:
-            row_idx = order_row_by_id.get(order_id)
-            if row_idx and order_status_by_id.get(order_id) != "결제완료":
-                _queue_sheet_cell_update(pending_cell_updates, row_idx, COL_ORDER_STATUS, "결제완료")
-                order_status_by_id[order_id] = "결제완료"
-                updated_count += 1
-            continue
-
         receiver = order.get("receiver", {})
         items    = order.get("orderItems", [{}])
         item     = items[0] if items else {}
 
         product_name = item.get("productName", "상품")
-        phone        = receiver.get("safeNumber", receiver.get("phone", ""))
+        phone        = receiver.get("safeNumber", receiver.get("phone", "")) or order_phone_by_id.get(order_id, "")
         buyer_name   = receiver.get("name", "고객")
         qty          = item.get("quantity", 1)
+        vendor_item_id = str(item.get("vendorItemId", ""))
+
+        if order_id in processed_ids:
+            row_idx = order_row_by_id.get(order_id)
+            if not row_idx:
+                continue
+
+            current_status = order_status_by_id.get(order_id, "")
+            current_sms = order_sms_by_id.get(order_id, "")
+            needs_status_retry = current_status != "상품준비중"
+            needs_sms_mark = current_sms not in ("발송완료", "미완료")
+            if not needs_status_retry and not needs_sms_mark:
+                continue
+
+            if needs_status_retry:
+                print(f"  → [결제완료-재시도] {order_id} | {product_name} x{qty} | {buyer_name}")
+                confirmed = await confirm_order(order_id, vendor_item_id)
+                if confirmed:
+                    _queue_sheet_cell_update(pending_cell_updates, row_idx, COL_ORDER_STATUS, "상품준비중")
+                    order_status_by_id[order_id] = "상품준비중"
+                    updated_count += 1
+                else:
+                    _queue_sheet_cell_update(pending_cell_updates, row_idx, COL_ORDER_STATUS, "결제완료")
+                    order_status_by_id[order_id] = "결제완료"
+                    updated_count += 1
+                    print(f"  ⚠️ 발주확인 실패 — 시트 상태를 결제완료로 유지: {order_id}")
+
+            if current_sms not in ("발송완료", "미완료"):
+                _queue_sheet_cell_update(pending_cell_updates, row_idx, COL_ORDER_SMS, "미완료")
+                order_sms_by_id[order_id] = "미완료"
+                updated_count += 1
+
+            await asyncio.sleep(0.3)
+            continue
 
         print(f"  → [결제완료] {order_id} | {product_name} x{qty} | {buyer_name}")
 
         # 1. 발주확인 처리 (→ 상품준비중으로 자동 전환)
-        vendor_item_id = str(item.get("vendorItemId", ""))
         confirmed = await confirm_order(order_id, vendor_item_id)
         row_status = "상품준비중" if confirmed else "결제완료"
         if not confirmed:
@@ -528,18 +575,7 @@ async def process_new_orders():
         # 2. SMS 발송
         sms_sent = False
         if phone and confirmed:
-            sms_msg = (
-                "[에스티리테일]개인정보 수집/이용 안내\n\n"
-                "고객님, 쿠팡(에스티리테일)을 통해 주문하신 내역이 [오픈마켓]에 접수되어 "
-                "개인정보보호법 제 20조 2항에 의거하여 개인정보 수집 출처를 안내드립니다.\n\n"
-                "출처 : 오픈마켓\n"
-                "목적 : 주문 이행/배송 및 CS 처리\n"
-                "항목 : 주문자 및 배송정보\n\n"
-                "고객님께서는 개인정보 처리의 정지를 요청하실 수 있으며, 이 경우 에스티리테일을 통해 "
-                "주문하신 상품의 주문이행 및 사후처리가 제한될 수 있습니다."
-            )
-            result = await send_sms(phone, sms_msg, msg_type="lms")
-            sms_sent = result.get("code") == "0000"
+            sms_sent = await send_order_privacy_sms(phone)
         elif not phone:
             print(f"  ⚠️ 수신번호 없음 — SMS 건너뜀")
 
@@ -568,19 +604,38 @@ async def process_new_orders():
     # 시트에 없는 건만 추가 (발주확인은 이미 완료 상태)
     for order in instruct_orders:
         order_id = str(order.get("orderId", ""))
+        receiver = order.get("receiver", {})
+        items = order.get("orderItems", [{}])
+        item = items[0] if items else {}
+        phone = receiver.get("safeNumber", receiver.get("phone", "")) or order_phone_by_id.get(order_id, "")
+
         if order_id in processed_ids:
             row_idx = order_row_by_id.get(order_id)
-            if row_idx and order_status_by_id.get(order_id) == "결제완료":
+            if not row_idx:
+                continue
+
+            if order_status_by_id.get(order_id) == "결제완료":
                 _queue_sheet_cell_update(pending_cell_updates, row_idx, COL_ORDER_STATUS, "상품준비중")
                 order_status_by_id[order_id] = "상품준비중"
                 updated_count += 1
+
+            if order_sms_by_id.get(order_id) != "발송완료":
+                if order_sms_by_id.get(order_id) != "미완료":
+                    _queue_sheet_cell_update(pending_cell_updates, row_idx, COL_ORDER_SMS, "미완료")
+                    order_sms_by_id[order_id] = "미완료"
+                    updated_count += 1
+
+            await asyncio.sleep(0.2)
             continue
 
-        items = order.get("orderItems", [{}])
-        item  = items[0] if items else {}
         print(f"  → [상품준비중] {order_id} | {item.get('productName', '')} — 시트 추가")
+        sms_sent = False
+        if phone:
+            sms_sent = await send_order_privacy_sms(phone)
+        else:
+            print(f"  ⚠️ 수신번호 없음 — SMS 건너뜀 ({order_id})")
 
-        await append_order_to_sheet(ws, order, sms_sent=False, status="상품준비중")
+        await append_order_to_sheet(ws, order, sms_sent=sms_sent, status="상품준비중")
         processed_ids.add(order_id)
         new_count += 1
         await asyncio.sleep(0.3)
