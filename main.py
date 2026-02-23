@@ -128,16 +128,24 @@ from coupang_manager import (
 )
 
 
+def _status_webhook_url() -> str:
+    # Keep legacy behavior: prefer default webhook, fallback to Musinsa-specific webhook.
+    return (DEFAULT_WEBHOOK or getattr(mpw, "MUSINSA_WEBHOOK", "")).strip()
+
+
 async def reload_urls_job():
+    status_webhook = _status_webhook_url()
     try:
         mpw.URLS = load_urls_from_sheet()
         print(f"[URL Reload] {len(mpw.URLS)}개 로드 완료")
+        await post_webhook(status_webhook, f"URL list reloaded: {len(mpw.URLS)}")
     except Exception as e:
-        await post_webhook(DEFAULT_WEBHOOK, f"⚠️ URL 리로드 실패: {e}")
+        await post_webhook(status_webhook, f"URL reload failed: {e}")
 
 
 async def main():
     log_webhook_routing_once()
+    status_webhook = _status_webhook_url()
 
     print("=" * 50)
     print("  통합 이커머스 자동화 봇 시작")
@@ -155,9 +163,10 @@ async def main():
     load_state()
     try:
         mpw.URLS = load_urls_from_sheet()
-        await post_webhook(DEFAULT_WEBHOOK, f"✅ 봇 시작 | URL {len(mpw.URLS)}개 로드")
+        await post_webhook(status_webhook, f"Initial URL load complete: {len(mpw.URLS)}")
     except Exception as e:
         print(f"[Init] URL 로드 실패: {e}")
+        await post_webhook(status_webhook, f"Initial URL load failed: {e}")
         mpw.URLS = []
 
     # ── 최초 1회 실행 ──────────────────────────
