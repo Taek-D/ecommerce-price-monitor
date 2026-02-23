@@ -18,7 +18,7 @@ SA_JSON     = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "safe/service_account.jso
 
 CARRIER_OPTIONS = [
     "CJGLS",    # CJ대한통운
-    "LOTTE",    # 롯데택배
+    "HYUNDAI",  # 롯데택배
     "HANJIN",   # 한진택배
     "EPOST",    # 우체국
     "LOGEN",    # 로젠택배

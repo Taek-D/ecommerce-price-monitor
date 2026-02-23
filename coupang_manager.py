@@ -69,16 +69,48 @@ COL_ORDER_CARRIER   = 12  # L열: 택배사코드 (수기입력, 예: CJGLS)
 COL_ORDER_SHIP_DATE = 13  # M열: 발송처리일시 (자동기록)
 ORDER_START_ROW     = 2
 
-# 택배사 코드 안내 (쿠팡 공식 코드)
-CARRIER_CODES = {
+# 택배사 코드 안내 (쿠팡 공식 코드 + 하위호환 alias)
+# 참고: https://developers.coupangcorp.com/hc/ko/articles/360035976213
+CARRIER_CODE_ALIASES = {
     "CJ대한통운": "CJGLS",
-    "롯데택배":   "LOTTE",
-    "한진택배":   "HANJIN",
-    "우체국":     "EPOST",
-    "로젠택배":   "LOGEN",
-    "경동택배":   "KDEXP",
-    "홈픽":       "HOMEPICK",
+    "CJGLS": "CJGLS",
+    "롯데택배": "HYUNDAI",
+    "HYUNDAI": "HYUNDAI",
+    "LOTTE": "HYUNDAI",      # 레거시 입력값 호환
+    "한진택배": "HANJIN",
+    "HANJIN": "HANJIN",
+    "우체국": "EPOST",
+    "EPOST": "EPOST",
+    "로젠택배": "LOGEN",
+    "LOGEN": "LOGEN",
+    "경동택배": "KDEXP",
+    "KDEXP": "KDEXP",
+    "홈픽": "HOMEPICK",
+    "HOMEPICK": "HOMEPICK",
 }
+
+VALID_CARRIER_CODES = {
+    "CJGLS",
+    "HYUNDAI",
+    "HANJIN",
+    "EPOST",
+    "LOGEN",
+    "KDEXP",
+    "HOMEPICK",
+}
+
+
+def normalize_carrier_code(value: str) -> str:
+    """시트 입력 택배사값(한글/영문/구코드)을 쿠팡 공식 코드로 정규화."""
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    if raw in CARRIER_CODE_ALIASES:
+        return CARRIER_CODE_ALIASES[raw]
+    upper = raw.upper()
+    if upper in CARRIER_CODE_ALIASES:
+        return CARRIER_CODE_ALIASES[upper]
+    return upper
 
 COUPANG_BASE_URL = "https://api-gateway.coupang.com"
 
@@ -136,6 +168,9 @@ async def _coupang_post(path: str, body: dict) -> dict:
     headers = _make_coupang_signature("POST", path)
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.post(COUPANG_BASE_URL + path, headers=headers, json=body)
+        if not r.is_success:
+            print(f"[API Error] {r.status_code} | URL: {r.url}")
+            print(f"[API Error] Response: {r.text[:500]}")
         r.raise_for_status()
         return r.json()
 
@@ -166,12 +201,15 @@ async def send_sms(phone: str, message: str, msg_type: str = "sms") -> dict:
         "remote_reserve":  "0",        # 즉시발송
         "remote_phone":    phone_clean,
         "remote_callback": re.sub(r"[^0-9]", "", MYMUNJA_CALLBACK),
-        "remote_msg":      message,    # httpx가 URL 인코딩 처리
+        "remote_msg":      message,    # 아래에서 CP949 기준으로 수동 URL 인코딩
     }
     
     try:
         async with httpx.AsyncClient(timeout=20) as client:
-            r = await client.post(url, data=data)
+            # 마이문자 Remote API는 EUC-KR/CP949 기반 폼 인코딩을 기대한다.
+            encoded_body = urlencode(data, encoding="cp949", errors="replace")
+            headers = {"Content-Type": "application/x-www-form-urlencoded; charset=EUC-KR"}
+            r = await client.post(url, content=encoded_body, headers=headers)
             r.raise_for_status()
             # 응답: 결과코드|결과메시지|잔여건수|etc1|etc2
             parts = r.text.strip().split("|")
@@ -180,9 +218,9 @@ async def send_sms(phone: str, message: str, msg_type: str = "sms") -> dict:
             cols = parts[2] if len(parts) > 2 else "0"
             
             if code == "0000":
-                print(f"[SMS] ✅ 발송 성공 → {phone_clean} | 잔여: {cols}건")
+                print(f"[SMS] OK send success -> {phone_clean} | remain: {cols}")
             else:
-                print(f"[SMS] ❌ 발송 실패 → code={code} msg={msg}")
+                print(f"[SMS] FAIL send failed -> code={code} msg={msg}")
             
             return {"code": code, "msg": msg, "cols": cols}
     except Exception as e:
@@ -209,7 +247,9 @@ async def send_sms_bulk(phones: list[str], messages: list[str]) -> dict:
     
     try:
         async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.post("https://www.mymunja.co.kr/Remote/RemoteSms.html", data=data)
+            encoded_body = urlencode(data, encoding="cp949", errors="replace")
+            headers = {"Content-Type": "application/x-www-form-urlencoded; charset=EUC-KR"}
+            r = await client.post("https://www.mymunja.co.kr/Remote/RemoteSms.html", content=encoded_body, headers=headers)
             parts = r.text.strip().split("|")
             return {"code": parts[0], "cols": parts[2] if len(parts) > 2 else "0"}
     except Exception as e:
@@ -401,12 +441,16 @@ async def process_new_orders():
         sms_sent = False
         if phone and confirmed:
             sms_msg = (
-                f"[주문접수] {buyer_name}님, 주문이 접수되었습니다.\n"
-                f"상품: {product_name}\n"
-                f"수량: {qty}개\n"
-                f"상품을 준비 중이며, 빠른 시일 내 발송 드리겠습니다. 감사합니다."
+                "[에스티리테일]개인정보 수집/이용 안내\n\n"
+                "고객님, 쿠팡(에스티리테일)을 통해 주문하신 내역이 [오픈마켓]에 접수되어 "
+                "개인정보보호법 제 20조 2항에 의거하여 개인정보 수집 출처를 안내드립니다.\n\n"
+                "출처 : 오픈마켓\n"
+                "목적 : 주문 이행/배송 및 CS 처리\n"
+                "항목 : 주문자 및 배송정보\n\n"
+                "고객님께서는 개인정보 처리의 정지를 요청하실 수 있으며, 이 경우 에스티리테일을 통해 "
+                "주문하신 상품의 주문이행 및 사후처리가 제한될 수 있습니다."
             )
-            result = await send_sms(phone, sms_msg)
+            result = await send_sms(phone, sms_msg, msg_type="lms")
             sms_sent = result.get("code") == "0000"
         elif not phone:
             print(f"  ⚠️ 수신번호 없음 — SMS 건너뜀")
@@ -761,6 +805,20 @@ async def sync_price_from_sourcing():
 
 async def get_shipment_box_id(order_id: str) -> tuple[str, str]:
     """orderId로 (shipmentBoxId, vendorItemId) 조회"""
+    # 1) orderId 단건 조회 (v5) 우선 시도
+    try:
+        path = f"/v2/providers/openapi/apis/api/v5/vendors/{COUPANG_VENDOR_ID}/{order_id}/ordersheets"
+        result = await _coupang_get(path)
+        order = result.get("data", {}) or {}
+        box_id = str(order.get("shipmentBoxId", ""))
+        items = order.get("orderItems", [{}])
+        vendor_item_id = str(items[0].get("vendorItemId", "")) if items else ""
+        if box_id:
+            return box_id, vendor_item_id
+    except Exception as e:
+        print(f"[Ship] orderId 단건조회(v5) 실패 → {e}")
+
+    # 2) 목록 조회 (v4, 최근 14일 INSTRUCT) fallback
     path = f"/v2/providers/openapi/apis/api/v4/vendors/{COUPANG_VENDOR_ID}/ordersheets"
     today = datetime.now(KST).strftime("%Y-%m-%d")
     from_date = (datetime.now(KST) - timedelta(days=14)).strftime("%Y-%m-%d")
@@ -798,13 +856,20 @@ async def ship_order_api(
     쿠팡 송장업로드 API (공식 송장업로드 처리)
     POST /v2/providers/openapi/apis/api/v4/vendors/{vendorId}/ordersheets/invoice
     """
+    if not order_item_id:
+        print("[Ship] ❌ shipmentBoxId 누락 — 송장등록 스킵")
+        return False
+    if not vendor_item_id:
+        print(f"[Ship] ❌ vendorItemId 누락 — orderId={order_id} shipmentBoxId={order_item_id}")
+        return False
+
     path = f"/v2/providers/openapi/apis/api/v4/vendors/{COUPANG_VENDOR_ID}/orders/invoices"
     body = {
         "vendorId": COUPANG_VENDOR_ID,
         "orderSheetInvoiceApplyDtos": [{
             "shipmentBoxId":       int(order_item_id),
             "orderId":             int(order_id) if order_id else 0,
-            "vendorItemId":        int(vendor_item_id) if vendor_item_id else 0,
+            "vendorItemId":        int(vendor_item_id),
             "deliveryCompanyCode": carrier_code.strip().upper(),
             "invoiceNumber":       invoice_number.strip(),
             "splitShipping":       False,
@@ -865,6 +930,7 @@ async def process_shipping():
         order_item_id = row[COL_ORDER_ITEM_ID - 1].strip()
         invoice       = row[COL_ORDER_INVOICE - 1].strip()    # K열
         carrier       = row[COL_ORDER_CARRIER - 1].strip()    # L열
+        carrier_code  = normalize_carrier_code(carrier)
         ship_date     = row[COL_ORDER_SHIP_DATE - 1].strip()  # M열
 
         # 처리 조건: 상품준비중 + 송장/택배사 존재 + 미처리
@@ -874,8 +940,14 @@ async def process_shipping():
             continue
         if not invoice or not carrier:
             continue
+        if carrier_code not in VALID_CARRIER_CODES:
+            print(f"[Ship] ⚠️ 택배사코드 오류 → orderId={order_id} | 입력='{carrier}' | 변환='{carrier_code}'")
+            continue
 
-        dedupe_key = f"{order_id}|{invoice}|{carrier.upper()}"
+        if carrier_code != carrier.upper():
+            print(f"[Ship] 택배사코드 보정: '{carrier}' → '{carrier_code}'")
+
+        dedupe_key = f"{order_id}|{invoice}|{carrier_code}"
         if dedupe_key in processed_keys_in_run:
             continue
 
@@ -890,11 +962,17 @@ async def process_shipping():
             if not order_item_id:
                 print(f"[Ship] ⚠️ {order_id} shipmentBoxId 조회 실패 — 스킵")
                 continue
+        else:
+            # J열이 채워진 케이스도 vendorItemId가 필요하므로 보완 조회
+            _, vendor_item_id = await get_shipment_box_id(order_id)
+            if not vendor_item_id:
+                print(f"[Ship] ⚠️ {order_id} vendorItemId 조회 실패 — 스킵")
+                continue
 
-        print(f"  → 배송처리: {order_id} | {product_name} | 송장={invoice} ({carrier})")
+        print(f"  → 배송처리: {order_id} | {product_name} | 송장={invoice} ({carrier_code})")
 
         # 쿠팡 송장등록 API
-        success = await ship_order_api(order_item_id, invoice, carrier, order_id=order_id, vendor_item_id=vendor_item_id)
+        success = await ship_order_api(order_item_id, invoice, carrier_code, order_id=order_id, vendor_item_id=vendor_item_id)
         ts = _now_kst_str()
 
         if success:
@@ -913,7 +991,7 @@ async def process_shipping():
                     {"name": "주문 ID",   "value": order_id,      "inline": True},
                     {"name": "상품",      "value": product_name,  "inline": True},
                     {"name": "구매자",    "value": buyer_name,    "inline": True},
-                    {"name": "택배사",    "value": carrier,       "inline": True},
+                    {"name": "택배사",    "value": carrier_code,  "inline": True},
                     {"name": "송장번호",  "value": invoice,       "inline": True},
                     {"name": "처리시각",  "value": ts,            "inline": True},
                 ],
