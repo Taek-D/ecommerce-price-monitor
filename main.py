@@ -181,7 +181,13 @@ async def main():
     await settlement_job()        # 정산집계 최초 작성
 
     # ── 스케줄러 등록 ──────────────────────────
-    sched = AsyncIOScheduler()
+    sched = AsyncIOScheduler(
+        job_defaults={
+            "coalesce": True,
+            "max_instances": 1,
+            "misfire_grace_time": 180,
+        }
+    )
 
     # 기존: 이커머스 가격 모니터링 (5분)
     sched.add_job(

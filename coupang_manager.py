@@ -174,6 +174,9 @@ async def _coupang_put(path: str, body: dict) -> dict:
     headers = _make_coupang_signature("PUT", path)
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.put(COUPANG_BASE_URL + path, headers=headers, json=body)
+        if not r.is_success:
+            print(f"[API Error] {r.status_code} | URL: {r.url}")
+            print(f"[API Error] Response: {r.text[:500]}")
         r.raise_for_status()
         return r.json()
 
@@ -318,19 +321,45 @@ async def get_orders_by_status(status: str, days: int = 7) -> list[dict]:
     # 실용상 오늘 + 어제로 제한
     today = datetime.now(KST).strftime("%Y-%m-%d")
     from_date = (datetime.now(KST) - timedelta(days=days)).strftime("%Y-%m-%d")
-    params = {
+    base_params = {
         "createdAtFrom": from_date,
         "createdAtTo":   today,
         "status":        status,
         "maxPerPage":    50,
     }
     try:
-        result = await _coupang_get(path, params)
-        orders = result.get("data", [])
-        if isinstance(orders, dict):
-            orders = orders.get("content", [])
-        print(f"[Order] {status} 조회 → {len(orders)}건")
-        return orders
+        all_orders: list[dict] = []
+        next_token = ""
+        seen_tokens: set[str] = set()
+
+        for _ in range(30):  # 안전한 상한으로 무한루프 방지
+            params = dict(base_params)
+            if next_token:
+                params["nextToken"] = next_token
+
+            result = await _coupang_get(path, params)
+            data = result.get("data", [])
+
+            page_orders: list[dict]
+            token_candidate = ""
+            if isinstance(data, dict):
+                page_orders = data.get("content", []) or data.get("data", []) or []
+                token_candidate = str(data.get("nextToken", "") or result.get("nextToken", "") or "")
+            elif isinstance(data, list):
+                page_orders = data
+                token_candidate = str(result.get("nextToken", "") or "")
+            else:
+                page_orders = []
+
+            all_orders.extend(page_orders)
+
+            if not token_candidate or token_candidate in seen_tokens:
+                break
+            seen_tokens.add(token_candidate)
+            next_token = token_candidate
+
+        print(f"[Order] {status} 조회 → {len(all_orders)}건")
+        return all_orders
     except Exception as e:
         print(f"[Order] 주문 조회 실패 (status={status}): {e}")
         return []
@@ -516,6 +545,7 @@ async def process_new_orders():
 
 # 이전 상태 저장 (가격·재고 변경 감지용)
 _price_state: dict[str, dict] = {}  # {vendorItemId: {"price": int, "stock": int, "status": str}}
+_sync_baseline_initialized = False
 
 # 소싱목록 이전 가격 상태 (변경 감지용)
 _sourcing_price_state: dict[int, int] = {}  # {row_num: min_price}
@@ -641,6 +671,7 @@ async def sync_products_from_sheet():
     - 재고 0 감지 → update_sale_status(False) + 품절 처리
     - 재고 복구 감지 → update_sale_status(True) + 재고 업데이트
     """
+    global _sync_baseline_initialized
     print(f"[Sync] 상품 동기화 시작... ({_now_kst_str()})")
     
     try:
@@ -651,6 +682,9 @@ async def sync_products_from_sheet():
         return
     
     data_rows = rows[PRODUCT_START_ROW - 1:]  # 헤더 제외
+    is_first_sync = not _sync_baseline_initialized
+    if is_first_sync:
+        print("[Sync] 최초 동기화: 기준 상태만 적재하고 API 반영은 생략")
     
     changes = []
     
@@ -678,6 +712,10 @@ async def sync_products_from_sheet():
         prev = _price_state.get(vendor_item_id, {})
         prev_price = prev.get("price")
         prev_stock = prev.get("stock")
+
+        if is_first_sync and prev_price is None and prev_stock is None:
+            _price_state[vendor_item_id] = {"price": new_price, "stock": new_stock}
+            continue
         
         row_changes = []
         ts = _now_kst_str()
@@ -750,6 +788,8 @@ async def sync_products_from_sheet():
         await post_webhook(COUPANG_ORDER_WEBHOOK, "상품 자동 업데이트", embeds=embeds)
     else:
         print("[Sync] 변경 없음")
+
+    _sync_baseline_initialized = True
 
 # ──────────────────────────────────────────────
 # 소싱목록 기반 가격 자동 동기화
@@ -850,7 +890,11 @@ async def sync_price_from_sourcing():
                 current_price_by_vid[vid] = new_price
             await asyncio.sleep(0.2)
 
-        _sourcing_price_state[i] = new_price
+        # 현재 판매가를 전혀 확인하지 못한 경우엔 상태를 확정하지 않아 다음 주기에 재시도한다.
+        if skipped_unknown > 0 and not success_ids and skipped_floor == 0:
+            print(f"[SourcingSync] 현재 판매가 미확인으로 상태 갱신 보류 → row={i}")
+        else:
+            _sourcing_price_state[i] = new_price
 
         if skipped_floor or skipped_unknown:
             print(
@@ -1057,27 +1101,53 @@ async def get_shipment_box_id(order_id: str) -> tuple[str, str]:
     except Exception as e:
         print(f"[Ship] orderId 단건조회(v5) 실패 → {e}")
 
-    # 2) 목록 조회 (v4, 최근 14일 INSTRUCT) fallback
+    # 2) 목록 조회 fallback (v4)
     path = f"/v2/providers/openapi/apis/api/v4/vendors/{COUPANG_VENDOR_ID}/ordersheets"
     today = datetime.now(KST).strftime("%Y-%m-%d")
     from_date = (datetime.now(KST) - timedelta(days=14)).strftime("%Y-%m-%d")
-    params = {
-        "createdAtFrom": from_date,
-        "createdAtTo":   today,
-        "status":        "INSTRUCT",
-        "maxPerPage":    50,
-    }
     try:
-        result = await _coupang_get(path, params)
-        orders = result.get("data", [])
-        if isinstance(orders, dict):
-            orders = orders.get("content", [])
-        for order in orders:
-            if str(order.get("orderId")) == str(order_id):
-                box_id = str(order.get("shipmentBoxId", ""))
-                items = order.get("orderItems", [{}])
-                vendor_item_id = str(items[0].get("vendorItemId", "")) if items else ""
-                return box_id, vendor_item_id
+        # 상태를 넓혀 순차 조회해 누락 가능성을 줄인다.
+        for status in ("INSTRUCT", "ACCEPT", ""):
+            base_params = {
+                "createdAtFrom": from_date,
+                "createdAtTo":   today,
+                "maxPerPage":    50,
+            }
+            if status:
+                base_params["status"] = status
+
+            next_token = ""
+            seen_tokens: set[str] = set()
+
+            for _ in range(30):
+                params = dict(base_params)
+                if next_token:
+                    params["nextToken"] = next_token
+
+                result = await _coupang_get(path, params)
+                data = result.get("data", [])
+                token_candidate = ""
+                if isinstance(data, dict):
+                    orders = data.get("content", []) or data.get("data", []) or []
+                    token_candidate = str(data.get("nextToken", "") or result.get("nextToken", "") or "")
+                elif isinstance(data, list):
+                    orders = data
+                    token_candidate = str(result.get("nextToken", "") or "")
+                else:
+                    orders = []
+
+                for order in orders:
+                    if str(order.get("orderId")) == str(order_id):
+                        box_id = str(order.get("shipmentBoxId", ""))
+                        items = order.get("orderItems", [{}])
+                        vendor_item_id = str(items[0].get("vendorItemId", "")) if items else ""
+                        return box_id, vendor_item_id
+
+                if not token_candidate or token_candidate in seen_tokens:
+                    break
+                seen_tokens.add(token_candidate)
+                next_token = token_candidate
+
         print(f"[Ship] orderId={order_id} → shipmentBoxId 조회 실패")
         return "", ""
     except Exception as e:
@@ -1565,15 +1635,21 @@ if __name__ == "__main__":
         print(f"VENDOR_ID: {COUPANG_VENDOR_ID or '❌ 미설정'}")
         print(f"ACCESS_KEY: {'✅' if COUPANG_ACCESS_KEY else '❌ 미설정'}")
         print(f"MYMUNJA_ID: {MYMUNJA_ID or '❌ 미설정'}")
-        
-        # SMS 테스트
-        result = await send_sms("01039640850", "[테스트] 마이문자 연동 테스트입니다.")
-        print(f"SMS 결과: {result}")
-        
-        # 상품 동기화 테스트
-        await coupang_sync_job()
-        
-        # 주문 처리 테스트
-        # await coupang_order_job()
-    
-    asyncio.run(_test())
+
+        test_phone = os.getenv("COUPANG_TEST_PHONE", "").strip()
+        if test_phone:
+            result = await send_sms(test_phone, "[테스트] 마이문자 연동 테스트입니다.")
+            print(f"SMS 결과: {result}")
+        else:
+            print("COUPANG_TEST_PHONE 미설정 → SMS 테스트 스킵")
+
+        if os.getenv("COUPANG_TEST_SYNC", "0").strip() == "1":
+            await coupang_sync_job()
+            print("COUPANG_TEST_SYNC=1 → 상품 동기화 테스트 실행")
+        else:
+            print("COUPANG_TEST_SYNC=1 설정 시 상품 동기화 테스트 실행")
+
+    if os.getenv("COUPANG_RUN_SELF_TEST", "0").strip() == "1":
+        asyncio.run(_test())
+    else:
+        print("Self-test disabled. Set COUPANG_RUN_SELF_TEST=1 to run.")
