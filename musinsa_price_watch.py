@@ -32,6 +32,13 @@ MUSINSA_SOLDOUT_SELECTOR = 'div[class*="Purchase__Container"] button span'
 OLIVE_PRICE_SELECTOR = "#Contents > div.prd_detail_box.renew > div.right_area > div > div.price > span.price-2"
 OLIVE_SOLDOUT_PRIMARY = "#Contents > div.prd_detail_box.renew > div.right_area > div > div.prd_btn_area.new-style.type1 > button.btnSoldout.recoPopBtn.temprecobell"
 OLIVE_SOLDOUT_FALLBACKS = ".btnSoldout, button[disabled], .soldout, .btnL.stSoldOut"
+OLIVE_SOLDOUT_NEW_PRIMARY = "#main > div.page_product-details-wrapper___t38G > div > div.page_right-section__Plw5V > div > div.PurchaseBottom_purchase-bottom__C_GnK > div.PurchaseBottom_purchase-bottom-contents__ztB1w > div.PurchaseBottom_btn-area__mJJ9z.PurchaseBottom_padding-top__GCRfX > button.PurchaseBottom_btn-square__oefbI.btn-soldout.css-1rhuta5 > span"
+OLIVE_SOLDOUT_NEW_FALLBACKS = (
+    "#main button.btn-soldout span, "
+    "#main button[class*='btn-soldout'] span, "
+    "#main div[class*='PurchaseBottom'] button[class*='btn-soldout'] span, "
+    "#main button[disabled] span"
+)
 
 # ---------------- 지마켓 (XPath) ----------------
 GMARKET_COUPON_XPATH = "xpath=//*[@id='itemcase_basic']//span[contains(@class,'price_innerwrap-coupon')]//strong"
@@ -405,6 +412,26 @@ class OliveYoungAdapter(BaseAdapter):
     def webhook_url(self) -> str: return OLIVE_WEBHOOK or DEFAULT_WEBHOOK
 
     async def is_sold_out(self, page) -> bool:
+        # 신형 올리브영 상세 페이지: 사용자가 제보한 정확 셀렉터 우선 체크
+        try:
+            await page.wait_for_selector(OLIVE_SOLDOUT_NEW_PRIMARY, state="visible", timeout=2000)
+            txt = await page.locator(OLIVE_SOLDOUT_NEW_PRIMARY).inner_text()
+            if txt and ("일시품절" in txt or "품절" in txt):
+                return True
+        except Exception:
+            pass
+
+        # 신형 DOM fallback (class 기반)
+        try:
+            await page.wait_for_selector(OLIVE_SOLDOUT_NEW_FALLBACKS, state="visible", timeout=2000)
+            txts = await page.locator(OLIVE_SOLDOUT_NEW_FALLBACKS).all_text_contents()
+            txt = " ".join(txts) if txts else ""
+            if any(k in txt for k in ["품절", "일시품절"]):
+                return True
+        except Exception:
+            pass
+
+        # 구형 상세 페이지 DOM
         try:
             await page.wait_for_selector(self.SOLDOUT_PRIMARY, state="visible", timeout=2000)
             txt = await page.locator(self.SOLDOUT_PRIMARY).inner_text()

@@ -9,6 +9,7 @@ coupang_manager.py
 """
 
 import os, re, json, hmac, hashlib, asyncio
+from difflib import SequenceMatcher
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlencode, quote
 
@@ -16,6 +17,11 @@ import httpx
 from dotenv import load_dotenv
 import gspread
 from google.oauth2.service_account import Credentials
+
+try:
+    from rapidfuzz import fuzz as _rf_fuzz
+except Exception:
+    _rf_fuzz = None
 
 load_dotenv()
 
@@ -35,6 +41,14 @@ MYMUNJA_CALLBACK = os.getenv("MYMUNJA_CALLBACK", "").strip()  # 사전등록 발
 COUPANG_ORDER_WEBHOOK = os.getenv("COUPANG_ORDER_WEBHOOK", "").strip()  # 주문알림 Discord 웹훅
 
 GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "safe/service_account.json").strip()
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int((os.getenv(name, str(default)) or "").strip())
+    except Exception:
+        return default
+
 
 # 쿠팡 상품관리 시트 설정 (기존 소싱목록과 별도 시트)
 COUPANG_SHEET_ID        = os.getenv("SHEETS_SPREADSHEET_ID", "").strip()
@@ -513,6 +527,38 @@ SOURCING_DATA_START   = 3
 SOURCING_COL_NAME     = 2   # B열: 상품명
 SOURCING_COL_MINPRICE = 11  # K열: 최소판매금액
 SOURCING_COL_VID      = 15  # O열: vendorItemId(쿠팡)
+SOURCING_MATCH_THRESHOLD = _env_int("SOURCING_MATCH_THRESHOLD", 82)
+SOURCING_MATCH_MIN_GAP   = _env_int("SOURCING_MATCH_MIN_GAP", 6)
+
+
+def _normalize_product_name(name: str) -> str:
+    value = (name or "").strip().lower()
+    value = re.sub(r"[^0-9a-z가-힣]+", " ", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _product_name_variants(name: str) -> list[str]:
+    raw = (name or "").strip()
+    if not raw:
+        return []
+    variants = {raw}
+    if " / " in raw:
+        variants.add(raw.split(" / ", 1)[0].strip())
+    if "/" in raw:
+        variants.add(raw.split("/", 1)[0].strip())
+    return [v for v in variants if v]
+
+
+def _fuzzy_name_score(a: str, b: str) -> int:
+    if not a or not b:
+        return 0
+    if _rf_fuzz is not None:
+        return int(max(
+            _rf_fuzz.ratio(a, b),
+            _rf_fuzz.partial_ratio(a, b),
+            _rf_fuzz.token_set_ratio(a, b),
+        ))
+    return int(SequenceMatcher(None, a, b).ratio() * 100)
 
 async def update_sale_price(vendor_item_id: str, new_price: int) -> bool:
     """
@@ -713,6 +759,7 @@ async def sync_price_from_sourcing():
     소싱목록 K열(최소판매금액) 변동 감지 → 쿠팡 판매가 자동 업데이트
     - 소싱목록 O열(vendorItemId)에 ID가 있어야 동작
     - 여러 vendorItemId가 콤마로 구분된 경우 전부 업데이트
+    - 최소판매금액이 현재 판매가보다 높아질 때만 판매가 상향 조정
     """
     print(f"[SourcingSync] 소싱목록 가격 동기화 확인... ({_now_kst_str()})")
 
@@ -721,9 +768,25 @@ async def sync_price_from_sourcing():
         sh = gc.open_by_key(COUPANG_SHEET_ID)
         ws = sh.worksheet(SOURCING_SHEET)
         rows = ws.get_all_values()
+        ws_product = sh.worksheet(COUPANG_PRODUCT_SHEET)
+        product_rows = ws_product.get_all_values()
     except Exception as e:
         print(f"[SourcingSync] 시트 열기 실패: {e}")
         return
+
+    # 현재 판매가 인덱스 구성 (vendorItemId -> current_sale_price)
+    current_price_by_vid: dict[str, int] = {}
+    for prow in product_rows[PRODUCT_START_ROW - 1:]:
+        if len(prow) < COL_SALE_PRICE:
+            continue
+        vid = (prow[COL_VENDOR_ITEM_ID - 1] or "").strip()
+        price_cell = (prow[COL_SALE_PRICE - 1] or "").strip()
+        if not vid or not price_cell:
+            continue
+        try:
+            current_price_by_vid[vid] = int(re.sub(r"[^0-9]", "", price_cell))
+        except Exception:
+            continue
 
     data_rows = rows[SOURCING_DATA_START - 1:]
     changes = []
@@ -764,13 +827,35 @@ async def sync_price_from_sourcing():
         print(f"[SourcingSync] 가격 변동 감지 → '{name_cell}' | {prev_price:,} → {new_price:,}원 | {len(vendor_item_ids)}개 옵션")
 
         success_ids = []
+        skipped_floor = 0
+        skipped_unknown = 0
         for vid in vendor_item_ids:
+            current_sale_price = current_price_by_vid.get(vid)
+            if current_sale_price is None:
+                prev_state = _price_state.get(vid, {})
+                current_sale_price = prev_state.get("price")
+
+            # 요청 조건: 최소판매금액 > 현재 판매가 인 경우에만 상향 업데이트
+            if current_sale_price is None:
+                skipped_unknown += 1
+                print(f"[SourcingSync] 현재 판매가 미확인 스킵 → vendorItemId={vid}")
+                continue
+            if new_price <= current_sale_price:
+                skipped_floor += 1
+                continue
+
             ok = await update_sale_price(vid, new_price)
             if ok:
                 success_ids.append(vid)
+                current_price_by_vid[vid] = new_price
             await asyncio.sleep(0.2)
 
         _sourcing_price_state[i] = new_price
+
+        if skipped_floor or skipped_unknown:
+            print(
+                f"[SourcingSync] 조건 미충족/미확인 스킵 → floor={skipped_floor}, unknown={skipped_unknown}"
+            )
 
         if success_ids:
             changes.append({
@@ -778,11 +863,16 @@ async def sync_price_from_sourcing():
                 "prev": prev_price,
                 "new": new_price,
                 "count": len(success_ids),
+                "skip_floor": skipped_floor,
+                "skip_unknown": skipped_unknown,
             })
 
     if changes:
         lines = "\n".join(
-            f"• {c['name']}: {c['prev']:,}원 → {c['new']:,}원 ({c['count']}개 옵션)"
+            (
+                f"• {c['name']}: {c['prev']:,}원 → {c['new']:,}원 "
+                f"(업데이트 {c['count']}개, 스킵 {c['skip_floor'] + c['skip_unknown']}개)"
+            )
             for c in changes
         )
         embeds = [{
@@ -797,6 +887,155 @@ async def sync_price_from_sourcing():
         await post_webhook(COUPANG_ORDER_WEBHOOK, "소싱목록 가격 자동 업데이트", embeds=embeds)
     else:
         print("[SourcingSync] 변경 없음")
+
+
+# ──────────────────────────────────────────────
+# 소싱목록 상품명 기반 vendorItemId 자동 매칭 (B열 -> O열)
+# ──────────────────────────────────────────────
+async def auto_match_sourcing_vendor_item_ids():
+    """
+    소싱목록 B열(상품명)과 쿠팡상품관리 B열(상품명)을 비교해
+    O열(vendorItemId)이 비어있는 행을 자동으로 채운다.
+
+    매칭 규칙:
+    1) 정규화 문자열 정확 일치 우선
+    2) 퍼지 매칭은 임계값 + 2등과 점수차 조건 충족 시만 반영
+    """
+    print(f"[SourcingMatch] 자동 매칭 확인... ({_now_kst_str()})")
+
+    try:
+        gc = gspread.authorize(_google_creds())
+        sh = gc.open_by_key(COUPANG_SHEET_ID)
+        ws_sourcing = sh.worksheet(SOURCING_SHEET)
+        ws_product = sh.worksheet(COUPANG_PRODUCT_SHEET)
+        sourcing_rows = ws_sourcing.get_all_values()
+        product_rows = ws_product.get_all_values()
+    except Exception as e:
+        print(f"[SourcingMatch] 시트 열기 실패: {e}")
+        return
+
+    # O열 헤더 보정 (2행)
+    try:
+        header = sourcing_rows[SOURCING_HEADER_ROW - 1] if len(sourcing_rows) >= SOURCING_HEADER_ROW else []
+        if len(header) < SOURCING_COL_VID or not (header[SOURCING_COL_VID - 1] or "").strip():
+            ws_sourcing.update_cell(SOURCING_HEADER_ROW, SOURCING_COL_VID, "vendorItemId(쿠팡)")
+    except Exception as e:
+        print(f"[SourcingMatch] O열 헤더 보정 실패: {e}")
+
+    # 쿠팡상품관리 시트에서 매칭 인덱스 구성
+    # key: 정규화 상품명, value: vendorItemId 집합
+    name_to_vids: dict[str, set[str]] = {}
+    name_display: dict[str, str] = {}
+    for row in product_rows[PRODUCT_START_ROW - 1:]:
+        if len(row) < 2:
+            continue
+        vendor_item_id = (row[COL_VENDOR_ITEM_ID - 1] or "").strip()
+        product_name = (row[COL_PRODUCT_NAME - 1] or "").strip()
+        if not vendor_item_id or not product_name:
+            continue
+        for variant in _product_name_variants(product_name):
+            key = _normalize_product_name(variant)
+            if not key:
+                continue
+            if key not in name_to_vids:
+                name_to_vids[key] = set()
+                name_display[key] = variant
+            name_to_vids[key].add(vendor_item_id)
+
+    if not name_to_vids:
+        print("[SourcingMatch] 쿠팡상품관리에 매칭 대상 상품이 없습니다")
+        return
+
+    candidate_keys = list(name_to_vids.keys())
+    updates: list[dict] = []
+    exact_count = 0
+    fuzzy_count = 0
+
+    # 소싱목록 O열이 비어있는 행만 처리
+    for i, row in enumerate(sourcing_rows[SOURCING_DATA_START - 1:], start=SOURCING_DATA_START):
+        if len(row) < SOURCING_COL_NAME:
+            continue
+
+        sourcing_name = (row[SOURCING_COL_NAME - 1] or "").strip()
+        if not sourcing_name:
+            continue
+
+        existing_vid = (row[SOURCING_COL_VID - 1] or "").strip() if len(row) >= SOURCING_COL_VID else ""
+        if existing_vid:
+            continue
+
+        source_key = _normalize_product_name(sourcing_name)
+        if not source_key:
+            continue
+
+        matched_key = ""
+        matched_score = 100
+
+        # 1) exact
+        if source_key in name_to_vids:
+            matched_key = source_key
+            exact_count += 1
+        else:
+            # 2) fuzzy with confidence gate
+            scored = [(_fuzzy_name_score(source_key, ckey), ckey) for ckey in candidate_keys]
+            scored.sort(key=lambda x: x[0], reverse=True)
+            if not scored:
+                continue
+            best_score, best_key = scored[0]
+            second_score = scored[1][0] if len(scored) > 1 else 0
+            if best_score >= SOURCING_MATCH_THRESHOLD and (best_score - second_score) >= SOURCING_MATCH_MIN_GAP:
+                matched_key = best_key
+                matched_score = best_score
+                fuzzy_count += 1
+            else:
+                continue
+
+        vids = sorted(name_to_vids[matched_key], key=lambda x: int(x) if x.isdigit() else x)
+        updates.append({
+            "row": i,
+            "vids": ",".join(vids),
+            "source_name": sourcing_name,
+            "matched_name": name_display.get(matched_key, matched_key),
+            "score": matched_score,
+        })
+
+    if not updates:
+        print("[SourcingMatch] 신규 매칭 없음")
+        return
+
+    try:
+        batch_body = [
+            {
+                "range": gspread.utils.rowcol_to_a1(u["row"], SOURCING_COL_VID),
+                "values": [[u["vids"]]],
+            }
+            for u in updates
+        ]
+        ws_sourcing.batch_update(batch_body, value_input_option="USER_ENTERED")
+    except Exception as e:
+        print(f"[SourcingMatch] O열 일괄 업데이트 실패: {e}")
+        return
+
+    print(f"[SourcingMatch] ✅ {len(updates)}건 자동 매칭 반영 (exact={exact_count}, fuzzy={fuzzy_count})")
+
+    if COUPANG_ORDER_WEBHOOK:
+        preview_lines = [
+            f"• {u['source_name']} → {u['matched_name']} ({u['score']}점)"
+            for u in updates[:10]
+        ]
+        if len(updates) > 10:
+            preview_lines.append(f"... 외 {len(updates) - 10}건")
+        embeds = [{
+            "title": "🔗 소싱목록 자동 매칭",
+            "description": "\n".join(preview_lines),
+            "color": 3447003,
+            "fields": [
+                {"name": "반영 건수", "value": f"{len(updates)}건", "inline": True},
+                {"name": "정확 일치", "value": f"{exact_count}건", "inline": True},
+                {"name": "유사 매칭", "value": f"{fuzzy_count}건", "inline": True},
+            ],
+        }]
+        await post_webhook(COUPANG_ORDER_WEBHOOK, "소싱목록 O열 자동 매칭 완료", embeds=embeds)
 
 
 # ──────────────────────────────────────────────
@@ -1019,11 +1258,17 @@ async def get_vendor_item_stock(vendor_item_id: str) -> dict:
     """단일 vendorItemId 재고·상태 조회"""
     path = (
         f"/v2/providers/seller_api/apis/api/v1/marketplace"
-        f"/vendor-items/{vendor_item_id}"
+        f"/vendor-items/{vendor_item_id}/inventories"
     )
     try:
         result = await _coupang_get(path)
         return result.get("data", {})
+    except httpx.HTTPStatusError as e:
+        if getattr(e.response, "status_code", None) == 404:
+            print(f"[StockCheck] vendorItemId={vendor_item_id} 미존재/비공개(404) - 시트 확인 필요")
+            return {}
+        print(f"[StockCheck] vendorItemId={vendor_item_id} 조회 실패: {e}")
+        return {}
     except Exception as e:
         print(f"[StockCheck] vendorItemId={vendor_item_id} 조회 실패: {e}")
         return {}
@@ -1059,7 +1304,10 @@ async def auto_stock_out_check():
             await asyncio.sleep(0.3)
             continue
 
-        real_stock = item_data.get("maximumBuyCount", -1)
+        # inventories API는 quantity(재고수량) 기준
+        real_stock = item_data.get("quantity")
+        if real_stock is None:
+            real_stock = item_data.get("maximumBuyCount", -1)
         on_sale    = item_data.get("onSale", True)
         ts = _now_kst_str()
 
@@ -1278,6 +1526,13 @@ async def sourcing_price_job():
         await sync_price_from_sourcing()
     except Exception as e:
         print(f"[SourcingSync Job] 오류: {e}")
+
+async def sourcing_match_job():
+    """15분마다 실행: 소싱목록 B열 상품명 기반 O열 vendorItemId 자동 매칭"""
+    try:
+        await auto_match_sourcing_vendor_item_ids()
+    except Exception as e:
+        print(f"[SourcingMatch Job] 오류: {e}")
 
 async def shipping_job():
     """5분마다 실행: 시트 송장번호 감지 → 쿠팡 배송중 처리"""

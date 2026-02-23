@@ -118,6 +118,7 @@ import musinsa_price_watch as mpw
 from coupang_manager import (
     coupang_order_job,
     coupang_sync_job,
+    sourcing_match_job,
     sourcing_price_job,
     shipping_job,
     stock_check_job,
@@ -173,6 +174,7 @@ async def main():
     await check_once()           # 무신사봇
     await coupang_sync_job()     # 쿠팡 상품 동기화
     await coupang_order_job()    # 쿠팡 주문 처리
+    await sourcing_match_job()   # 소싱목록 상품명 자동 매칭 (O열 vendorItemId 채움)
     await sourcing_price_job()   # 소싱목록 최초 상태 저장 (기준점 설정)
     await shipping_job()          # 발송대기 송장 확인 (미처리분 즐시 처리)
     await stock_check_job()       # 실재고 최초 점검
@@ -219,6 +221,14 @@ async def main():
         trigger=IntervalTrigger(minutes=5, jitter=25),
         id="sourcing_price",
         name="소싱목록 가격 자동 동기화",
+    )
+
+    # 신규: 소싱목록 상품명 자동 매칭 → O열 vendorItemId 채움 (15분)
+    sched.add_job(
+        sourcing_match_job,
+        trigger=IntervalTrigger(minutes=15, jitter=20),
+        id="sourcing_match",
+        name="소싱목록 자동 매칭",
     )
 
     # 신규: 발송처리 자동화 - 송장번호 감지 → 쿠팡 배송중 처리 (5분)
