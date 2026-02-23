@@ -759,9 +759,6 @@ async def sync_price_from_sourcing():
 # 발송처리 자동화 (송장번호 감지 → 쿠팡 배송중 처리)
 # ──────────────────────────────────────────────
 
-# 이미 배송처리된 행 캐시 (중복 방지)
-_shipped_rows: set[int] = set()
-
 async def get_shipment_box_id(order_id: str) -> tuple[str, str]:
     """orderId로 (shipmentBoxId, vendorItemId) 조회"""
     path = f"/v2/providers/openapi/apis/api/v4/vendors/{COUPANG_VENDOR_ID}/ordersheets"
@@ -853,11 +850,10 @@ async def process_shipping():
 
     data_rows = rows[ORDER_START_ROW - 1:]
     shipped_count = 0
+    # Prevent duplicate API calls within the same run using stable business keys.
+    processed_keys_in_run: set[str] = set()
 
     for i, row in enumerate(data_rows, start=ORDER_START_ROW):
-        if i in _shipped_rows:
-            continue
-
         # 컬럼 충분한지 확인
         if len(row) < COL_ORDER_SHIP_DATE:
             continue
@@ -865,7 +861,6 @@ async def process_shipping():
         order_id      = row[COL_ORDER_ID - 1].strip()
         product_name  = row[COL_ORDER_PRODUCT - 1].strip()
         buyer_name    = row[COL_ORDER_NAME - 1].strip()
-        phone         = row[COL_ORDER_PHONE - 1].strip()
         status        = row[COL_ORDER_STATUS - 1].strip()
         order_item_id = row[COL_ORDER_ITEM_ID - 1].strip()
         invoice       = row[COL_ORDER_INVOICE - 1].strip()    # K열
@@ -875,10 +870,17 @@ async def process_shipping():
         # 처리 조건: 상품준비중 + 송장/택배사 존재 + 미처리
         if status != "상품준비중":
             continue
+        if not order_id:
+            continue
         if not invoice or not carrier:
             continue
+
+        dedupe_key = f"{order_id}|{invoice}|{carrier.upper()}"
+        if dedupe_key in processed_keys_in_run:
+            continue
+
         if ship_date:  # 이미 처리됨
-            _shipped_rows.add(i)
+            processed_keys_in_run.add(dedupe_key)
             continue
         # J열 비어있으면 orderId로 shipmentBoxId 실시간 조회
         vendor_item_id = ""
@@ -918,7 +920,7 @@ async def process_shipping():
             }]
             await post_webhook(COUPANG_ORDER_WEBHOOK, "배송처리 완료", embeds=embeds)
 
-            _shipped_rows.add(i)
+            processed_keys_in_run.add(dedupe_key)
             shipped_count += 1
         
         await asyncio.sleep(0.5)
@@ -1134,10 +1136,24 @@ async def update_settlement():
     for product, data in sorted(by_product.items(), key=lambda x: -x[1]["qty"]):
         output.append([product, str(data["count"]), str(data["qty"]), "", ""])
 
-    # 시트 전체 갱신
+    # 시트 전체 갱신 (clear-then-write를 피해서 실패 시 기존 데이터 보존)
     try:
-        settle_ws.clear()
-        settle_ws.update("A1", output)
+        existing_data_rows = len(settle_ws.get_all_values())
+        normalized_output = [row[:5] + [""] * max(0, 5 - len(row)) for row in output]
+        required_rows = len(normalized_output)
+
+        if settle_ws.row_count < required_rows:
+            settle_ws.add_rows(required_rows - settle_ws.row_count)
+
+        settle_ws.update(
+            f"A1:E{required_rows}",
+            normalized_output,
+            value_input_option="USER_ENTERED",
+        )
+
+        if existing_data_rows > required_rows:
+            settle_ws.batch_clear([f"A{required_rows + 1}:E{existing_data_rows}"])
+
         print(f"[Settlement] ✅ 정산집계 갱신 완료 | 월별 {len(monthly)}개월 / 상품 {len(by_product)}종")
     except Exception as e:
         print(f"[Settlement] 시트 기록 실패: {e}")
