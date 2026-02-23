@@ -128,6 +128,9 @@ def normalize_carrier_code(value: str) -> str:
     return upper
 
 COUPANG_BASE_URL = "https://api-gateway.coupang.com"
+COUPANG_OPENAPI_V5_VENDOR = f"/v2/providers/openapi/apis/api/v5/vendors/{COUPANG_VENDOR_ID}"
+COUPANG_OPENAPI_V4_VENDOR = f"/v2/providers/openapi/apis/api/v4/vendors/{COUPANG_VENDOR_ID}"
+COUPANG_SELLER_MARKETPLACE = "/v2/providers/seller_api/apis/api/v1/marketplace"
 
 # ──────────────────────────────────────────────
 # 쿠팡 Open API HMAC 인증
@@ -155,40 +158,63 @@ def _make_coupang_signature(method: str, path: str, query: str = "") -> dict:
         "Content-Type": "application/json;charset=UTF-8",
     }
 
-async def _coupang_get(path: str, params: dict = None) -> dict:
-    """쿠팡 API GET 요청"""
-    # 쿠팡 HMAC 서명은 쿼리스트링을 알파벳 순 정렬해야 함
-    query = urlencode(sorted(params.items())) if params else ""
+def _encode_query(params: dict | None) -> str:
+    """Build a stable query string for Coupang HMAC signing."""
+    if not params:
+        return ""
+    return urlencode(sorted(params.items()), doseq=True)
+
+
+def _log_api_error(method: str, response: httpx.Response) -> None:
+    body_preview = response.text[:500]
+    print(f"[API Error] {response.status_code} {method} | URL: {response.url}")
+    print(f"[API Error] Response: {body_preview}")
+    if response.status_code == 404 and "No exactly matching API specification" in body_preview:
+        print("[API Error] Hint: endpoint path/version or HTTP method may be wrong for this API.")
+
+
+async def _coupang_get(path: str, params: dict | None = None) -> dict:
+    """Coupang API GET request"""
+    query = _encode_query(params)
     full_path = f"{path}?{query}" if query else path
     headers = _make_coupang_signature("GET", path, query)
-    
+
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.get(COUPANG_BASE_URL + full_path, headers=headers)
         if not r.is_success:
-            print(f"[API Error] {r.status_code} | URL: {r.url}")
-            print(f"[API Error] Response: {r.text[:500]}")
+            _log_api_error("GET", r)
         r.raise_for_status()
         return r.json()
 
-async def _coupang_put(path: str, body: dict) -> dict:
-    """쿠팡 API PUT 요청"""
-    headers = _make_coupang_signature("PUT", path)
+
+async def _coupang_put(path: str, body: dict | None = None, params: dict | None = None) -> dict:
+    """Coupang API PUT request"""
+    query = _encode_query(params)
+    full_path = f"{path}?{query}" if query else path
+    headers = _make_coupang_signature("PUT", path, query)
     async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.put(COUPANG_BASE_URL + path, headers=headers, json=body)
+        if body is None:
+            r = await client.put(COUPANG_BASE_URL + full_path, headers=headers)
+        else:
+            r = await client.put(COUPANG_BASE_URL + full_path, headers=headers, json=body)
         if not r.is_success:
-            print(f"[API Error] {r.status_code} | URL: {r.url}")
-            print(f"[API Error] Response: {r.text[:500]}")
+            _log_api_error("PUT", r)
         r.raise_for_status()
         return r.json()
 
-async def _coupang_post(path: str, body: dict) -> dict:
-    """쿠팡 API POST 요청"""
-    headers = _make_coupang_signature("POST", path)
+
+async def _coupang_post(path: str, body: dict | None = None, params: dict | None = None) -> dict:
+    """Coupang API POST request"""
+    query = _encode_query(params)
+    full_path = f"{path}?{query}" if query else path
+    headers = _make_coupang_signature("POST", path, query)
     async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.post(COUPANG_BASE_URL + path, headers=headers, json=body)
+        if body is None:
+            r = await client.post(COUPANG_BASE_URL + full_path, headers=headers)
+        else:
+            r = await client.post(COUPANG_BASE_URL + full_path, headers=headers, json=body)
         if not r.is_success:
-            print(f"[API Error] {r.status_code} | URL: {r.url}")
-            print(f"[API Error] Response: {r.text[:500]}")
+            _log_api_error("POST", r)
         r.raise_for_status()
         return r.json()
 
@@ -359,7 +385,7 @@ async def get_orders_by_status(status: str, days: int = 7) -> list[dict]:
     status: ACCEPT(결제완료) | INSTRUCT(상품준비중)
     days: 몇 일 전까지 조회할지 (기본 7일)
     """
-    path = f"/v2/providers/openapi/apis/api/v4/vendors/{COUPANG_VENDOR_ID}/ordersheets"
+    path = f"{COUPANG_OPENAPI_V5_VENDOR}/ordersheets"
     # 이 API는 하루 단위 조회가 기본 (일단위 페이징)
     # 최근 days일치 데이터를 하루씩 합산하려면 루프가 필요하지만
     # 실용상 오늘 + 어제로 제한
@@ -412,18 +438,52 @@ async def get_new_orders() -> list[dict]:
     """결제완료(ACCEPT) 상태 주문 목록 조회 (하위 호환용)"""
     return await get_orders_by_status("ACCEPT")
 
-async def confirm_order(order_id: str, vendor_item_id: str) -> bool:
-    """발주 확인 처리 (→ 상품준비중 상태로 변경됨)"""
-    path = f"/v2/providers/seller_api/apis/api/v1/marketplace/vendor-orders/{order_id}/confirm"
-    try:
-        result = await _coupang_post(path, {"vendorId": COUPANG_VENDOR_ID})
-        code = result.get("code", "")
-        if code == "SUCCESS":
-            print(f"[Order] ✅ 발주확인 완료 → 주문ID: {order_id}")
-            return True
-        else:
-            print(f"[Order] ❌ 발주확인 실패 → {result}")
+async def confirm_order(order_id: str, shipment_box_id: str) -> bool:
+    """결제완료 주문을 상품준비중으로 변경한다."""
+    box_id = str(shipment_box_id or "").strip()
+    if not box_id:
+        box_id, _ = await get_shipment_box_id(order_id)
+        box_id = str(box_id or "").strip()
+        if not box_id:
+            print(f"[Order] ❌ 발주확인 실패 → shipmentBoxId 없음 (orderId={order_id})")
             return False
+    if not box_id.isdigit():
+        print(f"[Order] ❌ 발주확인 실패 → shipmentBoxId 형식오류 (orderId={order_id}, shipmentBoxId={box_id})")
+        return False
+
+    path = f"{COUPANG_OPENAPI_V5_VENDOR}/ordersheets/acknowledgement"
+    body = {
+        "vendorId": COUPANG_VENDOR_ID,
+        "shipmentBoxIds": [int(box_id)],
+    }
+
+    try:
+        result = await _coupang_put(path, body)
+        code = str(result.get("code", ""))
+        data = result.get("data", {}) if isinstance(result, dict) else {}
+        response_list = data.get("responseList", []) if isinstance(data, dict) else []
+
+        response_item = None
+        for item in response_list:
+            if str(item.get("shipmentBoxId", "")) == box_id:
+                response_item = item
+                break
+        if response_item is None and response_list:
+            response_item = response_list[0]
+
+        if code in ("200", "SUCCESS") and response_item and bool(response_item.get("succeed")):
+            print(f"[Order] ✅ 발주확인 완료 → 주문ID: {order_id} shipmentBoxId={box_id}")
+            return True
+
+        reason = ""
+        if response_item:
+            reason = str(response_item.get("resultMessage", "") or response_item.get("resultCode", ""))
+        if not reason and isinstance(data, dict):
+            reason = str(data.get("responseMessage", ""))
+        if not reason:
+            reason = str(result.get("message", ""))
+        print(f"[Order] ❌ 발주확인 실패 → 주문ID: {order_id} shipmentBoxId={box_id} | {reason}")
+        return False
     except Exception as e:
         print(f"[Order] 발주확인 예외: {e}")
         return False
@@ -529,7 +589,7 @@ async def process_new_orders():
         phone        = receiver.get("safeNumber", receiver.get("phone", "")) or order_phone_by_id.get(order_id, "")
         buyer_name   = receiver.get("name", "고객")
         qty          = item.get("quantity", 1)
-        vendor_item_id = str(item.get("vendorItemId", ""))
+        shipment_box_id = str(order.get("shipmentBoxId", ""))
 
         if order_id in processed_ids:
             row_idx = order_row_by_id.get(order_id)
@@ -545,7 +605,7 @@ async def process_new_orders():
 
             if needs_status_retry:
                 print(f"  → [결제완료-재시도] {order_id} | {product_name} x{qty} | {buyer_name}")
-                confirmed = await confirm_order(order_id, vendor_item_id)
+                confirmed = await confirm_order(order_id, shipment_box_id)
                 if confirmed:
                     _queue_sheet_cell_update(pending_cell_updates, row_idx, COL_ORDER_STATUS, "상품준비중")
                     order_status_by_id[order_id] = "상품준비중"
@@ -567,7 +627,7 @@ async def process_new_orders():
         print(f"  → [결제완료] {order_id} | {product_name} x{qty} | {buyer_name}")
 
         # 1. 발주확인 처리 (→ 상품준비중으로 자동 전환)
-        confirmed = await confirm_order(order_id, vendor_item_id)
+        confirmed = await confirm_order(order_id, shipment_box_id)
         row_status = "상품준비중" if confirmed else "결제완료"
         if not confirmed:
             print(f"  ⚠️ 발주확인 실패 — 시트 상태를 결제완료로 유지: {order_id}")
@@ -700,21 +760,13 @@ def _fuzzy_name_score(a: str, b: str) -> int:
 async def update_sale_price(vendor_item_id: str, new_price: int) -> bool:
     """
     판매가 변경 API 호출
-    forceSalePriceUpdate=true → 변경 비율 제한 없음
+    PUT /vendor-items/{vendorItemId}/prices/{price}
     """
-    path = (
-        f"/v2/providers/seller_api/apis/api/v1/marketplace"
-        f"/vendor-items/{vendor_item_id}/prices"
-    )
-    body = {
-        "vendorItemId":       int(vendor_item_id),
-        "salePrice":          new_price,
-        "forceSalePriceUpdate": True,
-    }
+    path = f"{COUPANG_SELLER_MARKETPLACE}/vendor-items/{vendor_item_id}/prices/{new_price}"
     try:
-        result = await _coupang_put(path, body)
-        code = result.get("code", "")
-        if code == "SUCCESS":
+        result = await _coupang_put(path, params={"forceSalePriceUpdate": "true"})
+        code = str(result.get("code", ""))
+        if code in ("SUCCESS", "200"):
             print(f"[Price] ✅ 판매가 변경 → vendorItemId={vendor_item_id} | {new_price:,}원")
             return True
         else:
@@ -726,18 +778,11 @@ async def update_sale_price(vendor_item_id: str, new_price: int) -> bool:
 
 async def update_stock(vendor_item_id: str, quantity: int) -> bool:
     """재고 수량 변경 API"""
-    path = (
-        f"/v2/providers/seller_api/apis/api/v1/marketplace"
-        f"/vendor-items/{vendor_item_id}/quantities"
-    )
-    body = {
-        "vendorItemId":    int(vendor_item_id),
-        "maximumBuyCount": quantity,
-    }
+    path = f"{COUPANG_SELLER_MARKETPLACE}/vendor-items/{vendor_item_id}/quantities/{quantity}"
     try:
-        result = await _coupang_put(path, body)
-        code = result.get("code", "")
-        if code == "SUCCESS":
+        result = await _coupang_put(path)
+        code = str(result.get("code", ""))
+        if code in ("SUCCESS", "200"):
             print(f"[Stock] ✅ 재고 변경 → vendorItemId={vendor_item_id} | {quantity}개")
             return True
         else:
@@ -749,19 +794,13 @@ async def update_stock(vendor_item_id: str, quantity: int) -> bool:
 
 async def update_sale_status(vendor_item_id: str, on_sale: bool) -> bool:
     """판매 상태 변경 API (판매중 / 판매중지)"""
-    path = (
-        f"/v2/providers/seller_api/apis/api/v1/marketplace"
-        f"/vendor-items/{vendor_item_id}/sale-status"
-    )
-    body = {
-        "vendorItemId": int(vendor_item_id),
-        "onSale":       on_sale,
-    }
+    action = "resume" if on_sale else "stop"
+    path = f"{COUPANG_SELLER_MARKETPLACE}/vendor-items/{vendor_item_id}/sales/{action}"
     try:
-        result = await _coupang_put(path, body)
-        code = result.get("code", "")
+        result = await _coupang_put(path)
+        code = str(result.get("code", ""))
         status_str = "판매중" if on_sale else "판매중지(품절)"
-        if code == "SUCCESS":
+        if code in ("SUCCESS", "200"):
             print(f"[Status] ✅ 판매상태 변경 → {vendor_item_id} | {status_str}")
             return True
         else:
@@ -1190,7 +1229,7 @@ async def get_shipment_box_id(order_id: str) -> tuple[str, str]:
     """orderId로 (shipmentBoxId, vendorItemId) 조회"""
     # 1) orderId 단건 조회 (v5) 우선 시도
     try:
-        path = f"/v2/providers/openapi/apis/api/v5/vendors/{COUPANG_VENDOR_ID}/{order_id}/ordersheets"
+        path = f"{COUPANG_OPENAPI_V5_VENDOR}/{order_id}/ordersheets"
         result = await _coupang_get(path)
         order = result.get("data", {}) or {}
         box_id = str(order.get("shipmentBoxId", ""))
@@ -1201,8 +1240,8 @@ async def get_shipment_box_id(order_id: str) -> tuple[str, str]:
     except Exception as e:
         print(f"[Ship] orderId 단건조회(v5) 실패 → {e}")
 
-    # 2) 목록 조회 fallback (v4)
-    path = f"/v2/providers/openapi/apis/api/v4/vendors/{COUPANG_VENDOR_ID}/ordersheets"
+    # 2) 목록 조회 fallback (v5)
+    path = f"{COUPANG_OPENAPI_V5_VENDOR}/ordersheets"
     today = datetime.now(KST).strftime("%Y-%m-%d")
     from_date = (datetime.now(KST) - timedelta(days=14)).strftime("%Y-%m-%d")
     try:
@@ -1263,7 +1302,7 @@ async def ship_order_api(
 ) -> bool:
     """
     쿠팡 송장업로드 API (공식 송장업로드 처리)
-    POST /v2/providers/openapi/apis/api/v4/vendors/{vendorId}/ordersheets/invoice
+    POST /v2/providers/openapi/apis/api/v4/vendors/{vendorId}/orders/invoices
     """
     if not order_item_id:
         print("[Ship] ❌ shipmentBoxId 누락 — 송장등록 스킵")
@@ -1272,7 +1311,7 @@ async def ship_order_api(
         print(f"[Ship] ❌ vendorItemId 누락 — orderId={order_id} shipmentBoxId={order_item_id}")
         return False
 
-    path = f"/v2/providers/openapi/apis/api/v4/vendors/{COUPANG_VENDOR_ID}/orders/invoices"
+    path = f"{COUPANG_OPENAPI_V4_VENDOR}/orders/invoices"
     body = {
         "vendorId": COUPANG_VENDOR_ID,
         "orderSheetInvoiceApplyDtos": [{
@@ -1426,10 +1465,7 @@ _stock_status: dict[str, bool] = {}  # {vendorItemId: is_on_sale}
 
 async def get_vendor_item_stock(vendor_item_id: str) -> dict:
     """단일 vendorItemId 재고·상태 조회"""
-    path = (
-        f"/v2/providers/seller_api/apis/api/v1/marketplace"
-        f"/vendor-items/{vendor_item_id}/inventories"
-    )
+    path = f"{COUPANG_SELLER_MARKETPLACE}/vendor-items/{vendor_item_id}/inventories"
     try:
         result = await _coupang_get(path)
         return result.get("data", {})
@@ -1475,11 +1511,22 @@ async def auto_stock_out_check():
             await asyncio.sleep(0.3)
             continue
 
-        # inventories API는 quantity(재고수량) 기준
-        real_stock = item_data.get("quantity")
+        # inventories API는 amountInStock 필드를 기본 재고로 사용
+        real_stock = item_data.get("amountInStock")
+        if real_stock is None:
+            real_stock = item_data.get("quantity")
         if real_stock is None:
             real_stock = item_data.get("maximumBuyCount", -1)
-        on_sale    = item_data.get("onSale", True)
+        try:
+            real_stock = int(real_stock)
+        except (TypeError, ValueError):
+            real_stock = -1
+
+        on_sale_raw = item_data.get("onSale", True)
+        if isinstance(on_sale_raw, str):
+            on_sale = on_sale_raw.strip().lower() in {"true", "1", "y", "yes"}
+        else:
+            on_sale = bool(on_sale_raw)
         ts = _now_kst_str()
 
         prev_on_sale = _stock_status.get(vendor_item_id, None)

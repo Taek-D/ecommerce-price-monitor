@@ -32,6 +32,7 @@ COUPANG_VENDOR_ID  = os.getenv("COUPANG_VENDOR_ID", "").strip()
 SPREADSHEET_ID     = os.getenv("SHEETS_SPREADSHEET_ID", "").strip()
 SERVICE_ACCOUNT    = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "safe/service_account.json").strip()
 COUPANG_BASE_URL   = "https://api-gateway.coupang.com"
+COUPANG_SELLER_MARKETPLACE = "/v2/providers/seller_api/apis/api/v1/marketplace"
 KST = timezone(timedelta(hours=9))
 
 # 소싱목록 컬럼 위치 (2행이 헤더, 3행부터 데이터)
@@ -81,7 +82,7 @@ async def fetch_all_coupang_products():
     next_token = None
 
     while True:
-        path = f"/v2/providers/seller_api/apis/api/v1/marketplace/seller-products"
+        path = f"{COUPANG_SELLER_MARKETPLACE}/seller-products"
         params = {
             "vendorId": COUPANG_VENDOR_ID,
             "limit": 100,
@@ -120,7 +121,7 @@ async def fetch_all_coupang_products():
             seller_product_id = product.get("sellerProductId")
             product_name = product.get("sellerProductName", "")
 
-            detail_path = f"/v2/providers/seller_api/apis/api/v1/marketplace/seller-products/{seller_product_id}"
+            detail_path = f"{COUPANG_SELLER_MARKETPLACE}/seller-products/{seller_product_id}"
             detail_headers = _make_sig("GET", detail_path)
             try:
                 async with httpx.AsyncClient(timeout=30) as client:
@@ -141,7 +142,7 @@ async def fetch_all_coupang_products():
                     continue
 
                 # 인베토리 API로 실제 판매상태 확인
-                inv_path = f"/v2/providers/seller_api/apis/api/v1/marketplace/vendor-items/{vendor_item_id}/inventories"
+                inv_path = f"{COUPANG_SELLER_MARKETPLACE}/vendor-items/{vendor_item_id}/inventories"
                 inv_headers = _make_sig("GET", inv_path)
                 try:
                     async with httpx.AsyncClient(timeout=30) as client:
@@ -162,8 +163,8 @@ async def fetch_all_coupang_products():
                     "vendorItemId": vendor_item_id,
                     "itemName":     item.get("itemName", product_name),
                     "productName":  product_name,
-                    "salePrice":    inv_data.get("price", item.get("salePrice", 0)),
-                    "stock":        inv_data.get("quantity", item.get("maximumBuyCount", 0)),
+                    "salePrice":    inv_data.get("salePrice", inv_data.get("price", item.get("salePrice", 0))),
+                    "stock":        inv_data.get("amountInStock", inv_data.get("quantity", item.get("maximumBuyCount", 0))),
                     "status":       item_status,
                 })
                 await asyncio.sleep(0.05)
