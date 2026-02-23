@@ -6,8 +6,101 @@ musinsa-bot + 쿠팡 자동화 통합 실행
 """
 
 import asyncio
+import os
+import sys
+from pathlib import Path
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from dotenv import load_dotenv
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+os.chdir(PROJECT_ROOT)
+load_dotenv(PROJECT_ROOT / ".env")
+LOCK_FILE = PROJECT_ROOT / ".main.lock"
+_INSTANCE_LOCK_HELD = False
+
+
+def _configure_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(errors="replace")
+            except Exception:
+                pass
+
+
+_configure_stdio()
+
+
+def _read_lock_pid() -> int | None:
+    try:
+        raw = LOCK_FILE.read_text(encoding="utf-8").strip()
+        return int(raw)
+    except Exception:
+        return None
+
+
+def _is_pid_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def acquire_single_instance_lock() -> bool:
+    global _INSTANCE_LOCK_HELD
+    if _INSTANCE_LOCK_HELD:
+        return True
+
+    for _ in range(2):
+        try:
+            fd = os.open(str(LOCK_FILE), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            with os.fdopen(fd, "w", encoding="utf-8") as lock_fp:
+                lock_fp.write(str(os.getpid()))
+            _INSTANCE_LOCK_HELD = True
+            return True
+        except FileExistsError:
+            existing_pid = _read_lock_pid()
+            if existing_pid and _is_pid_running(existing_pid):
+                print(f"[SingleInstance] already running (pid={existing_pid}); exit.")
+                return False
+            try:
+                LOCK_FILE.unlink()
+                print("[SingleInstance] removed stale lock file.")
+            except FileNotFoundError:
+                continue
+            except Exception as e:
+                print(f"[SingleInstance] stale lock cleanup failed: {e}")
+                return False
+
+    print("[SingleInstance] lock acquire failed.")
+    return False
+
+
+def release_single_instance_lock() -> None:
+    global _INSTANCE_LOCK_HELD
+    if not _INSTANCE_LOCK_HELD:
+        return
+
+    try:
+        existing_pid = _read_lock_pid()
+        if existing_pid is None or existing_pid == os.getpid():
+            LOCK_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
+    finally:
+        _INSTANCE_LOCK_HELD = False
+
 
 # 기존 모듈
 from musinsa_price_watch import (
@@ -15,6 +108,7 @@ from musinsa_price_watch import (
     load_urls_from_sheet,
     check_once,
     post_webhook,
+    log_webhook_routing_once,
     DEFAULT_WEBHOOK,
     URLS_RELOAD_MINUTES,
 )
@@ -43,6 +137,8 @@ async def reload_urls_job():
 
 
 async def main():
+    log_webhook_routing_once()
+
     print("=" * 50)
     print("  통합 이커머스 자동화 봇 시작")
     print("=" * 50)
@@ -148,4 +244,10 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    if not acquire_single_instance_lock():
+        sys.exit(0)
+
+    try:
+        asyncio.run(main())
+    finally:
+        release_single_instance_lock()

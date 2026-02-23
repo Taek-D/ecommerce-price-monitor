@@ -12,7 +12,9 @@ __pycache__/
 # Local agent/runtime state
 docs/.bkit-memory.json
 docs/.pdca-status.json
+docs/.pdca-snapshots/
 .claude/settings.local.json
+.main.lock
 
 # Backup files
 *백업본*

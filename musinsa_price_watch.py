@@ -108,6 +108,13 @@ EXCLUDE_KEYWORDS = [
 # ---------------- 환경/웹훅 ----------------
 load_dotenv()
 
+def _env_first(*names: str) -> str:
+    for name in names:
+        value = os.getenv(name, "").strip()
+        if value:
+            return value
+    return ""
+
 def _env_int(name: str, default: int, min_value: int = 1) -> int:
     try:
         return max(min_value, int((os.getenv(name, str(default)) or "").strip()))
@@ -135,12 +142,13 @@ DRY_RUN = _env_bool("DRY_RUN", default=False)
 SHEETS_SPREADSHEET_ID = os.getenv("SHEETS_SPREADSHEET_ID", "").strip()
 SHEETS_WORKSHEET_NAME = (os.getenv("SHEETS_WORKSHEET_NAME", SHEETS_WORKSHEET_NAME) or "").strip() or "소싱목록"
 
-DEFAULT_WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
-OLIVE_WEBHOOK = os.getenv("OLIVE_WEBHOOK", "").strip()
-GMARKET_WEBHOOK = os.getenv("GMARKET_WEBHOOK", "").strip()
-TWENTYNINE_WEBHOOK = os.getenv("TWENTYNINE_WEBHOOK", "").strip()
-AUCTION_WEBHOOK = os.getenv("AUCTION_WEBHOOK", "").strip()
-ELEVENST_WEBHOOK = os.getenv("ELEVENST_WEBHOOK", "").strip()
+DEFAULT_WEBHOOK = _env_first("DISCORD_WEBHOOK_URL", "DEFAULT_WEBHOOK")
+MUSINSA_WEBHOOK = _env_first("MUSINSA_WEBHOOK")
+OLIVE_WEBHOOK = _env_first("OLIVE_WEBHOOK", "OLIVEYOUNG_WEBHOOK")
+GMARKET_WEBHOOK = _env_first("GMARKET_WEBHOOK")
+TWENTYNINE_WEBHOOK = _env_first("TWENTYNINE_WEBHOOK", "29CM_WEBHOOK")
+AUCTION_WEBHOOK = _env_first("AUCTION_WEBHOOK")
+ELEVENST_WEBHOOK = _env_first("ELEVENST_WEBHOOK", "ELEVENSTREET_WEBHOOK")
 
 GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "safe/service_account.json").strip()
 
@@ -362,7 +370,7 @@ class MusinsaAdapter(BaseAdapter):
     ALLOWED_PREFIXES = MUSINSA_PREFIXES
     EXACT_PRICE_SELECTOR = MUSINSA_EXACT_PRICE_SELECTOR
     SOLDOUT_SELECTOR = MUSINSA_SOLDOUT_SELECTOR
-    def webhook_url(self) -> str: return DEFAULT_WEBHOOK
+    def webhook_url(self) -> str: return MUSINSA_WEBHOOK or DEFAULT_WEBHOOK
     async def is_sold_out(self, page) -> bool:
         try:
             await page.wait_for_selector(self.SOLDOUT_SELECTOR, state="visible", timeout=2000)
@@ -693,6 +701,38 @@ ADAPTERS: list[BaseAdapter] = [
     ElevenStAdapter(),
     UniversalAdapter(),
 ]
+
+_WEBHOOK_ROUTE_WARNED = False
+
+
+def _webhook_routing_summary() -> dict[str, str]:
+    return {
+        "musinsa": "site" if MUSINSA_WEBHOOK else "default",
+        "oliveyoung": "site" if OLIVE_WEBHOOK else "default",
+        "gmarket": "site" if GMARKET_WEBHOOK else "default",
+        "29cm": "site" if TWENTYNINE_WEBHOOK else "default",
+        "auction": "site" if AUCTION_WEBHOOK else "default",
+        "11st": "site" if ELEVENST_WEBHOOK else "default",
+        "universal": "default",
+    }
+
+
+def log_webhook_routing_once() -> None:
+    global _WEBHOOK_ROUTE_WARNED
+    if _WEBHOOK_ROUTE_WARNED:
+        return
+    _WEBHOOK_ROUTE_WARNED = True
+
+    summary = _webhook_routing_summary()
+    route_text = ", ".join(f"{name}={route}" for name, route in summary.items())
+    print(f"[Webhook Routing] {route_text}")
+
+    default_sites = [name for name, route in summary.items() if route == "default" and name != "universal"]
+    if default_sites:
+        print(
+            "[Webhook Routing] site webhook not set -> fallback to default: "
+            + ", ".join(default_sites)
+        )
 
 def pick_adapter(url: str) -> BaseAdapter:
     for ad in ADAPTERS:
