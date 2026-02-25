@@ -352,6 +352,14 @@ def _now_kst_str() -> str:
     return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _coupang_date_with_tz(dt: datetime) -> str:
+    """쿠팡 ordersheets 조회용 날짜 포맷: yyyy-MM-dd+0X:00"""
+    offset = dt.strftime("%z")
+    if len(offset) == 5:
+        offset = f"{offset[:3]}:{offset[3:]}"
+    return f"{dt.strftime('%Y-%m-%d')}{offset}"
+
+
 def _queue_sheet_cell_update(pending: dict[str, object], row: int, col: int, value: object) -> None:
     """배치 업데이트용 셀 변경사항 누적 (같은 셀은 마지막 값으로 덮어씀)."""
     pending[rowcol_to_a1(row, col)] = value
@@ -389,8 +397,9 @@ async def get_orders_by_status(status: str, days: int = 7) -> list[dict]:
     # 이 API는 하루 단위 조회가 기본 (일단위 페이징)
     # 최근 days일치 데이터를 하루씩 합산하려면 루프가 필요하지만
     # 실용상 오늘 + 어제로 제한
-    today = datetime.now(KST).strftime("%Y-%m-%d")
-    from_date = (datetime.now(KST) - timedelta(days=days)).strftime("%Y-%m-%d")
+    now_kst = datetime.now(KST)
+    today = _coupang_date_with_tz(now_kst)
+    from_date = _coupang_date_with_tz(now_kst - timedelta(days=days))
     base_params = {
         "createdAtFrom": from_date,
         "createdAtTo":   today,
@@ -451,7 +460,8 @@ async def confirm_order(order_id: str, shipment_box_id: str) -> bool:
         print(f"[Order] ❌ 발주확인 실패 → shipmentBoxId 형식오류 (orderId={order_id}, shipmentBoxId={box_id})")
         return False
 
-    path = f"{COUPANG_OPENAPI_V5_VENDOR}/ordersheets/acknowledgement"
+    # NOTE: acknowledgement API is currently served on v4 path.
+    path = f"{COUPANG_OPENAPI_V4_VENDOR}/ordersheets/acknowledgement"
     body = {
         "vendorId": COUPANG_VENDOR_ID,
         "shipmentBoxIds": [int(box_id)],
@@ -762,6 +772,10 @@ async def update_sale_price(vendor_item_id: str, new_price: int) -> bool:
     판매가 변경 API 호출
     PUT /vendor-items/{vendorItemId}/prices/{price}
     """
+    if new_price % 10 != 0:
+        print(f"[Price] ❌ 판매가 변경 실패 → 10원 단위만 허용 (vendorItemId={vendor_item_id}, price={new_price})")
+        return False
+
     path = f"{COUPANG_SELLER_MARKETPLACE}/vendor-items/{vendor_item_id}/prices/{new_price}"
     try:
         result = await _coupang_put(path, params={"forceSalePriceUpdate": "true"})
@@ -947,25 +961,47 @@ async def sync_price_from_sourcing():
         sh = gc.open_by_key(COUPANG_SHEET_ID)
         ws = sh.worksheet(SOURCING_SHEET)
         rows = ws.get_all_values()
-        ws_product = sh.worksheet(COUPANG_PRODUCT_SHEET)
-        product_rows = ws_product.get_all_values()
     except Exception as e:
         print(f"[SourcingSync] 시트 열기 실패: {e}")
         return
 
     # 현재 판매가 인덱스 구성 (vendorItemId -> current_sale_price)
     current_price_by_vid: dict[str, int] = {}
-    for prow in product_rows[PRODUCT_START_ROW - 1:]:
-        if len(prow) < COL_SALE_PRICE:
-            continue
-        vid = (prow[COL_VENDOR_ITEM_ID - 1] or "").strip()
-        price_cell = (prow[COL_SALE_PRICE - 1] or "").strip()
-        if not vid or not price_cell:
-            continue
+
+    def _to_int_price(value) -> int | None:
+        if value is None:
+            return None
         try:
-            current_price_by_vid[vid] = int(re.sub(r"[^0-9]", "", price_cell))
+            if isinstance(value, str):
+                digits = re.sub(r"[^0-9]", "", value)
+                if not digits:
+                    return None
+                parsed = int(digits)
+            else:
+                parsed = int(value)
+            return parsed if parsed > 0 else None
         except Exception:
-            continue
+            return None
+
+    async def _get_current_sale_price(vid: str) -> int | None:
+        cached = current_price_by_vid.get(vid)
+        if cached is not None:
+            return cached
+
+        api_data = await get_vendor_item_stock(vid)
+        api_price = _to_int_price((api_data or {}).get("salePrice"))
+        if api_price is None:
+            api_price = _to_int_price((api_data or {}).get("price"))
+
+        if api_price is not None:
+            current_price_by_vid[vid] = api_price
+            return api_price
+
+        prev_state = _price_state.get(vid, {})
+        fallback_price = _to_int_price(prev_state.get("price") if isinstance(prev_state, dict) else None)
+        if fallback_price is not None:
+            current_price_by_vid[vid] = fallback_price
+        return fallback_price
 
     data_rows = rows[SOURCING_DATA_START - 1:]
     changes = []
@@ -1009,10 +1045,7 @@ async def sync_price_from_sourcing():
         skipped_floor = 0
         skipped_unknown = 0
         for vid in vendor_item_ids:
-            current_sale_price = current_price_by_vid.get(vid)
-            if current_sale_price is None:
-                prev_state = _price_state.get(vid, {})
-                current_sale_price = prev_state.get("price")
+            current_sale_price = await _get_current_sale_price(vid)
 
             # 요청 조건: 최소판매금액 > 현재 판매가 인 경우에만 상향 업데이트
             if current_sale_price is None:
@@ -1231,7 +1264,13 @@ async def get_shipment_box_id(order_id: str) -> tuple[str, str]:
     try:
         path = f"{COUPANG_OPENAPI_V5_VENDOR}/{order_id}/ordersheets"
         result = await _coupang_get(path)
-        order = result.get("data", {}) or {}
+        raw_data = result.get("data", {}) if isinstance(result, dict) else {}
+        if isinstance(raw_data, list):
+            order = raw_data[0] if raw_data else {}
+        elif isinstance(raw_data, dict):
+            order = raw_data
+        else:
+            order = {}
         box_id = str(order.get("shipmentBoxId", ""))
         items = order.get("orderItems", [{}])
         vendor_item_id = str(items[0].get("vendorItemId", "")) if items else ""
@@ -1242,18 +1281,18 @@ async def get_shipment_box_id(order_id: str) -> tuple[str, str]:
 
     # 2) 목록 조회 fallback (v5)
     path = f"{COUPANG_OPENAPI_V5_VENDOR}/ordersheets"
-    today = datetime.now(KST).strftime("%Y-%m-%d")
-    from_date = (datetime.now(KST) - timedelta(days=14)).strftime("%Y-%m-%d")
+    now_kst = datetime.now(KST)
+    today = _coupang_date_with_tz(now_kst)
+    from_date = _coupang_date_with_tz(now_kst - timedelta(days=14))
     try:
-        # 상태를 넓혀 순차 조회해 누락 가능성을 줄인다.
-        for status in ("INSTRUCT", "ACCEPT", ""):
+        # 상태를 순차 조회해 누락 가능성을 줄인다. (status는 ordersheets 필수 파라미터)
+        for status in ("INSTRUCT", "ACCEPT", "DEPARTURE", "DELIVERING", "FINAL_DELIVERY", "NONE_TRACKING"):
             base_params = {
                 "createdAtFrom": from_date,
                 "createdAtTo":   today,
                 "maxPerPage":    50,
+                "status":        status,
             }
-            if status:
-                base_params["status"] = status
 
             next_token = ""
             seen_tokens: set[str] = set()
@@ -1310,19 +1349,24 @@ async def ship_order_api(
     if not vendor_item_id:
         print(f"[Ship] ❌ vendorItemId 누락 — orderId={order_id} shipmentBoxId={order_item_id}")
         return False
+    if not str(order_id or "").isdigit():
+        print(f"[Ship] ❌ orderId 형식오류 — orderId={order_id}")
+        return False
+    if not str(vendor_item_id or "").isdigit():
+        print(f"[Ship] ❌ vendorItemId 형식오류 — vendorItemId={vendor_item_id}")
+        return False
 
     path = f"{COUPANG_OPENAPI_V4_VENDOR}/orders/invoices"
     body = {
         "vendorId": COUPANG_VENDOR_ID,
         "orderSheetInvoiceApplyDtos": [{
             "shipmentBoxId":       int(order_item_id),
-            "orderId":             int(order_id) if order_id else 0,
+            "orderId":             int(order_id),
             "vendorItemId":        int(vendor_item_id),
             "deliveryCompanyCode": carrier_code.strip().upper(),
             "invoiceNumber":       invoice_number.strip(),
             "splitShipping":       False,
             "preSplitShipped":     False,
-            "estimatedShippingDate": "",
         }]
     }
     try:

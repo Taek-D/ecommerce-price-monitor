@@ -85,7 +85,7 @@ async def fetch_all_coupang_products():
         path = f"{COUPANG_SELLER_MARKETPLACE}/seller-products"
         params = {
             "vendorId": COUPANG_VENDOR_ID,
-            "limit": 100,
+            "maxPerPage": 100,
         }
         if next_token:
             params["nextToken"] = next_token
