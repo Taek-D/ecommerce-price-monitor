@@ -190,7 +190,7 @@ def _log_api_error(method: str, response: httpx.Response) -> None:
         print("[API Error] Hint: endpoint path/version or HTTP method may be wrong for this API.")
 
 
-async def _coupang_get(path: str, params: dict | None = None) -> dict:
+async def _coupang_get(path: str, params: dict | None = None, log_error: bool = True) -> dict:
     """Coupang API GET request"""
     query = _encode_query(params)
     full_path = f"{path}?{query}" if query else path
@@ -198,7 +198,7 @@ async def _coupang_get(path: str, params: dict | None = None) -> dict:
 
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.get(COUPANG_BASE_URL + full_path, headers=headers)
-        if not r.is_success:
+        if not r.is_success and log_error:
             _log_api_error("GET", r)
         r.raise_for_status()
         return r.json()
@@ -560,48 +560,59 @@ async def get_orders_by_status(status: str, days: int = 7) -> list[dict]:
     days: 몇 일 전까지 조회할지 (기본 7일)
     """
     path = f"{COUPANG_OPENAPI_V5_VENDOR}/ordersheets"
-    # 이 API는 하루 단위 조회가 기본 (일단위 페이징)
-    # 최근 days일치 데이터를 하루씩 합산하려면 루프가 필요하지만
-    # 실용상 오늘 + 어제로 제한
+    # 쿠팡 제약: endTime-startTime 구간은 32일 미만이어야 한다.
+    # 요청 구간을 31일 단위로 분할해 조회한다.
     now_kst = datetime.now(KST)
-    today = _coupang_date_with_tz(now_kst)
-    from_date = _coupang_date_with_tz(now_kst - timedelta(days=days))
-    base_params = {
-        "createdAtFrom": from_date,
-        "createdAtTo":   today,
-        "status":        status,
-        "maxPerPage":    50,
-    }
+    safe_days = max(int(days), 1)
+    start_date = (now_kst - timedelta(days=safe_days)).date()
+    end_date = now_kst.date()
+    window_days = 31
+
     try:
         all_orders: list[dict] = []
-        next_token = ""
-        seen_tokens: set[str] = set()
+        cursor_date = start_date
+        while cursor_date <= end_date:
+            window_end = min(cursor_date + timedelta(days=window_days - 1), end_date)
+            from_dt = datetime(cursor_date.year, cursor_date.month, cursor_date.day, tzinfo=KST)
+            to_dt = datetime(window_end.year, window_end.month, window_end.day, tzinfo=KST)
 
-        for _ in range(30):  # 안전한 상한으로 무한루프 방지
-            params = dict(base_params)
-            if next_token:
-                params["nextToken"] = next_token
+            base_params = {
+                "createdAtFrom": _coupang_date_with_tz(from_dt),
+                "createdAtTo": _coupang_date_with_tz(to_dt),
+                "status": status,
+                "maxPerPage": 50,
+            }
 
-            result = await _coupang_get(path, params)
-            data = result.get("data", [])
+            next_token = ""
+            seen_tokens: set[str] = set()
 
-            page_orders: list[dict]
-            token_candidate = ""
-            if isinstance(data, dict):
-                page_orders = data.get("content", []) or data.get("data", []) or []
-                token_candidate = str(data.get("nextToken", "") or result.get("nextToken", "") or "")
-            elif isinstance(data, list):
-                page_orders = data
-                token_candidate = str(result.get("nextToken", "") or "")
-            else:
-                page_orders = []
+            for _ in range(30):  # 안전한 상한으로 무한루프 방지
+                params = dict(base_params)
+                if next_token:
+                    params["nextToken"] = next_token
 
-            all_orders.extend(page_orders)
+                result = await _coupang_get(path, params)
+                data = result.get("data", [])
 
-            if not token_candidate or token_candidate in seen_tokens:
-                break
-            seen_tokens.add(token_candidate)
-            next_token = token_candidate
+                page_orders: list[dict]
+                token_candidate = ""
+                if isinstance(data, dict):
+                    page_orders = data.get("content", []) or data.get("data", []) or []
+                    token_candidate = str(data.get("nextToken", "") or result.get("nextToken", "") or "")
+                elif isinstance(data, list):
+                    page_orders = data
+                    token_candidate = str(result.get("nextToken", "") or "")
+                else:
+                    page_orders = []
+
+                all_orders.extend(page_orders)
+
+                if not token_candidate or token_candidate in seen_tokens:
+                    break
+                seen_tokens.add(token_candidate)
+                next_token = token_candidate
+
+            cursor_date = window_end + timedelta(days=1)
 
         print(f"[Order] {status} 조회 → {len(all_orders)}건")
         return all_orders
@@ -612,6 +623,51 @@ async def get_orders_by_status(status: str, days: int = 7) -> list[dict]:
 async def get_new_orders() -> list[dict]:
     """결제완료(ACCEPT) 상태 주문 목록 조회 (하위 호환용)"""
     return await get_orders_by_status("ACCEPT")
+
+
+async def _order_exists_in_coupang(order_id: str) -> bool | None:
+    """orderId 단건 조회로 쿠팡 주문 존재 여부를 확인한다.
+
+    Returns:
+        True  - 쿠팡에 주문 존재
+        False - 쿠팡에서 주문 미존재(삭제/무효 포함)
+        None  - 일시적 오류 등으로 확인 실패
+    """
+    oid = str(order_id or "").strip()
+    if not oid:
+        return None
+
+    path = f"{COUPANG_OPENAPI_V5_VENDOR}/{oid}/ordersheets"
+    try:
+        # 삭제 후보 판별용 확인 호출이므로 예상 가능한 오류 로그는 억제한다.
+        result = await _coupang_get(path, log_error=False)
+    except httpx.HTTPStatusError as e:
+        status_code = e.response.status_code if e.response is not None else None
+        body_text = (e.response.text or "") if e.response is not None else ""
+        body_text_lower = body_text.lower()
+
+        if status_code == 404:
+            return False
+
+        # 쿠팡 단건조회는 취소/반품 주문을 400으로 반환하는 케이스가 있다.
+        if status_code == 400 and any(
+            token in body_text_lower for token in ("cancelled", "canceled", "returned", "취소", "반품")
+        ):
+            return False
+
+        print(f"[Order] 주문 존재확인 실패(orderId={oid}): HTTP {status_code}")
+        return None
+    except Exception as e:
+        print(f"[Order] 주문 존재확인 예외(orderId={oid}): {e}")
+        return None
+
+    data = result.get("data", {}) if isinstance(result, dict) else {}
+    if isinstance(data, list):
+        return len(data) > 0
+    if isinstance(data, dict):
+        return len(data) > 0
+    return bool(data)
+
 
 async def confirm_order(order_id: str, shipment_box_id: str) -> bool:
     """결제완료 주문을 상품준비중으로 변경한다."""
@@ -971,11 +1027,12 @@ async def process_new_orders():
         print("[Order] 모든 주문이 이미 시트에 동기화되어 있음")
 
 
-async def sync_delivery_status_to_sheet(days: int = 14) -> None:
+async def sync_delivery_status_to_sheet(days: int = 60) -> None:
     """
     쿠팡 배송 진행상태를 시트에 반영한다.
     대상 상태:
     - DEPARTURE      -> 배송지시
+    - NONE_TRACKING  -> 업체 직접 배송
     - DELIVERING     -> 배송중
     - FINAL_DELIVERY -> 배송완료
     """
@@ -988,10 +1045,46 @@ async def sync_delivery_status_to_sheet(days: int = 14) -> None:
         print(f"[Order] 배송상태 동기화 실패(시트 열기): {e}")
         return
 
+    # 배송 진행중 상태가 오래된 주문에 남아있을 수 있어 조회 범위를 동적으로 보정한다.
+    lookback_days = max(int(days), 1)
+    lookback_cap_days = 180
+    active_sync_statuses = {"상품준비중", "배송지시", "업체 직접 배송", "배송중"}
+    now_kst = datetime.now(KST)
+    oldest_active_date: datetime | None = None
+
+    for row in rows[ORDER_START_ROW - 1:]:
+        if len(row) < COL_ORDER_STATUS:
+            continue
+
+        status = row[COL_ORDER_STATUS - 1].strip()
+        if status not in active_sync_statuses:
+            continue
+
+        raw_order_date = row[COL_ORDER_DATE - 1].strip() if len(row) >= COL_ORDER_DATE else ""
+        if not raw_order_date:
+            continue
+
+        # 예: "2026-03-01", "2026-03-01T12:34:56"
+        date_part = raw_order_date[:10]
+        try:
+            dt = datetime.strptime(date_part, "%Y-%m-%d").replace(tzinfo=KST)
+        except Exception:
+            continue
+
+        if oldest_active_date is None or dt < oldest_active_date:
+            oldest_active_date = dt
+
+    if oldest_active_date is not None:
+        dynamic_days = (now_kst.date() - oldest_active_date.date()).days + 2
+        if dynamic_days > lookback_days:
+            lookback_days = min(dynamic_days, lookback_cap_days)
+
+    print(f"[Order] 배송상태 조회 범위: 최근 {lookback_days}일")
+
     # orderId -> (상태, 우선순위)
     latest_status_by_order_id: dict[str, tuple[str, int]] = {}
     for api_status, sheet_status in DELIVERY_STATUS_MAP.items():
-        orders = await get_orders_by_status(api_status, days=days)
+        orders = await get_orders_by_status(api_status, days=lookback_days)
         priority = DELIVERY_STATUS_PRIORITY.get(sheet_status, 0)
         for order in orders:
             order_id = str(order.get("orderId", "")).strip()
@@ -1002,8 +1095,7 @@ async def sync_delivery_status_to_sheet(days: int = 14) -> None:
                 latest_status_by_order_id[order_id] = (sheet_status, priority)
 
     if not latest_status_by_order_id:
-        print("[Order] 배송상태 동기화 대상 없음")
-        return
+        print("[Order] 배송상태 동기화 대상 없음 (상태갱신 스킵, 삭제검사 진행)")
 
     order_row_by_id: dict[str, int] = {}
     order_status_by_id: dict[str, str] = {}
@@ -1018,6 +1110,9 @@ async def sync_delivery_status_to_sheet(days: int = 14) -> None:
     updated_count = 0
     skipped_missing_row = 0
     skipped_excluded = 0
+    deleted_count = 0
+    delete_check_failed = 0
+    delete_failed = 0
     excluded_statuses = {"취소", "반품", "환불", ORDER_STATUS_PRICE_HOLD}
 
     for order_id, (target_status, _) in latest_status_by_order_id.items():
@@ -1039,10 +1134,35 @@ async def sync_delivery_status_to_sheet(days: int = 14) -> None:
 
     _flush_sheet_cell_updates(ws, pending_cell_updates)
 
+    # 시트에는 있지만 쿠팡에 없는 주문은 '삭제된 주문'으로 보고 시트에서 제거한다.
+    delete_candidates: list[tuple[int, str]] = []
+    for order_id, row_idx in order_row_by_id.items():
+        # 배송상태 조회 결과에 있는 주문은 쿠팡 존재가 확인되었으므로 제외
+        if order_id in latest_status_by_order_id:
+            continue
+
+        exists = await _order_exists_in_coupang(order_id)
+        if exists is False:
+            delete_candidates.append((row_idx, order_id))
+        elif exists is None:
+            delete_check_failed += 1
+
+    if delete_candidates:
+        print(f"[Order] 쿠팡 미존재 주문 감지 — 시트 삭제 대상 {len(delete_candidates)}건")
+
+    for row_idx, order_id in sorted(delete_candidates, key=lambda x: x[0], reverse=True):
+        try:
+            ws.delete_rows(row_idx)
+            deleted_count += 1
+        except Exception as e:
+            delete_failed += 1
+            print(f"[Order] 시트 주문 삭제 실패 (row={row_idx}, orderId={order_id}): {e}")
+
     print(
         "[Order] 배송상태 동기화 완료 — "
         f"대상 {len(latest_status_by_order_id)}건, 상태갱신 {updated_count}건, "
-        f"시트미존재 {skipped_missing_row}건, 제외상태 {skipped_excluded}건"
+        f"시트미존재 {skipped_missing_row}건, 제외상태 {skipped_excluded}건, "
+        f"삭제 {deleted_count}건, 확인실패 {delete_check_failed}건, 삭제실패 {delete_failed}건"
     )
 
 # ──────────────────────────────────────────────
