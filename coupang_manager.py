@@ -90,11 +90,13 @@ DELIVERY_STATUS_MAP: dict[str, str] = {
     "DEPARTURE": "배송지시",
     "DELIVERING": "배송중",
     "FINAL_DELIVERY": "배송완료",
+    "NONE_TRACKING": "업체 직접 배송",
 }
 
 # 여러 상태에 동시에 잡힐 때 더 진행된 단계가 우선
 DELIVERY_STATUS_PRIORITY: dict[str, int] = {
     "배송지시": 1,
+    "업체 직접 배송": 2,
     "배송중": 2,
     "배송완료": 3,
 }
