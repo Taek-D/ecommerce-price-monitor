@@ -10,6 +10,7 @@ __pycache__/
 .DS_Store
 
 # Local agent/runtime state
+.omx/
 docs/.bkit-memory.json
 docs/.pdca-status.json
 docs/.pdca-snapshots/
