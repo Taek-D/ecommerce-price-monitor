@@ -2,6 +2,7 @@
 소싱목록 탭 구조 확인 스크립트
 실행: python check_sheet.py
 """
+
 import os
 from dotenv import load_dotenv
 import gspread
@@ -10,7 +11,9 @@ from google.oauth2.service_account import Credentials
 load_dotenv()
 
 SPREADSHEET_ID = os.getenv("SHEETS_SPREADSHEET_ID", "").strip()
-SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "safe/service_account.json").strip()
+SERVICE_ACCOUNT_FILE = os.getenv(
+    "GOOGLE_SERVICE_ACCOUNT_JSON", "safe/service_account.json"
+).strip()
 
 if not SPREADSHEET_ID:
     raise RuntimeError("SHEETS_SPREADSHEET_ID is not configured")
@@ -19,8 +22,8 @@ creds = Credentials.from_service_account_file(
     SERVICE_ACCOUNT_FILE,
     scopes=[
         "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
+        "https://www.googleapis.com/auth/drive",
+    ],
 )
 gc = gspread.authorize(creds)
 sh = gc.open_by_key(SPREADSHEET_ID)

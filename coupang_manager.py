@@ -31,17 +31,21 @@ KST = timezone(timedelta(hours=9))
 # ──────────────────────────────────────────────
 # 환경변수
 # ──────────────────────────────────────────────
-COUPANG_ACCESS_KEY  = os.getenv("COUPANG_ACCESS_KEY", "").strip()
-COUPANG_SECRET_KEY  = os.getenv("COUPANG_SECRET_KEY", "").strip()
-COUPANG_VENDOR_ID   = os.getenv("COUPANG_VENDOR_ID", "").strip()
+COUPANG_ACCESS_KEY = os.getenv("COUPANG_ACCESS_KEY", "").strip()
+COUPANG_SECRET_KEY = os.getenv("COUPANG_SECRET_KEY", "").strip()
+COUPANG_VENDOR_ID = os.getenv("COUPANG_VENDOR_ID", "").strip()
 
-MYMUNJA_ID       = os.getenv("MYMUNJA_ID", "").strip()
-MYMUNJA_PASS     = os.getenv("MYMUNJA_PASS", "").strip()
+MYMUNJA_ID = os.getenv("MYMUNJA_ID", "").strip()
+MYMUNJA_PASS = os.getenv("MYMUNJA_PASS", "").strip()
 MYMUNJA_CALLBACK = os.getenv("MYMUNJA_CALLBACK", "").strip()  # 사전등록 발신번호
 
-COUPANG_ORDER_WEBHOOK = os.getenv("COUPANG_ORDER_WEBHOOK", "").strip()  # 주문알림 Discord 웹훅
+COUPANG_ORDER_WEBHOOK = os.getenv(
+    "COUPANG_ORDER_WEBHOOK", ""
+).strip()  # 주문알림 Discord 웹훅
 
-GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "safe/service_account.json").strip()
+GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv(
+    "GOOGLE_SERVICE_ACCOUNT_JSON", "safe/service_account.json"
+).strip()
 
 
 def _env_int(name: str, default: int) -> int:
@@ -52,37 +56,41 @@ def _env_int(name: str, default: int) -> int:
 
 
 # 쿠팡 상품관리 시트 설정 (기존 소싱목록과 별도 시트)
-COUPANG_SHEET_ID        = os.getenv("SHEETS_SPREADSHEET_ID", "").strip()
-COUPANG_PRODUCT_SHEET   = os.getenv("COUPANG_PRODUCT_SHEET", "쿠팡상품관리").strip()
-COUPANG_ORDER_SHEET     = os.getenv("COUPANG_ORDER_SHEET", "쿠팡주문관리").strip()
+COUPANG_SHEET_ID = os.getenv("SHEETS_SPREADSHEET_ID", "").strip()
+COUPANG_PRODUCT_SHEET = os.getenv("COUPANG_PRODUCT_SHEET", "쿠팡상품관리").strip()
+COUPANG_ORDER_SHEET = os.getenv("COUPANG_ORDER_SHEET", "쿠팡주문관리").strip()
+COUPANG_PRODUCT_REFRESH_MINUTES = _env_int("COUPANG_PRODUCT_REFRESH_MINUTES", 30)
 
 # 쿠팡 상품관리 시트 컬럼 인덱스 (1부터 시작)
 # A:vendorItemId  B:상품명  C:판매가  D:재고  E:판매상태  F:마지막업데이트
 COL_VENDOR_ITEM_ID = 1
-COL_PRODUCT_NAME   = 2
-COL_SALE_PRICE     = 3
-COL_STOCK          = 4
-COL_SALE_STATUS    = 5
-COL_UPDATED_AT     = 6
-PRODUCT_START_ROW  = 2  # 1행은 헤더
+COL_PRODUCT_NAME = 2
+COL_SALE_PRICE = 3
+COL_STOCK = 4
+COL_SALE_STATUS = 5
+COL_UPDATED_AT = 6
+PRODUCT_START_ROW = 2  # 1행은 헤더
+PRODUCT_SHEET_HEADER = [
+    ["vendorItemId", "상품명", "판매가", "재고", "판매상태", "마지막업데이트"]
+]
 
 # 쿠팡 주문관리 시트 컬럼 인덱스
 # A:주문ID  B:상품명  C:수량  D:수신자  E:연락처  F:주소  G:상태  H:주문일시  I:SMS발송
 # J:orderItemId(자동)  K:송장번호(수기)  L:택배사코드(수기)  M:발송처리일시(자동)
-COL_ORDER_ID        = 1
-COL_ORDER_PRODUCT   = 2
-COL_ORDER_QTY       = 3
-COL_ORDER_NAME      = 4
-COL_ORDER_PHONE     = 5
-COL_ORDER_ADDR      = 6
-COL_ORDER_STATUS    = 7
-COL_ORDER_DATE      = 8
-COL_ORDER_SMS       = 9
-COL_ORDER_ITEM_ID   = 10  # J열: shipmentBoxId (배송처리에 필요)
-COL_ORDER_INVOICE   = 11  # K열: 송장번호 (수기입력)
-COL_ORDER_CARRIER   = 12  # L열: 택배사코드 (수기입력, 예: CJGLS)
+COL_ORDER_ID = 1
+COL_ORDER_PRODUCT = 2
+COL_ORDER_QTY = 3
+COL_ORDER_NAME = 4
+COL_ORDER_PHONE = 5
+COL_ORDER_ADDR = 6
+COL_ORDER_STATUS = 7
+COL_ORDER_DATE = 8
+COL_ORDER_SMS = 9
+COL_ORDER_ITEM_ID = 10  # J열: shipmentBoxId (배송처리에 필요)
+COL_ORDER_INVOICE = 11  # K열: 송장번호 (수기입력)
+COL_ORDER_CARRIER = 12  # L열: 택배사코드 (수기입력, 예: CJGLS)
 COL_ORDER_SHIP_DATE = 13  # M열: 발송처리일시 (자동기록)
-ORDER_START_ROW     = 2
+ORDER_START_ROW = 2
 ORDER_STATUS_PRICE_HOLD = "가격미달보류"
 
 # 쿠팡 주문상태(영문) -> 시트 상태(한글) 매핑
@@ -108,7 +116,7 @@ CARRIER_CODE_ALIASES = {
     "CJGLS": "CJGLS",
     "롯데택배": "HYUNDAI",
     "HYUNDAI": "HYUNDAI",
-    "LOTTE": "HYUNDAI",      # 레거시 입력값 호환
+    "LOTTE": "HYUNDAI",  # 레거시 입력값 호환
     "한진택배": "HANJIN",
     "HANJIN": "HANJIN",
     "우체국": "EPOST",
@@ -144,10 +152,16 @@ def normalize_carrier_code(value: str) -> str:
         return CARRIER_CODE_ALIASES[upper]
     return upper
 
+
 COUPANG_BASE_URL = "https://api-gateway.coupang.com"
-COUPANG_OPENAPI_V5_VENDOR = f"/v2/providers/openapi/apis/api/v5/vendors/{COUPANG_VENDOR_ID}"
-COUPANG_OPENAPI_V4_VENDOR = f"/v2/providers/openapi/apis/api/v4/vendors/{COUPANG_VENDOR_ID}"
+COUPANG_OPENAPI_V5_VENDOR = (
+    f"/v2/providers/openapi/apis/api/v5/vendors/{COUPANG_VENDOR_ID}"
+)
+COUPANG_OPENAPI_V4_VENDOR = (
+    f"/v2/providers/openapi/apis/api/v4/vendors/{COUPANG_VENDOR_ID}"
+)
 COUPANG_SELLER_MARKETPLACE = "/v2/providers/seller_api/apis/api/v1/marketplace"
+
 
 # ──────────────────────────────────────────────
 # 쿠팡 Open API HMAC 인증
@@ -155,25 +169,24 @@ COUPANG_SELLER_MARKETPLACE = "/v2/providers/seller_api/apis/api/v1/marketplace"
 def _make_coupang_signature(method: str, path: str, query: str = "") -> dict:
     """쿠팡 HMAC-SHA256 인증 헤더 생성"""
     datetime_str = datetime.now(timezone.utc).strftime("%y%m%dT%H%M%SZ")
-    
+
     # 서명 메시지: method + path + query + datetime
     message = f"{datetime_str}{method}{path}{query}"
-    
+
     signature = hmac.new(
-        COUPANG_SECRET_KEY.encode("utf-8"),
-        message.encode("utf-8"),
-        hashlib.sha256
+        COUPANG_SECRET_KEY.encode("utf-8"), message.encode("utf-8"), hashlib.sha256
     ).hexdigest()
-    
+
     authorization = (
         f"CEA algorithm=HmacSHA256, access-key={COUPANG_ACCESS_KEY}, "
         f"signed-date={datetime_str}, signature={signature}"
     )
-    
+
     return {
         "Authorization": authorization,
         "Content-Type": "application/json;charset=UTF-8",
     }
+
 
 def _encode_query(params: dict | None) -> str:
     """Build a stable query string for Coupang HMAC signing."""
@@ -186,11 +199,18 @@ def _log_api_error(method: str, response: httpx.Response) -> None:
     body_preview = response.text[:500]
     print(f"[API Error] {response.status_code} {method} | URL: {response.url}")
     print(f"[API Error] Response: {body_preview}")
-    if response.status_code == 404 and "No exactly matching API specification" in body_preview:
-        print("[API Error] Hint: endpoint path/version or HTTP method may be wrong for this API.")
+    if (
+        response.status_code == 404
+        and "No exactly matching API specification" in body_preview
+    ):
+        print(
+            "[API Error] Hint: endpoint path/version or HTTP method may be wrong for this API."
+        )
 
 
-async def _coupang_get(path: str, params: dict | None = None, log_error: bool = True) -> dict:
+async def _coupang_get(
+    path: str, params: dict | None = None, log_error: bool = True
+) -> dict:
     """Coupang API GET request"""
     query = _encode_query(params)
     full_path = f"{path}?{query}" if query else path
@@ -204,7 +224,9 @@ async def _coupang_get(path: str, params: dict | None = None, log_error: bool = 
         return r.json()
 
 
-async def _coupang_put(path: str, body: dict | None = None, params: dict | None = None) -> dict:
+async def _coupang_put(
+    path: str, body: dict | None = None, params: dict | None = None
+) -> dict:
     """Coupang API PUT request"""
     query = _encode_query(params)
     full_path = f"{path}?{query}" if query else path
@@ -213,14 +235,18 @@ async def _coupang_put(path: str, body: dict | None = None, params: dict | None 
         if body is None:
             r = await client.put(COUPANG_BASE_URL + full_path, headers=headers)
         else:
-            r = await client.put(COUPANG_BASE_URL + full_path, headers=headers, json=body)
+            r = await client.put(
+                COUPANG_BASE_URL + full_path, headers=headers, json=body
+            )
         if not r.is_success:
             _log_api_error("PUT", r)
         r.raise_for_status()
         return r.json()
 
 
-async def _coupang_post(path: str, body: dict | None = None, params: dict | None = None) -> dict:
+async def _coupang_post(
+    path: str, body: dict | None = None, params: dict | None = None
+) -> dict:
     """Coupang API POST request"""
     query = _encode_query(params)
     full_path = f"{path}?{query}" if query else path
@@ -229,11 +255,14 @@ async def _coupang_post(path: str, body: dict | None = None, params: dict | None
         if body is None:
             r = await client.post(COUPANG_BASE_URL + full_path, headers=headers)
         else:
-            r = await client.post(COUPANG_BASE_URL + full_path, headers=headers, json=body)
+            r = await client.post(
+                COUPANG_BASE_URL + full_path, headers=headers, json=body
+            )
         if not r.is_success:
             _log_api_error("POST", r)
         r.raise_for_status()
         return r.json()
+
 
 # ──────────────────────────────────────────────
 # 마이문자 SMS 발송
@@ -258,43 +287,45 @@ async def send_sms(phone: str, message: str, msg_type: str = "sms") -> dict:
     if not MYMUNJA_ID or not MYMUNJA_PASS:
         print("[SMS] 마이문자 계정 미설정 — 건너뜀")
         return {"code": "SKIP", "msg": "not configured"}
-    
+
     if msg_type == "lms":
         url = "https://www.mymunja.co.kr/Remote/RemoteMms.html"
     else:
         url = "https://www.mymunja.co.kr/Remote/RemoteSms.html"
-    
+
     # 전화번호 정규화 (숫자만)
     phone_clean = re.sub(r"[^0-9]", "", phone)
-    
+
     data = {
-        "remote_id":       MYMUNJA_ID,
-        "remote_pass":     MYMUNJA_PASS,
-        "remote_num":      "1",
-        "remote_reserve":  "0",        # 즉시발송
-        "remote_phone":    phone_clean,
+        "remote_id": MYMUNJA_ID,
+        "remote_pass": MYMUNJA_PASS,
+        "remote_num": "1",
+        "remote_reserve": "0",  # 즉시발송
+        "remote_phone": phone_clean,
         "remote_callback": re.sub(r"[^0-9]", "", MYMUNJA_CALLBACK),
-        "remote_msg":      message,    # 아래에서 CP949 기준으로 수동 URL 인코딩
+        "remote_msg": message,  # 아래에서 CP949 기준으로 수동 URL 인코딩
     }
-    
+
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             # 마이문자 Remote API는 EUC-KR/CP949 기반 폼 인코딩을 기대한다.
             encoded_body = urlencode(data, encoding="cp949", errors="replace")
-            headers = {"Content-Type": "application/x-www-form-urlencoded; charset=EUC-KR"}
+            headers = {
+                "Content-Type": "application/x-www-form-urlencoded; charset=EUC-KR"
+            }
             r = await client.post(url, content=encoded_body, headers=headers)
             r.raise_for_status()
             # 응답: 결과코드|결과메시지|잔여건수|etc1|etc2
             parts = r.text.strip().split("|")
             code = parts[0] if parts else "9999"
-            msg  = parts[1] if len(parts) > 1 else ""
+            msg = parts[1] if len(parts) > 1 else ""
             cols = parts[2] if len(parts) > 2 else "0"
-            
+
             if code == "0000":
                 print(f"[SMS] OK send success -> {phone_clean} | remain: {cols}")
             else:
                 print(f"[SMS] FAIL send failed -> code={code} msg={msg}")
-            
+
             return {"code": code, "msg": msg, "cols": cols}
     except Exception as e:
         print(f"[SMS] Exception: {e}")
@@ -306,33 +337,41 @@ async def send_order_privacy_sms(phone: str) -> bool:
     result = await send_sms(phone, ORDER_PRIVACY_SMS_MESSAGE, msg_type="lms")
     return result.get("code") == "0000"
 
+
 async def send_sms_bulk(phones: list[str], messages: list[str]) -> dict:
     """여러 수신자에게 각각 다른 메시지 발송 (__LINE__ 구분자 사용)"""
     if not phones:
         return {}
-    
+
     phone_str = ",".join(re.sub(r"[^0-9]", "", p) for p in phones)
-    msg_str   = "__LINE__".join(messages)
-    
+    msg_str = "__LINE__".join(messages)
+
     data = {
-        "remote_id":       MYMUNJA_ID,
-        "remote_pass":     MYMUNJA_PASS,
-        "remote_num":      str(len(phones)),
-        "remote_reserve":  "0",
-        "remote_phone":    phone_str,
+        "remote_id": MYMUNJA_ID,
+        "remote_pass": MYMUNJA_PASS,
+        "remote_num": str(len(phones)),
+        "remote_reserve": "0",
+        "remote_phone": phone_str,
         "remote_callback": re.sub(r"[^0-9]", "", MYMUNJA_CALLBACK),
-        "remote_msg":      msg_str,
+        "remote_msg": msg_str,
     }
-    
+
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             encoded_body = urlencode(data, encoding="cp949", errors="replace")
-            headers = {"Content-Type": "application/x-www-form-urlencoded; charset=EUC-KR"}
-            r = await client.post("https://www.mymunja.co.kr/Remote/RemoteSms.html", content=encoded_body, headers=headers)
+            headers = {
+                "Content-Type": "application/x-www-form-urlencoded; charset=EUC-KR"
+            }
+            r = await client.post(
+                "https://www.mymunja.co.kr/Remote/RemoteSms.html",
+                content=encoded_body,
+                headers=headers,
+            )
             parts = r.text.strip().split("|")
             return {"code": parts[0], "cols": parts[2] if len(parts) > 2 else "0"}
     except Exception as e:
         return {"code": "ERROR", "msg": str(e)}
+
 
 # ──────────────────────────────────────────────
 # Discord 웹훅 (기존 musinsa-bot post_webhook 재사용)
@@ -351,19 +390,22 @@ async def post_webhook(url: str, content: str, embeds=None):
         except Exception as e:
             print(f"[Webhook Error] {e}")
 
+
 # ──────────────────────────────────────────────
 # Google Sheets 유틸
 # ──────────────────────────────────────────────
 def _google_creds():
     return Credentials.from_service_account_file(
         GOOGLE_SERVICE_ACCOUNT_JSON,
-        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        scopes=["https://www.googleapis.com/auth/spreadsheets"],
     )
+
 
 def _open_coupang_sheet(sheet_name: str):
     gc = gspread.authorize(_google_creds())
     sh = gc.open_by_key(COUPANG_SHEET_ID)
     return sh.worksheet(sheet_name)
+
 
 def _now_kst_str() -> str:
     return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
@@ -386,6 +428,25 @@ def _to_positive_int(value) -> int | None:
                 return None
             parsed = int(digits)
         return parsed if parsed > 0 else None
+    except Exception:
+        return None
+
+
+def _to_int(value) -> int | None:
+    if value is None:
+        return None
+    try:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            return int(value)
+        text = str(value).strip()
+        if not text:
+            return None
+        digits = re.sub(r"[^0-9\-]", "", text)
+        if not digits or digits in {"-", "+"}:
+            return None
+        return int(digits)
     except Exception:
         return None
 
@@ -456,7 +517,7 @@ def _load_sourcing_min_price_by_vid() -> dict[str, int]:
         return {}
 
     min_price_by_vid: dict[str, int] = {}
-    for row in rows[SOURCING_DATA_START - 1:]:
+    for row in rows[SOURCING_DATA_START - 1 :]:
         if not row or len(row) < SOURCING_COL_VID:
             continue
 
@@ -464,7 +525,11 @@ def _load_sourcing_min_price_by_vid() -> dict[str, int]:
         if not vid_cell:
             continue
 
-        min_price_cell = (row[SOURCING_COL_MINPRICE - 1] or "").strip() if len(row) >= SOURCING_COL_MINPRICE else ""
+        min_price_cell = (
+            (row[SOURCING_COL_MINPRICE - 1] or "").strip()
+            if len(row) >= SOURCING_COL_MINPRICE
+            else ""
+        )
         min_price = _to_positive_int(min_price_cell)
         if min_price is None:
             continue
@@ -526,19 +591,23 @@ def _coupang_date_with_tz(dt: datetime) -> str:
     return f"{dt.strftime('%Y-%m-%d')}{offset}"
 
 
-def _queue_sheet_cell_update(pending: dict[str, object], row: int, col: int, value: object) -> None:
+def _queue_sheet_cell_update(
+    pending: dict[str, object], row: int, col: int, value: object
+) -> None:
     """배치 업데이트용 셀 변경사항 누적 (같은 셀은 마지막 값으로 덮어씀)."""
     pending[rowcol_to_a1(row, col)] = value
 
 
-def _flush_sheet_cell_updates(ws, pending: dict[str, object], chunk_size: int = 200) -> None:
+def _flush_sheet_cell_updates(
+    ws, pending: dict[str, object], chunk_size: int = 200
+) -> None:
     """누적된 셀 변경사항을 batch_update로 반영. 실패 시 셀 단건 업데이트로 폴백."""
     if not pending:
         return
 
     items = list(pending.items())
     for i in range(0, len(items), chunk_size):
-        chunk = items[i:i + chunk_size]
+        chunk = items[i : i + chunk_size]
         body = [{"range": rng, "values": [[val]]} for rng, val in chunk]
         try:
             ws.batch_update(body, value_input_option="USER_ENTERED")
@@ -549,6 +618,7 @@ def _flush_sheet_cell_updates(ws, pending: dict[str, object], chunk_size: int = 
                     ws.update(rng, [[val]], value_input_option="USER_ENTERED")
                 except Exception as inner:
                     print(f"[Sheet] 셀 업데이트 실패 ({rng}): {inner}")
+
 
 # ──────────────────────────────────────────────
 # 쿠팡 주문 API
@@ -573,8 +643,12 @@ async def get_orders_by_status(status: str, days: int = 7) -> list[dict]:
         cursor_date = start_date
         while cursor_date <= end_date:
             window_end = min(cursor_date + timedelta(days=window_days - 1), end_date)
-            from_dt = datetime(cursor_date.year, cursor_date.month, cursor_date.day, tzinfo=KST)
-            to_dt = datetime(window_end.year, window_end.month, window_end.day, tzinfo=KST)
+            from_dt = datetime(
+                cursor_date.year, cursor_date.month, cursor_date.day, tzinfo=KST
+            )
+            to_dt = datetime(
+                window_end.year, window_end.month, window_end.day, tzinfo=KST
+            )
 
             base_params = {
                 "createdAtFrom": _coupang_date_with_tz(from_dt),
@@ -598,7 +672,9 @@ async def get_orders_by_status(status: str, days: int = 7) -> list[dict]:
                 token_candidate = ""
                 if isinstance(data, dict):
                     page_orders = data.get("content", []) or data.get("data", []) or []
-                    token_candidate = str(data.get("nextToken", "") or result.get("nextToken", "") or "")
+                    token_candidate = str(
+                        data.get("nextToken", "") or result.get("nextToken", "") or ""
+                    )
                 elif isinstance(data, list):
                     page_orders = data
                     token_candidate = str(result.get("nextToken", "") or "")
@@ -619,6 +695,7 @@ async def get_orders_by_status(status: str, days: int = 7) -> list[dict]:
     except Exception as e:
         print(f"[Order] 주문 조회 실패 (status={status}): {e}")
         return []
+
 
 async def get_new_orders() -> list[dict]:
     """결제완료(ACCEPT) 상태 주문 목록 조회 (하위 호환용)"""
@@ -651,7 +728,8 @@ async def _order_exists_in_coupang(order_id: str) -> bool | None:
 
         # 쿠팡 단건조회는 취소/반품 주문을 400으로 반환하는 케이스가 있다.
         if status_code == 400 and any(
-            token in body_text_lower for token in ("cancelled", "canceled", "returned", "취소", "반품")
+            token in body_text_lower
+            for token in ("cancelled", "canceled", "returned", "취소", "반품")
         ):
             return False
 
@@ -679,7 +757,9 @@ async def confirm_order(order_id: str, shipment_box_id: str) -> bool:
             print(f"[Order] ❌ 발주확인 실패 → shipmentBoxId 없음 (orderId={order_id})")
             return False
     if not box_id.isdigit():
-        print(f"[Order] ❌ 발주확인 실패 → shipmentBoxId 형식오류 (orderId={order_id}, shipmentBoxId={box_id})")
+        print(
+            f"[Order] ❌ 발주확인 실패 → shipmentBoxId 형식오류 (orderId={order_id}, shipmentBoxId={box_id})"
+        )
         return False
 
     # NOTE: acknowledgement API is currently served on v4 path.
@@ -703,62 +783,80 @@ async def confirm_order(order_id: str, shipment_box_id: str) -> bool:
         if response_item is None and response_list:
             response_item = response_list[0]
 
-        if code in ("200", "SUCCESS") and response_item and bool(response_item.get("succeed")):
-            print(f"[Order] ✅ 발주확인 완료 → 주문ID: {order_id} shipmentBoxId={box_id}")
+        if (
+            code in ("200", "SUCCESS")
+            and response_item
+            and bool(response_item.get("succeed"))
+        ):
+            print(
+                f"[Order] ✅ 발주확인 완료 → 주문ID: {order_id} shipmentBoxId={box_id}"
+            )
             return True
 
         reason = ""
         if response_item:
-            reason = str(response_item.get("resultMessage", "") or response_item.get("resultCode", ""))
+            reason = str(
+                response_item.get("resultMessage", "")
+                or response_item.get("resultCode", "")
+            )
         if not reason and isinstance(data, dict):
             reason = str(data.get("responseMessage", ""))
         if not reason:
             reason = str(result.get("message", ""))
-        print(f"[Order] ❌ 발주확인 실패 → 주문ID: {order_id} shipmentBoxId={box_id} | {reason}")
+        print(
+            f"[Order] ❌ 발주확인 실패 → 주문ID: {order_id} shipmentBoxId={box_id} | {reason}"
+        )
         return False
     except Exception as e:
         print(f"[Order] 발주확인 예외: {e}")
         return False
+
 
 async def get_order_sheet_ids() -> set[str]:
     """이미 처리된 주문ID를 시트에서 읽어 중복 방지"""
     try:
         ws = _open_coupang_sheet(COUPANG_ORDER_SHEET)
         col = ws.col_values(COL_ORDER_ID)
-        return set(str(v).strip() for v in col[ORDER_START_ROW - 1:] if v)
+        return set(str(v).strip() for v in col[ORDER_START_ROW - 1 :] if v)
     except Exception as e:
         print(f"[Sheet] 주문시트 조회 실패: {e}")
         return set()
 
-async def append_order_to_sheet(ws, order: dict, sms_sent: bool, status: str = "상품준비중"):
+
+async def append_order_to_sheet(
+    ws, order: dict, sms_sent: bool, status: str = "상품준비중"
+):
     """주문 정보를 구글 시트에 추가 (A~M열)"""
     try:
         receiver = order.get("receiver", {})
-        items    = order.get("orderItems", [{}])
-        item     = items[0] if items else {}
-        
+        items = order.get("orderItems", [{}])
+        item = items[0] if items else {}
+
         # ordersheets API: vendorItemName, shippingCount 사용
         product_name = _order_item_name(item)
         quantity = _order_item_qty(item)
-        
+
         row = [
-            str(order.get("orderId", "")),               # A: 주문ID
-            product_name,                                  # B: 상품명
-            str(quantity),                                 # C: 수량
-            receiver.get("name", ""),                     # D: 수신자
+            str(order.get("orderId", "")),  # A: 주문ID
+            product_name,  # B: 상품명
+            str(quantity),  # C: 수량
+            receiver.get("name", ""),  # D: 수신자
             receiver.get("safeNumber", receiver.get("receiverNumber", "")),  # E: 연락처
-            (receiver.get("addr1", "") + " " + receiver.get("addr2", "")).strip(),  # F: 주소
-            status,                                     # G: 상태
-            order.get("orderedAt", ""),                   # H: 주문일시
-            "발송완료" if sms_sent else "미완료",         # I: SMS발송
-            str(order.get("shipmentBoxId", "")),          # J: shipmentBoxId (배송처리에 필요)
-            "",                                           # K: 송장번호 (수기입력)
-            "",                                           # L: 택배사코드 (수기입력)
-            "",                                           # M: 발송처리일시 (자동기록)
+            (
+                receiver.get("addr1", "") + " " + receiver.get("addr2", "")
+            ).strip(),  # F: 주소
+            status,  # G: 상태
+            order.get("orderedAt", ""),  # H: 주문일시
+            "발송완료" if sms_sent else "미완료",  # I: SMS발송
+            str(order.get("shipmentBoxId", "")),  # J: shipmentBoxId (배송처리에 필요)
+            "",  # K: 송장번호 (수기입력)
+            "",  # L: 택배사코드 (수기입력)
+            "",  # M: 발송처리일시 (자동기록)
         ]
         ws.append_row(row, value_input_option="USER_ENTERED")
     except Exception as e:
         print(f"[Sheet] 주문 기록 실패: {e}")
+
 
 # ──────────────────────────────────────────────
 # 주문 자동화 메인 흐름
@@ -774,7 +872,7 @@ async def process_new_orders():
     print(f"[Order] 주문 동기화 시작... ({_now_kst_str()})")
 
     # 결제완료 + 상품준비중 동시 조회 (최근 7일)
-    accept_orders   = await get_orders_by_status("ACCEPT",   days=7)
+    accept_orders = await get_orders_by_status("ACCEPT", days=7)
     instruct_orders = await get_orders_by_status("INSTRUCT", days=7)
     all_orders = accept_orders + instruct_orders
 
@@ -793,23 +891,33 @@ async def process_new_orders():
     order_status_by_id: dict[str, str] = {}
     order_sms_by_id: dict[str, str] = {}
     order_phone_by_id: dict[str, str] = {}
-    for row_idx, row in enumerate(rows[ORDER_START_ROW - 1:], start=ORDER_START_ROW):
-        order_id = (row[COL_ORDER_ID - 1].strip() if len(row) >= COL_ORDER_ID else "")
+    for row_idx, row in enumerate(rows[ORDER_START_ROW - 1 :], start=ORDER_START_ROW):
+        order_id = row[COL_ORDER_ID - 1].strip() if len(row) >= COL_ORDER_ID else ""
         if not order_id:
             continue
         order_row_by_id[order_id] = row_idx
-        order_status_by_id[order_id] = (row[COL_ORDER_STATUS - 1].strip() if len(row) >= COL_ORDER_STATUS else "")
-        order_sms_by_id[order_id] = (row[COL_ORDER_SMS - 1].strip() if len(row) >= COL_ORDER_SMS else "")
-        order_phone_by_id[order_id] = (row[COL_ORDER_PHONE - 1].strip() if len(row) >= COL_ORDER_PHONE else "")
+        order_status_by_id[order_id] = (
+            row[COL_ORDER_STATUS - 1].strip() if len(row) >= COL_ORDER_STATUS else ""
+        )
+        order_sms_by_id[order_id] = (
+            row[COL_ORDER_SMS - 1].strip() if len(row) >= COL_ORDER_SMS else ""
+        )
+        order_phone_by_id[order_id] = (
+            row[COL_ORDER_PHONE - 1].strip() if len(row) >= COL_ORDER_PHONE else ""
+        )
 
     processed_ids = set(order_row_by_id.keys())
     pending_cell_updates: dict[str, object] = {}
     min_price_by_vid = _load_sourcing_min_price_by_vid()
 
     if min_price_by_vid:
-        print(f"[Order] 소싱 최소판매금액 매핑 로드: {len(min_price_by_vid)}개 vendorItemId")
+        print(
+            f"[Order] 소싱 최소판매금액 매핑 로드: {len(min_price_by_vid)}개 vendorItemId"
+        )
     else:
-        print("[Order] ⚠️ 소싱 최소판매금액 매핑이 비어있음 — 매핑 누락 경고 후 주문 진행")
+        print(
+            "[Order] ⚠️ 소싱 최소판매금액 매핑이 비어있음 — 매핑 누락 경고 후 주문 진행"
+        )
 
     new_count = 0
     updated_count = 0
@@ -820,7 +928,9 @@ async def process_new_orders():
         receiver = order.get("receiver", {})
         buyer_name = receiver.get("name", "고객")
         shipment_box_id = str(order.get("shipmentBoxId", ""))
-        phone = receiver.get("safeNumber", receiver.get("phone", "")) or order_phone_by_id.get(order_id, "")
+        phone = receiver.get(
+            "safeNumber", receiver.get("phone", "")
+        ) or order_phone_by_id.get(order_id, "")
 
         guard = _check_order_price_guard(order, min_price_by_vid)
         product_name = guard["product_name"]
@@ -831,7 +941,11 @@ async def process_new_orders():
         min_price = guard["min_price"]
         reason = guard["reason"]
 
-        if reason in {"missing_vendor_item_id", "missing_min_price", "missing_paid_price"}:
+        if reason in {
+            "missing_vendor_item_id",
+            "missing_min_price",
+            "missing_paid_price",
+        }:
             missing_key = f"{order_id}|{vendor_item_id}|{reason}"
             if missing_key not in _price_guard_warned_missing:
                 _price_guard_warned_missing.add(missing_key)
@@ -844,19 +958,35 @@ async def process_new_orders():
                     f"[Order][PriceGuard] ⚠️ 경고 후 진행: {reason_label} | "
                     f"orderId={order_id} vendorItemId={vendor_item_id}"
                 )
-                embeds = [{
-                    "title": "⚠️ 가격검증 경고(진행)",
-                    "color": 16776960,
-                    "fields": [
-                        {"name": "주문 ID", "value": order_id, "inline": True},
-                        {"name": "상품", "value": product_name, "inline": True},
-                        {"name": "vendorItemId", "value": vendor_item_id, "inline": True},
-                        {"name": "사유", "value": reason_label, "inline": False},
-                        {"name": "처리정책", "value": "경고 후 진행", "inline": True},
-                        {"name": "처리시각", "value": _now_kst_str(), "inline": True},
-                    ],
-                }]
-                await post_webhook(COUPANG_ORDER_WEBHOOK, "가격검증 경고(진행)", embeds=embeds)
+                embeds = [
+                    {
+                        "title": "⚠️ 가격검증 경고(진행)",
+                        "color": 16776960,
+                        "fields": [
+                            {"name": "주문 ID", "value": order_id, "inline": True},
+                            {"name": "상품", "value": product_name, "inline": True},
+                            {
+                                "name": "vendorItemId",
+                                "value": vendor_item_id,
+                                "inline": True,
+                            },
+                            {"name": "사유", "value": reason_label, "inline": False},
+                            {
+                                "name": "처리정책",
+                                "value": "경고 후 진행",
+                                "inline": True,
+                            },
+                            {
+                                "name": "처리시각",
+                                "value": _now_kst_str(),
+                                "inline": True,
+                            },
+                        ],
+                    }
+                ]
+                await post_webhook(
+                    COUPANG_ORDER_WEBHOOK, "가격검증 경고(진행)", embeds=embeds
+                )
 
         if guard["blocked"]:
             low_key = f"{order_id}|{vendor_item_id}|{paid_unit}|{min_price}"
@@ -866,28 +996,64 @@ async def process_new_orders():
                     f"[Order][PriceGuard] ❌ 가격미달 보류: orderId={order_id} | "
                     f"상품결제단가={paid_unit:,}원 <= 최소판매금액={min_price:,}원"
                 )
-                embeds = [{
-                    "title": "🚫 가격미달 보류",
-                    "color": 15158332,
-                    "fields": [
-                        {"name": "주문 ID", "value": order_id, "inline": True},
-                        {"name": "상품", "value": product_name, "inline": True},
-                        {"name": "구매자", "value": buyer_name, "inline": True},
-                        {"name": "vendorItemId", "value": vendor_item_id, "inline": True},
-                        {"name": "수량", "value": f"{qty}개", "inline": True},
-                        {"name": "상품결제금액", "value": f"{paid_total:,}원" if paid_total is not None else "N/A", "inline": True},
-                        {"name": "상품결제단가", "value": f"{paid_unit:,}원" if paid_unit is not None else "N/A", "inline": True},
-                        {"name": "최소판매금액", "value": f"{min_price:,}원" if min_price is not None else "N/A", "inline": True},
-                        {
-                            "name": "차액(단가-최소)",
-                            "value": f"{(paid_unit - min_price):,}원" if paid_unit is not None and min_price is not None else "N/A",
-                            "inline": True,
-                        },
-                        {"name": "처리정책", "value": "가격미달 품목 보류", "inline": False},
-                        {"name": "처리시각", "value": _now_kst_str(), "inline": True},
-                    ],
-                }]
-                await post_webhook(COUPANG_ORDER_WEBHOOK, "가격미달 보류", embeds=embeds)
+                embeds = [
+                    {
+                        "title": "🚫 가격미달 보류",
+                        "color": 15158332,
+                        "fields": [
+                            {"name": "주문 ID", "value": order_id, "inline": True},
+                            {"name": "상품", "value": product_name, "inline": True},
+                            {"name": "구매자", "value": buyer_name, "inline": True},
+                            {
+                                "name": "vendorItemId",
+                                "value": vendor_item_id,
+                                "inline": True,
+                            },
+                            {"name": "수량", "value": f"{qty}개", "inline": True},
+                            {
+                                "name": "상품결제금액",
+                                "value": f"{paid_total:,}원"
+                                if paid_total is not None
+                                else "N/A",
+                                "inline": True,
+                            },
+                            {
+                                "name": "상품결제단가",
+                                "value": f"{paid_unit:,}원"
+                                if paid_unit is not None
+                                else "N/A",
+                                "inline": True,
+                            },
+                            {
+                                "name": "최소판매금액",
+                                "value": f"{min_price:,}원"
+                                if min_price is not None
+                                else "N/A",
+                                "inline": True,
+                            },
+                            {
+                                "name": "차액(단가-최소)",
+                                "value": f"{(paid_unit - min_price):,}원"
+                                if paid_unit is not None and min_price is not None
+                                else "N/A",
+                                "inline": True,
+                            },
+                            {
+                                "name": "처리정책",
+                                "value": "가격미달 품목 보류",
+                                "inline": False,
+                            },
+                            {
+                                "name": "처리시각",
+                                "value": _now_kst_str(),
+                                "inline": True,
+                            },
+                        ],
+                    }
+                ]
+                await post_webhook(
+                    COUPANG_ORDER_WEBHOOK, "가격미달 보류", embeds=embeds
+                )
 
             if order_id in processed_ids:
                 row_idx = order_row_by_id.get(order_id)
@@ -895,17 +1061,26 @@ async def process_new_orders():
                     current_status = order_status_by_id.get(order_id, "")
                     current_sms = order_sms_by_id.get(order_id, "")
                     if current_status != ORDER_STATUS_PRICE_HOLD:
-                        _queue_sheet_cell_update(pending_cell_updates, row_idx, COL_ORDER_STATUS, ORDER_STATUS_PRICE_HOLD)
+                        _queue_sheet_cell_update(
+                            pending_cell_updates,
+                            row_idx,
+                            COL_ORDER_STATUS,
+                            ORDER_STATUS_PRICE_HOLD,
+                        )
                         order_status_by_id[order_id] = ORDER_STATUS_PRICE_HOLD
                         updated_count += 1
                     if current_sms not in ("발송완료", "미완료"):
-                        _queue_sheet_cell_update(pending_cell_updates, row_idx, COL_ORDER_SMS, "미완료")
+                        _queue_sheet_cell_update(
+                            pending_cell_updates, row_idx, COL_ORDER_SMS, "미완료"
+                        )
                         order_sms_by_id[order_id] = "미완료"
                         updated_count += 1
                     await asyncio.sleep(0.2)
                     continue
 
-            await append_order_to_sheet(ws, order, sms_sent=False, status=ORDER_STATUS_PRICE_HOLD)
+            await append_order_to_sheet(
+                ws, order, sms_sent=False, status=ORDER_STATUS_PRICE_HOLD
+            )
             processed_ids.add(order_id)
             new_count += 1
             await asyncio.sleep(0.2)
@@ -924,20 +1099,30 @@ async def process_new_orders():
                 continue
 
             if needs_status_retry:
-                print(f"  → [결제완료-재시도] {order_id} | {product_name} x{qty} | {buyer_name}")
+                print(
+                    f"  → [결제완료-재시도] {order_id} | {product_name} x{qty} | {buyer_name}"
+                )
                 confirmed = await confirm_order(order_id, shipment_box_id)
                 if confirmed:
-                    _queue_sheet_cell_update(pending_cell_updates, row_idx, COL_ORDER_STATUS, "상품준비중")
+                    _queue_sheet_cell_update(
+                        pending_cell_updates, row_idx, COL_ORDER_STATUS, "상품준비중"
+                    )
                     order_status_by_id[order_id] = "상품준비중"
                     updated_count += 1
                 else:
-                    _queue_sheet_cell_update(pending_cell_updates, row_idx, COL_ORDER_STATUS, "결제완료")
+                    _queue_sheet_cell_update(
+                        pending_cell_updates, row_idx, COL_ORDER_STATUS, "결제완료"
+                    )
                     order_status_by_id[order_id] = "결제완료"
                     updated_count += 1
-                    print(f"  ⚠️ 발주확인 실패 — 시트 상태를 결제완료로 유지: {order_id}")
+                    print(
+                        f"  ⚠️ 발주확인 실패 — 시트 상태를 결제완료로 유지: {order_id}"
+                    )
 
             if current_sms not in ("발송완료", "미완료"):
-                _queue_sheet_cell_update(pending_cell_updates, row_idx, COL_ORDER_SMS, "미완료")
+                _queue_sheet_cell_update(
+                    pending_cell_updates, row_idx, COL_ORDER_SMS, "미완료"
+                )
                 order_sms_by_id[order_id] = "미완료"
                 updated_count += 1
 
@@ -964,19 +1149,29 @@ async def process_new_orders():
         processed_ids.add(order_id)
         new_count += 1
 
-        embeds = [{
-            "title": "🛍️ 신규 주문 접수",
-            "color": 3447003,
-            "fields": [
-                {"name": "주문 ID",  "value": order_id,      "inline": True},
-                {"name": "상품",     "value": product_name,  "inline": True},
-                {"name": "수량",     "value": f"{qty}개",     "inline": True},
-                {"name": "구매자",   "value": buyer_name,    "inline": True},
-                {"name": "발주확인", "value": "✅" if confirmed else "❌", "inline": True},
-                {"name": "SMS",      "value": "✅" if sms_sent else "❌",  "inline": True},
-                {"name": "처리시각", "value": _now_kst_str(), "inline": False},
-            ],
-        }]
+        embeds = [
+            {
+                "title": "🛍️ 신규 주문 접수",
+                "color": 3447003,
+                "fields": [
+                    {"name": "주문 ID", "value": order_id, "inline": True},
+                    {"name": "상품", "value": product_name, "inline": True},
+                    {"name": "수량", "value": f"{qty}개", "inline": True},
+                    {"name": "구매자", "value": buyer_name, "inline": True},
+                    {
+                        "name": "발주확인",
+                        "value": "✅" if confirmed else "❌",
+                        "inline": True,
+                    },
+                    {
+                        "name": "SMS",
+                        "value": "✅" if sms_sent else "❌",
+                        "inline": True,
+                    },
+                    {"name": "처리시각", "value": _now_kst_str(), "inline": False},
+                ],
+            }
+        ]
         await post_webhook(COUPANG_ORDER_WEBHOOK, "새 주문 접수", embeds=embeds)
         await asyncio.sleep(0.5)
 
@@ -987,21 +1182,30 @@ async def process_new_orders():
         receiver = order.get("receiver", {})
         items = order.get("orderItems", [{}])
         item = items[0] if items else {}
-        phone = receiver.get("safeNumber", receiver.get("phone", "")) or order_phone_by_id.get(order_id, "")
+        phone = receiver.get(
+            "safeNumber", receiver.get("phone", "")
+        ) or order_phone_by_id.get(order_id, "")
 
         if order_id in processed_ids:
             row_idx = order_row_by_id.get(order_id)
             if not row_idx:
                 continue
 
-            if order_status_by_id.get(order_id) in ("결제완료", ORDER_STATUS_PRICE_HOLD):
-                _queue_sheet_cell_update(pending_cell_updates, row_idx, COL_ORDER_STATUS, "상품준비중")
+            if order_status_by_id.get(order_id) in (
+                "결제완료",
+                ORDER_STATUS_PRICE_HOLD,
+            ):
+                _queue_sheet_cell_update(
+                    pending_cell_updates, row_idx, COL_ORDER_STATUS, "상품준비중"
+                )
                 order_status_by_id[order_id] = "상품준비중"
                 updated_count += 1
 
             if order_sms_by_id.get(order_id) != "발송완료":
                 if order_sms_by_id.get(order_id) != "미완료":
-                    _queue_sheet_cell_update(pending_cell_updates, row_idx, COL_ORDER_SMS, "미완료")
+                    _queue_sheet_cell_update(
+                        pending_cell_updates, row_idx, COL_ORDER_SMS, "미완료"
+                    )
                     order_sms_by_id[order_id] = "미완료"
                     updated_count += 1
 
@@ -1052,7 +1256,7 @@ async def sync_delivery_status_to_sheet(days: int = 60) -> None:
     now_kst = datetime.now(KST)
     oldest_active_date: datetime | None = None
 
-    for row in rows[ORDER_START_ROW - 1:]:
+    for row in rows[ORDER_START_ROW - 1 :]:
         if len(row) < COL_ORDER_STATUS:
             continue
 
@@ -1060,7 +1264,9 @@ async def sync_delivery_status_to_sheet(days: int = 60) -> None:
         if status not in active_sync_statuses:
             continue
 
-        raw_order_date = row[COL_ORDER_DATE - 1].strip() if len(row) >= COL_ORDER_DATE else ""
+        raw_order_date = (
+            row[COL_ORDER_DATE - 1].strip() if len(row) >= COL_ORDER_DATE else ""
+        )
         if not raw_order_date:
             continue
 
@@ -1099,12 +1305,14 @@ async def sync_delivery_status_to_sheet(days: int = 60) -> None:
 
     order_row_by_id: dict[str, int] = {}
     order_status_by_id: dict[str, str] = {}
-    for row_idx, row in enumerate(rows[ORDER_START_ROW - 1:], start=ORDER_START_ROW):
+    for row_idx, row in enumerate(rows[ORDER_START_ROW - 1 :], start=ORDER_START_ROW):
         order_id = row[COL_ORDER_ID - 1].strip() if len(row) >= COL_ORDER_ID else ""
         if not order_id:
             continue
         order_row_by_id[order_id] = row_idx
-        order_status_by_id[order_id] = row[COL_ORDER_STATUS - 1].strip() if len(row) >= COL_ORDER_STATUS else ""
+        order_status_by_id[order_id] = (
+            row[COL_ORDER_STATUS - 1].strip() if len(row) >= COL_ORDER_STATUS else ""
+        )
 
     pending_cell_updates: dict[str, object] = {}
     updated_count = 0
@@ -1128,7 +1336,9 @@ async def sync_delivery_status_to_sheet(days: int = 60) -> None:
         if current_status == target_status:
             continue
 
-        _queue_sheet_cell_update(pending_cell_updates, row_idx, COL_ORDER_STATUS, target_status)
+        _queue_sheet_cell_update(
+            pending_cell_updates, row_idx, COL_ORDER_STATUS, target_status
+        )
         order_status_by_id[order_id] = target_status
         updated_count += 1
 
@@ -1148,15 +1358,21 @@ async def sync_delivery_status_to_sheet(days: int = 60) -> None:
             delete_check_failed += 1
 
     if delete_candidates:
-        print(f"[Order] 쿠팡 미존재 주문 감지 — 시트 삭제 대상 {len(delete_candidates)}건")
+        print(
+            f"[Order] 쿠팡 미존재 주문 감지 — 시트 삭제 대상 {len(delete_candidates)}건"
+        )
 
-    for row_idx, order_id in sorted(delete_candidates, key=lambda x: x[0], reverse=True):
+    for row_idx, order_id in sorted(
+        delete_candidates, key=lambda x: x[0], reverse=True
+    ):
         try:
             ws.delete_rows(row_idx)
             deleted_count += 1
         except Exception as e:
             delete_failed += 1
-            print(f"[Order] 시트 주문 삭제 실패 (row={row_idx}, orderId={order_id}): {e}")
+            print(
+                f"[Order] 시트 주문 삭제 실패 (row={row_idx}, orderId={order_id}): {e}"
+            )
 
     print(
         "[Order] 배송상태 동기화 완료 — "
@@ -1165,13 +1381,17 @@ async def sync_delivery_status_to_sheet(days: int = 60) -> None:
         f"삭제 {deleted_count}건, 확인실패 {delete_check_failed}건, 삭제실패 {delete_failed}건"
     )
 
+
 # ──────────────────────────────────────────────
 # 판매가 / 품절 관리 (구글 시트 → 쿠팡 API)
 # ──────────────────────────────────────────────
 
 # 이전 상태 저장 (가격·재고 변경 감지용)
-_price_state: dict[str, dict] = {}  # {vendorItemId: {"price": int, "stock": int, "status": str}}
+_price_state: dict[
+    str, dict
+] = {}  # {vendorItemId: {"price": int, "stock": int, "status": str}}
 _sync_baseline_initialized = False
+_last_product_sheet_refresh_at: datetime | None = None
 
 # 소싱목록 이전 가격 상태 (변경 감지용)
 _sourcing_price_state: dict[int, int] = {}  # {row_num: min_price}
@@ -1179,15 +1399,15 @@ _price_guard_warned_missing: set[str] = set()
 _price_guard_warned_low: set[str] = set()
 
 # 소싱목록 컬럼 설정
-SOURCING_SHEET        = "소싱목록"
-SOURCING_HEADER_ROW   = 2
-SOURCING_DATA_START   = 3
-SOURCING_COL_NAME     = 2   # B열: 상품명
-SOURCING_COL_BUYPRICE = 8   # H열: 매입가격
+SOURCING_SHEET = "소싱목록"
+SOURCING_HEADER_ROW = 2
+SOURCING_DATA_START = 3
+SOURCING_COL_NAME = 2  # B열: 상품명
+SOURCING_COL_BUYPRICE = 8  # H열: 매입가격
 SOURCING_COL_MINPRICE = 11  # K열: 최소판매금액
-SOURCING_COL_VID      = 15  # O열: vendorItemId(쿠팡)
+SOURCING_COL_VID = 15  # O열: vendorItemId(쿠팡)
 SOURCING_MATCH_THRESHOLD = _env_int("SOURCING_MATCH_THRESHOLD", 82)
-SOURCING_MATCH_MIN_GAP   = _env_int("SOURCING_MATCH_MIN_GAP", 6)
+SOURCING_MATCH_MIN_GAP = _env_int("SOURCING_MATCH_MIN_GAP", 6)
 
 
 def _normalize_product_name(name: str) -> str:
@@ -1212,11 +1432,13 @@ def _fuzzy_name_score(a: str, b: str) -> int:
     if not a or not b:
         return 0
     if _rf_fuzz is not None:
-        return int(max(
-            _rf_fuzz.ratio(a, b),
-            _rf_fuzz.partial_ratio(a, b),
-            _rf_fuzz.token_set_ratio(a, b),
-        ))
+        return int(
+            max(
+                _rf_fuzz.ratio(a, b),
+                _rf_fuzz.partial_ratio(a, b),
+                _rf_fuzz.token_set_ratio(a, b),
+            )
+        )
     return int(SequenceMatcher(None, a, b).ratio() * 100)
 
 
@@ -1233,21 +1455,247 @@ def _name_number_set(name: str) -> set[str]:
         return set()
     return set(re.findall(r"\d+", normalized))
 
+
+def _inventory_on_sale(item_data: dict | None, default: bool = True) -> bool:
+    raw = (item_data or {}).get("onSale", default)
+    if isinstance(raw, str):
+        return raw.strip().lower() in {"true", "1", "y", "yes"}
+    return bool(raw)
+
+
+def _inventory_stock(item_data: dict | None, fallback: dict | None = None) -> int | None:
+    data = item_data or {}
+    stock = _to_int(data.get("amountInStock"))
+    if stock is None:
+        stock = _to_int(data.get("quantity"))
+    if stock is None and fallback:
+        stock = _to_int(fallback.get("maximumBuyCount"))
+    return stock
+
+
+def _sheet_sale_status(stock: int | None, on_sale: bool) -> str:
+    if stock is not None and stock <= 0:
+        return "품절"
+    return "판매중" if on_sale else "판매중지"
+
+
+def _product_sheet_name(product_name: str, item_name: str) -> str:
+    base = (product_name or "").strip()
+    option = (item_name or "").strip()
+    if not option or option == base:
+        return base
+    return f"{base} / {option}"
+
+
+async def _fetch_product_sheet_snapshot_from_api() -> list[dict]:
+    """쿠팡 판매상품 전체 스냅샷을 쿠팡상품관리 시트 형식으로 수집."""
+    snapshot: list[dict] = []
+    seen_vendor_item_ids: set[str] = set()
+    next_token = None
+
+    while True:
+        params = {"vendorId": COUPANG_VENDOR_ID, "maxPerPage": 100}
+        if next_token:
+            params["nextToken"] = next_token
+
+        try:
+            listing = await _coupang_get(
+                f"{COUPANG_SELLER_MARKETPLACE}/seller-products", params=params
+            )
+        except Exception as e:
+            print(f"[ProductRefresh] 상품 목록 조회 실패: {e}")
+            break
+
+        products = listing.get("data", []) or []
+        if not products:
+            break
+
+        for product in products:
+            seller_product_id = str(product.get("sellerProductId", "")).strip()
+            product_name = (product.get("sellerProductName") or "").strip()
+            if not seller_product_id:
+                continue
+
+            try:
+                detail = await _coupang_get(
+                    f"{COUPANG_SELLER_MARKETPLACE}/seller-products/{seller_product_id}"
+                )
+            except Exception as e:
+                print(
+                    f"[ProductRefresh] 상품 상세 조회 실패: sellerProductId={seller_product_id} | {e}"
+                )
+                await asyncio.sleep(0.1)
+                continue
+
+            items = ((detail.get("data") or {}).get("items") or [])
+            for item in items:
+                vendor_item_id = str(item.get("vendorItemId", "")).strip()
+                if not vendor_item_id or vendor_item_id in seen_vendor_item_ids:
+                    continue
+
+                inventory = await get_vendor_item_stock(vendor_item_id)
+                price = _to_positive_int((inventory or {}).get("salePrice"))
+                if price is None:
+                    price = _to_positive_int((inventory or {}).get("price"))
+                if price is None:
+                    price = _to_positive_int(item.get("salePrice"))
+
+                stock = _inventory_stock(inventory, fallback=item)
+                on_sale = _inventory_on_sale(inventory, default=True)
+                status = _sheet_sale_status(stock, on_sale)
+                item_name = (item.get("itemName") or product_name).strip()
+
+                snapshot.append(
+                    {
+                        "vendorItemId": vendor_item_id,
+                        "productName": _product_sheet_name(product_name, item_name),
+                        "salePrice": price,
+                        "stock": stock,
+                        "status": status,
+                        "onSale": on_sale,
+                    }
+                )
+                seen_vendor_item_ids.add(vendor_item_id)
+                await asyncio.sleep(0.05)
+
+            await asyncio.sleep(0.1)
+
+        next_token = listing.get("nextToken")
+        if not next_token:
+            break
+        await asyncio.sleep(0.2)
+
+    return snapshot
+
+
+async def refresh_product_sheet_from_api(force: bool = False) -> bool:
+    """쿠팡상품관리 탭을 일정 주기로 API 기준 최신 스냅샷으로 갱신."""
+    global _last_product_sheet_refresh_at
+    global _sync_baseline_initialized
+
+    try:
+        ws = _open_coupang_sheet(COUPANG_PRODUCT_SHEET)
+        current_rows = ws.get_all_values()
+    except Exception as e:
+        print(f"[ProductRefresh] 시트 열기 실패: {e}")
+        return False
+
+    has_product_rows = any(
+        len(row) >= COL_VENDOR_ITEM_ID and (row[COL_VENDOR_ITEM_ID - 1] or "").strip()
+        for row in current_rows[PRODUCT_START_ROW - 1 :]
+    )
+
+    if not force and COUPANG_PRODUCT_REFRESH_MINUTES <= 0 and has_product_rows:
+        return False
+
+    now_utc = datetime.now(timezone.utc)
+    if (
+        not force
+        and has_product_rows
+        and _last_product_sheet_refresh_at is not None
+        and COUPANG_PRODUCT_REFRESH_MINUTES > 0
+        and (now_utc - _last_product_sheet_refresh_at).total_seconds()
+        < COUPANG_PRODUCT_REFRESH_MINUTES * 60
+    ):
+        return False
+
+    print(f"[ProductRefresh] 쿠팡상품관리 최신화 시작... ({_now_kst_str()})")
+    snapshot = await _fetch_product_sheet_snapshot_from_api()
+    if not snapshot:
+        print("[ProductRefresh] 최신화 대상 상품이 없습니다")
+        return False
+
+    existing_order: dict[str, int] = {}
+    for index, row in enumerate(current_rows[PRODUCT_START_ROW - 1 :]):
+        vendor_item_id = (
+            (row[COL_VENDOR_ITEM_ID - 1] or "").strip()
+            if len(row) >= COL_VENDOR_ITEM_ID
+            else ""
+        )
+        if vendor_item_id and vendor_item_id not in existing_order:
+            existing_order[vendor_item_id] = index
+
+    snapshot.sort(
+        key=lambda item: (
+            existing_order.get(item["vendorItemId"], 10**9),
+            item["productName"],
+            item["vendorItemId"],
+        )
+    )
+
+    timestamp = _now_kst_str()
+    output_rows = [
+        [
+            item["vendorItemId"],
+            item["productName"],
+            item["salePrice"] if item["salePrice"] is not None else "",
+            item["stock"] if item["stock"] is not None else "",
+            item["status"],
+            timestamp,
+        ]
+        for item in snapshot
+    ]
+
+    existing_data_count = max(len(current_rows) - 1, 0)
+    write_count = max(existing_data_count, len(output_rows), 1)
+    padded_rows = output_rows + [["", "", "", "", "", ""]] * (write_count - len(output_rows))
+
+    try:
+        ws.batch_update(
+            [
+                {"range": "A1:F1", "values": PRODUCT_SHEET_HEADER},
+                {"range": f"A2:F{1 + write_count}", "values": padded_rows},
+            ],
+            value_input_option="USER_ENTERED",
+        )
+    except Exception as e:
+        print(f"[ProductRefresh] 시트 쓰기 실패: {e}")
+        return False
+
+    fresh_vendor_item_ids: set[str] = set()
+    for item in snapshot:
+        vendor_item_id = item["vendorItemId"]
+        fresh_vendor_item_ids.add(vendor_item_id)
+        _price_state[vendor_item_id] = {
+            "price": item["salePrice"],
+            "stock": item["stock"],
+        }
+        _stock_status[vendor_item_id] = bool(item["onSale"])
+
+    for vendor_item_id in list(_price_state.keys()):
+        if vendor_item_id not in fresh_vendor_item_ids:
+            _price_state.pop(vendor_item_id, None)
+    for vendor_item_id in list(_stock_status.keys()):
+        if vendor_item_id not in fresh_vendor_item_ids:
+            _stock_status.pop(vendor_item_id, None)
+
+    _sync_baseline_initialized = True
+    _last_product_sheet_refresh_at = now_utc
+    print(f"[ProductRefresh] ✅ {len(snapshot)}개 옵션 최신화 완료")
+    return True
+
+
 async def update_sale_price(vendor_item_id: str, new_price: int) -> bool:
     """
     판매가 변경 API 호출
     PUT /vendor-items/{vendorItemId}/prices/{price}
     """
     if new_price % 10 != 0:
-        print(f"[Price] ❌ 판매가 변경 실패 → 10원 단위만 허용 (vendorItemId={vendor_item_id}, price={new_price})")
+        print(
+            f"[Price] ❌ 판매가 변경 실패 → 10원 단위만 허용 (vendorItemId={vendor_item_id}, price={new_price})"
+        )
         return False
 
-    path = f"{COUPANG_SELLER_MARKETPLACE}/vendor-items/{vendor_item_id}/prices/{new_price}"
+    path = (
+        f"{COUPANG_SELLER_MARKETPLACE}/vendor-items/{vendor_item_id}/prices/{new_price}"
+    )
     try:
         result = await _coupang_put(path, params={"forceSalePriceUpdate": "true"})
         code = str(result.get("code", ""))
         if code in ("SUCCESS", "200"):
-            print(f"[Price] ✅ 판매가 변경 → vendorItemId={vendor_item_id} | {new_price:,}원")
+            print(
+                f"[Price] ✅ 판매가 변경 → vendorItemId={vendor_item_id} | {new_price:,}원"
+            )
             return True
         else:
             print(f"[Price] ❌ 판매가 변경 실패 → {result}")
@@ -1256,6 +1704,7 @@ async def update_sale_price(vendor_item_id: str, new_price: int) -> bool:
         print(f"[Price] 예외: {e}")
         return False
 
+
 async def update_stock(vendor_item_id: str, quantity: int) -> bool:
     """재고 수량 변경 API"""
     path = f"{COUPANG_SELLER_MARKETPLACE}/vendor-items/{vendor_item_id}/quantities/{quantity}"
@@ -1263,7 +1712,9 @@ async def update_stock(vendor_item_id: str, quantity: int) -> bool:
         result = await _coupang_put(path)
         code = str(result.get("code", ""))
         if code in ("SUCCESS", "200"):
-            print(f"[Stock] ✅ 재고 변경 → vendorItemId={vendor_item_id} | {quantity}개")
+            print(
+                f"[Stock] ✅ 재고 변경 → vendorItemId={vendor_item_id} | {quantity}개"
+            )
             return True
         else:
             print(f"[Stock] ❌ 재고 변경 실패 → {result}")
@@ -1271,6 +1722,7 @@ async def update_stock(vendor_item_id: str, quantity: int) -> bool:
     except Exception as e:
         print(f"[Stock] 예외: {e}")
         return False
+
 
 async def update_sale_status(vendor_item_id: str, on_sale: bool) -> bool:
     """판매 상태 변경 API (판매중 / 판매중지)"""
@@ -1298,13 +1750,20 @@ def _is_manual_stop_status(status_text: str) -> bool:
         return False
     if "품절" in normalized:
         return False
-    return any(keyword in normalized for keyword in ("판매중지", "판매종료", "판매정지", "중지", "종료"))
+    return any(
+        keyword in normalized
+        for keyword in ("판매중지", "판매종료", "판매정지", "중지", "종료")
+    )
 
 
 def _is_soldout_status(status_text: str) -> bool:
     """시트 판매상태가 품절 계열인지 판별."""
     normalized = (status_text or "").strip().lower()
-    return any(keyword in normalized for keyword in ("품절", "매진", "sold out", "out of stock"))
+    return any(
+        keyword in normalized
+        for keyword in ("품절", "매진", "sold out", "out of stock")
+    )
+
 
 async def sync_products_from_sheet():
     """
@@ -1315,45 +1774,51 @@ async def sync_products_from_sheet():
     """
     global _sync_baseline_initialized
     print(f"[Sync] 상품 동기화 시작... ({_now_kst_str()})")
-    
+
     try:
         ws = _open_coupang_sheet(COUPANG_PRODUCT_SHEET)
         rows = ws.get_all_values()
     except Exception as e:
         print(f"[Sync] 시트 열기 실패: {e}")
         return
-    
-    data_rows = rows[PRODUCT_START_ROW - 1:]  # 헤더 제외
+
+    data_rows = rows[PRODUCT_START_ROW - 1 :]  # 헤더 제외
     is_first_sync = not _sync_baseline_initialized
     if is_first_sync:
         print("[Sync] 최초 동기화: 기준 상태만 적재하고 API 반영은 생략")
-    
+
     changes = []
     pending_cell_updates: dict[str, object] = {}
-    
+
     for i, row in enumerate(data_rows, start=PRODUCT_START_ROW):
         # 빈 행 스킵
         if not row or not row[COL_VENDOR_ITEM_ID - 1].strip():
             continue
-        
+
         vendor_item_id = row[COL_VENDOR_ITEM_ID - 1].strip()
-        product_name   = row[COL_PRODUCT_NAME - 1].strip() if len(row) > COL_PRODUCT_NAME - 1 else ""
-        price_str      = row[COL_SALE_PRICE - 1].strip() if len(row) > COL_SALE_PRICE - 1 else ""
-        stock_str      = row[COL_STOCK - 1].strip() if len(row) > COL_STOCK - 1 else ""
-        sale_status    = row[COL_SALE_STATUS - 1].strip() if len(row) > COL_SALE_STATUS - 1 else ""
+        product_name = (
+            row[COL_PRODUCT_NAME - 1].strip() if len(row) > COL_PRODUCT_NAME - 1 else ""
+        )
+        price_str = (
+            row[COL_SALE_PRICE - 1].strip() if len(row) > COL_SALE_PRICE - 1 else ""
+        )
+        stock_str = row[COL_STOCK - 1].strip() if len(row) > COL_STOCK - 1 else ""
+        sale_status = (
+            row[COL_SALE_STATUS - 1].strip() if len(row) > COL_SALE_STATUS - 1 else ""
+        )
         is_manual_stop = _is_manual_stop_status(sale_status)
-        
+
         # 숫자 파싱
         try:
             new_price = int(re.sub(r"[^0-9]", "", price_str)) if price_str else None
         except ValueError:
             new_price = None
-        
+
         try:
             new_stock = int(re.sub(r"[^0-9]", "", stock_str)) if stock_str else None
         except ValueError:
             new_stock = None
-        
+
         prev = _price_state.get(vendor_item_id, {})
         prev_price = prev.get("price")
         prev_stock = prev.get("stock")
@@ -1361,18 +1826,22 @@ async def sync_products_from_sheet():
         if is_first_sync and prev_price is None and prev_stock is None:
             _price_state[vendor_item_id] = {"price": new_price, "stock": new_stock}
             continue
-        
+
         row_changes = []
         ts = _now_kst_str()
-        
+
         # ── 가격 변경 감지 ──
         if new_price is not None and new_price != prev_price and new_price >= 100:
             success = await update_sale_price(vendor_item_id, new_price)
             if success:
-                row_changes.append(f"판매가: {prev_price:,}원 → {new_price:,}원" if prev_price else f"판매가: {new_price:,}원 설정")
+                row_changes.append(
+                    f"판매가: {prev_price:,}원 → {new_price:,}원"
+                    if prev_price
+                    else f"판매가: {new_price:,}원 설정"
+                )
                 _queue_sheet_cell_update(pending_cell_updates, i, COL_UPDATED_AT, ts)
             await asyncio.sleep(0.3)  # API 속도제한 방지
-        
+
         # ── 재고 / 품절 처리 ──
         if new_stock is not None and new_stock != prev_stock:
             if new_stock == 0:
@@ -1380,8 +1849,12 @@ async def sync_products_from_sheet():
                 success = await update_sale_status(vendor_item_id, False)
                 if success:
                     row_changes.append("품절 처리 (판매중지)")
-                    _queue_sheet_cell_update(pending_cell_updates, i, COL_SALE_STATUS, "품절")
-                    _queue_sheet_cell_update(pending_cell_updates, i, COL_UPDATED_AT, ts)
+                    _queue_sheet_cell_update(
+                        pending_cell_updates, i, COL_SALE_STATUS, "품절"
+                    )
+                    _queue_sheet_cell_update(
+                        pending_cell_updates, i, COL_UPDATED_AT, ts
+                    )
             else:
                 # 재고 복구: 판매중지 상태가 아니면 판매 재개
                 if prev_stock == 0 or not prev_stock:
@@ -1391,46 +1864,55 @@ async def sync_products_from_sheet():
                         success_status = await update_sale_status(vendor_item_id, True)
                         if success_status:
                             row_changes.append("판매 재개")
-                
+
                 success_stock = await update_stock(vendor_item_id, new_stock)
                 if success_stock:
                     row_changes.append(f"재고: {new_stock}개")
                     if not is_manual_stop:
-                        _queue_sheet_cell_update(pending_cell_updates, i, COL_SALE_STATUS, "판매중")
-                    _queue_sheet_cell_update(pending_cell_updates, i, COL_UPDATED_AT, ts)
-            
+                        _queue_sheet_cell_update(
+                            pending_cell_updates, i, COL_SALE_STATUS, "판매중"
+                        )
+                    _queue_sheet_cell_update(
+                        pending_cell_updates, i, COL_UPDATED_AT, ts
+                    )
+
             await asyncio.sleep(0.3)
-        
+
         # 상태 업데이트
         _price_state[vendor_item_id] = {"price": new_price, "stock": new_stock}
-        
+
         if row_changes:
-            changes.append({
-                "name": product_name or vendor_item_id,
-                "changes": row_changes,
-            })
+            changes.append(
+                {
+                    "name": product_name or vendor_item_id,
+                    "changes": row_changes,
+                }
+            )
 
     _flush_sheet_cell_updates(ws, pending_cell_updates)
-    
+
     if changes:
         # Discord 알림
         change_text = "\n".join(
             f"• {c['name']}: {', '.join(c['changes'])}" for c in changes
         )
-        embeds = [{
-            "title": "🔄 쿠팡 상품 업데이트",
-            "description": change_text,
-            "color": 15105570,
-            "fields": [
-                {"name": "처리 건수", "value": f"{len(changes)}개", "inline": True},
-                {"name": "처리 시각", "value": _now_kst_str(), "inline": True},
-            ],
-        }]
+        embeds = [
+            {
+                "title": "🔄 쿠팡 상품 업데이트",
+                "description": change_text,
+                "color": 15105570,
+                "fields": [
+                    {"name": "처리 건수", "value": f"{len(changes)}개", "inline": True},
+                    {"name": "처리 시각", "value": _now_kst_str(), "inline": True},
+                ],
+            }
+        ]
         await post_webhook(COUPANG_ORDER_WEBHOOK, "상품 자동 업데이트", embeds=embeds)
     else:
         print("[Sync] 변경 없음")
 
     _sync_baseline_initialized = True
+
 
 # ──────────────────────────────────────────────
 # 소싱목록 기반 가격 자동 동기화
@@ -1449,10 +1931,10 @@ async def sync_price_from_sourcing():
         gc = gspread.authorize(_google_creds())
         sh = gc.open_by_key(COUPANG_SHEET_ID)
         ws = sh.worksheet(SOURCING_SHEET)
-        col_name = ws.col_values(SOURCING_COL_NAME)      # B
-        col_buy = ws.col_values(SOURCING_COL_BUYPRICE)   # H
-        col_min = ws.col_values(SOURCING_COL_MINPRICE)   # K
-        col_vid = ws.col_values(SOURCING_COL_VID)        # O
+        col_name = ws.col_values(SOURCING_COL_NAME)  # B
+        col_buy = ws.col_values(SOURCING_COL_BUYPRICE)  # H
+        col_min = ws.col_values(SOURCING_COL_MINPRICE)  # K
+        col_vid = ws.col_values(SOURCING_COL_VID)  # O
     except Exception as e:
         print(f"[SourcingSync] 시트 열기 실패: {e}")
         return
@@ -1462,10 +1944,14 @@ async def sync_price_from_sourcing():
     try:
         ws_product = sh.worksheet(COUPANG_PRODUCT_SHEET)
         product_rows = ws_product.get_all_values()
-        for row in product_rows[PRODUCT_START_ROW - 1:]:
+        for row in product_rows[PRODUCT_START_ROW - 1 :]:
             if len(row) < COL_PRODUCT_NAME:
                 continue
-            vid_cell = (row[COL_VENDOR_ITEM_ID - 1] or "").strip() if len(row) >= COL_VENDOR_ITEM_ID else ""
+            vid_cell = (
+                (row[COL_VENDOR_ITEM_ID - 1] or "").strip()
+                if len(row) >= COL_VENDOR_ITEM_ID
+                else ""
+            )
             pname = (row[COL_PRODUCT_NAME - 1] or "").strip()
             if not vid_cell or not pname:
                 continue
@@ -1516,7 +2002,9 @@ async def sync_price_from_sourcing():
             return api_price
 
         prev_state = _price_state.get(vid, {})
-        fallback_price = _to_int_price(prev_state.get("price") if isinstance(prev_state, dict) else None)
+        fallback_price = _to_int_price(
+            prev_state.get("price") if isinstance(prev_state, dict) else None
+        )
         if fallback_price is not None:
             current_price_by_vid[vid] = fallback_price
         return fallback_price
@@ -1525,12 +2013,14 @@ async def sync_price_from_sourcing():
     soldout_changes = []
     soldout_row_seen = 0
 
-    max_row = max(len(col_name), len(col_buy), len(col_min), len(col_vid), SOURCING_DATA_START)
+    max_row = max(
+        len(col_name), len(col_buy), len(col_min), len(col_vid), SOURCING_DATA_START
+    )
     for i in range(SOURCING_DATA_START, max_row + 1):
-        name_cell = (col_name[i - 1].strip() if i - 1 < len(col_name) else "")
-        buy_price_cell = (col_buy[i - 1].strip() if i - 1 < len(col_buy) else "")
-        price_cell = (col_min[i - 1].strip() if i - 1 < len(col_min) else "")
-        vid_cell = (col_vid[i - 1].strip() if i - 1 < len(col_vid) else "")
+        name_cell = col_name[i - 1].strip() if i - 1 < len(col_name) else ""
+        buy_price_cell = col_buy[i - 1].strip() if i - 1 < len(col_buy) else ""
+        price_cell = col_min[i - 1].strip() if i - 1 < len(col_min) else ""
+        vid_cell = col_vid[i - 1].strip() if i - 1 < len(col_vid) else ""
 
         if not name_cell and not buy_price_cell and not price_cell and not vid_cell:
             continue
@@ -1539,7 +2029,12 @@ async def sync_price_from_sourcing():
         is_soldout_row = _is_soldout_status(buy_price_cell)
 
         # 품절 행에서만 O열 비어있거나 1개인 케이스를 상품명으로 보강한다.
-        if is_soldout_row and len(vendor_item_ids) <= 1 and name_cell and product_name_to_vids:
+        if (
+            is_soldout_row
+            and len(vendor_item_ids) <= 1
+            and name_cell
+            and product_name_to_vids
+        ):
             source_key = _normalize_product_name(name_cell)
             augmented_ids: set[str] = set(vendor_item_ids)
             source_tokens = _name_token_set(name_cell)
@@ -1567,11 +2062,16 @@ async def sync_price_from_sourcing():
                     key_numbers = _name_number_set(key)
                     token_overlap = len(source_tokens.intersection(key_tokens))
                     number_overlap = len(source_numbers.intersection(key_numbers))
-                    if token_overlap >= 2 and (number_overlap >= 1 or not source_numbers):
+                    if token_overlap >= 2 and (
+                        number_overlap >= 1 or not source_numbers
+                    ):
                         augmented_ids.update(ids)
 
             if len(augmented_ids) <= 1:
-                scored = [(_fuzzy_name_score(source_key, key), key) for key in product_name_to_vids.keys()]
+                scored = [
+                    (_fuzzy_name_score(source_key, key), key)
+                    for key in product_name_to_vids.keys()
+                ]
                 scored.sort(key=lambda x: x[0], reverse=True)
                 if scored:
                     best_score = scored[0][0]
@@ -1601,7 +2101,9 @@ async def sync_price_from_sourcing():
 
         if not vendor_item_ids:
             if is_soldout_row:
-                print(f"[SourcingSync] vendorItemId 매핑 없음 스킵 → row={i} name='{name_cell}' O열='{vid_cell}'")
+                print(
+                    f"[SourcingSync] vendorItemId 매핑 없음 스킵 → row={i} name='{name_cell}' O열='{vid_cell}'"
+                )
             continue
 
         # 매입가격(H열) 셀이 품절 상태면 자동 판매중지
@@ -1647,11 +2149,13 @@ async def sync_price_from_sourcing():
                 )
 
             if stopped_ids:
-                soldout_changes.append({
-                    "name": name_cell,
-                    "stopped": len(stopped_ids),
-                    "already_stopped": already_stopped,
-                })
+                soldout_changes.append(
+                    {
+                        "name": name_cell,
+                        "stopped": len(stopped_ids),
+                        "already_stopped": already_stopped,
+                    }
+                )
 
             continue
 
@@ -1675,7 +2179,9 @@ async def sync_price_from_sourcing():
             continue
 
         # 변동 감지 → 매핑된 모든 vendorItemId에 가격 업데이트
-        print(f"[SourcingSync] 가격 변동 감지 → '{name_cell}' | {prev_price:,} → {new_price:,}원 | {len(vendor_item_ids)}개 옵션")
+        print(
+            f"[SourcingSync] 가격 변동 감지 → '{name_cell}' | {prev_price:,} → {new_price:,}원 | {len(vendor_item_ids)}개 옵션"
+        )
 
         success_ids = []
         skipped_floor = 0
@@ -1710,14 +2216,16 @@ async def sync_price_from_sourcing():
             )
 
         if success_ids:
-            price_changes.append({
-                "name": name_cell,
-                "prev": prev_price,
-                "new": new_price,
-                "count": len(success_ids),
-                "skip_floor": skipped_floor,
-                "skip_unknown": skipped_unknown,
-            })
+            price_changes.append(
+                {
+                    "name": name_cell,
+                    "prev": prev_price,
+                    "new": new_price,
+                    "count": len(success_ids),
+                    "skip_floor": skipped_floor,
+                    "skip_unknown": skipped_unknown,
+                }
+            )
 
     if price_changes or soldout_changes:
         lines = []
@@ -1731,25 +2239,29 @@ async def sync_price_from_sourcing():
                 f"• {c['name']}: {c['prev']:,}원 → {c['new']:,}원 "
                 f"(업데이트 {c['count']}개, 스킵 {c['skip_floor'] + c['skip_unknown']}개)"
             )
-        embeds = [{
-            "title": "💰 소싱목록 가격/품절 자동 업데이트",
-            "description": "\n".join(lines),
-            "color": 5763719,
-            "fields": [
-                {
-                    "name": "가격 변경",
-                    "value": f"{len(price_changes)}개 상품",
-                    "inline": True,
-                },
-                {
-                    "name": "품절 중지",
-                    "value": f"{len(soldout_changes)}개 상품",
-                    "inline": True,
-                },
-                {"name": "처리 시각", "value": _now_kst_str(), "inline": True},
-            ],
-        }]
-        await post_webhook(COUPANG_ORDER_WEBHOOK, "소싱목록 가격/품절 자동 업데이트", embeds=embeds)
+        embeds = [
+            {
+                "title": "💰 소싱목록 가격/품절 자동 업데이트",
+                "description": "\n".join(lines),
+                "color": 5763719,
+                "fields": [
+                    {
+                        "name": "가격 변경",
+                        "value": f"{len(price_changes)}개 상품",
+                        "inline": True,
+                    },
+                    {
+                        "name": "품절 중지",
+                        "value": f"{len(soldout_changes)}개 상품",
+                        "inline": True,
+                    },
+                    {"name": "처리 시각", "value": _now_kst_str(), "inline": True},
+                ],
+            }
+        ]
+        await post_webhook(
+            COUPANG_ORDER_WEBHOOK, "소싱목록 가격/품절 자동 업데이트", embeds=embeds
+        )
     else:
         print("[SourcingSync] 변경 없음")
 
@@ -1783,9 +2295,18 @@ async def auto_match_sourcing_vendor_item_ids():
 
     # O열 헤더 보정 (2행)
     try:
-        header = sourcing_rows[SOURCING_HEADER_ROW - 1] if len(sourcing_rows) >= SOURCING_HEADER_ROW else []
-        if len(header) < SOURCING_COL_VID or not (header[SOURCING_COL_VID - 1] or "").strip():
-            ws_sourcing.update_cell(SOURCING_HEADER_ROW, SOURCING_COL_VID, "vendorItemId(쿠팡)")
+        header = (
+            sourcing_rows[SOURCING_HEADER_ROW - 1]
+            if len(sourcing_rows) >= SOURCING_HEADER_ROW
+            else []
+        )
+        if (
+            len(header) < SOURCING_COL_VID
+            or not (header[SOURCING_COL_VID - 1] or "").strip()
+        ):
+            ws_sourcing.update_cell(
+                SOURCING_HEADER_ROW, SOURCING_COL_VID, "vendorItemId(쿠팡)"
+            )
     except Exception as e:
         print(f"[SourcingMatch] O열 헤더 보정 실패: {e}")
 
@@ -1793,7 +2314,7 @@ async def auto_match_sourcing_vendor_item_ids():
     # key: 정규화 상품명, value: vendorItemId 집합
     name_to_vids: dict[str, set[str]] = {}
     name_display: dict[str, str] = {}
-    for row in product_rows[PRODUCT_START_ROW - 1:]:
+    for row in product_rows[PRODUCT_START_ROW - 1 :]:
         if len(row) < 2:
             continue
         vendor_item_cell = (row[COL_VENDOR_ITEM_ID - 1] or "").strip()
@@ -1823,7 +2344,9 @@ async def auto_match_sourcing_vendor_item_ids():
     fuzzy_count = 0
 
     # 소싱목록 O열이 비어있는 행만 처리
-    for i, row in enumerate(sourcing_rows[SOURCING_DATA_START - 1:], start=SOURCING_DATA_START):
+    for i, row in enumerate(
+        sourcing_rows[SOURCING_DATA_START - 1 :], start=SOURCING_DATA_START
+    ):
         if len(row) < SOURCING_COL_NAME:
             continue
 
@@ -1831,7 +2354,11 @@ async def auto_match_sourcing_vendor_item_ids():
         if not sourcing_name:
             continue
 
-        existing_vid = (row[SOURCING_COL_VID - 1] or "").strip() if len(row) >= SOURCING_COL_VID else ""
+        existing_vid = (
+            (row[SOURCING_COL_VID - 1] or "").strip()
+            if len(row) >= SOURCING_COL_VID
+            else ""
+        )
         if existing_vid:
             continue
 
@@ -1848,27 +2375,36 @@ async def auto_match_sourcing_vendor_item_ids():
             exact_count += 1
         else:
             # 2) fuzzy with confidence gate
-            scored = [(_fuzzy_name_score(source_key, ckey), ckey) for ckey in candidate_keys]
+            scored = [
+                (_fuzzy_name_score(source_key, ckey), ckey) for ckey in candidate_keys
+            ]
             scored.sort(key=lambda x: x[0], reverse=True)
             if not scored:
                 continue
             best_score, best_key = scored[0]
             second_score = scored[1][0] if len(scored) > 1 else 0
-            if best_score >= SOURCING_MATCH_THRESHOLD and (best_score - second_score) >= SOURCING_MATCH_MIN_GAP:
+            if (
+                best_score >= SOURCING_MATCH_THRESHOLD
+                and (best_score - second_score) >= SOURCING_MATCH_MIN_GAP
+            ):
                 matched_key = best_key
                 matched_score = best_score
                 fuzzy_count += 1
             else:
                 continue
 
-        vids = sorted(name_to_vids[matched_key], key=lambda x: int(x) if x.isdigit() else x)
-        updates.append({
-            "row": i,
-            "vids": ",".join(vids),
-            "source_name": sourcing_name,
-            "matched_name": name_display.get(matched_key, matched_key),
-            "score": matched_score,
-        })
+        vids = sorted(
+            name_to_vids[matched_key], key=lambda x: int(x) if x.isdigit() else x
+        )
+        updates.append(
+            {
+                "row": i,
+                "vids": ",".join(vids),
+                "source_name": sourcing_name,
+                "matched_name": name_display.get(matched_key, matched_key),
+                "score": matched_score,
+            }
+        )
 
     if not updates:
         print("[SourcingMatch] 신규 매칭 없음")
@@ -1887,7 +2423,9 @@ async def auto_match_sourcing_vendor_item_ids():
         print(f"[SourcingMatch] O열 일괄 업데이트 실패: {e}")
         return
 
-    print(f"[SourcingMatch] ✅ {len(updates)}건 자동 매칭 반영 (exact={exact_count}, fuzzy={fuzzy_count})")
+    print(
+        f"[SourcingMatch] ✅ {len(updates)}건 자동 매칭 반영 (exact={exact_count}, fuzzy={fuzzy_count})"
+    )
 
     if COUPANG_ORDER_WEBHOOK:
         preview_lines = [
@@ -1896,22 +2434,27 @@ async def auto_match_sourcing_vendor_item_ids():
         ]
         if len(updates) > 10:
             preview_lines.append(f"... 외 {len(updates) - 10}건")
-        embeds = [{
-            "title": "🔗 소싱목록 자동 매칭",
-            "description": "\n".join(preview_lines),
-            "color": 3447003,
-            "fields": [
-                {"name": "반영 건수", "value": f"{len(updates)}건", "inline": True},
-                {"name": "정확 일치", "value": f"{exact_count}건", "inline": True},
-                {"name": "유사 매칭", "value": f"{fuzzy_count}건", "inline": True},
-            ],
-        }]
-        await post_webhook(COUPANG_ORDER_WEBHOOK, "소싱목록 O열 자동 매칭 완료", embeds=embeds)
+        embeds = [
+            {
+                "title": "🔗 소싱목록 자동 매칭",
+                "description": "\n".join(preview_lines),
+                "color": 3447003,
+                "fields": [
+                    {"name": "반영 건수", "value": f"{len(updates)}건", "inline": True},
+                    {"name": "정확 일치", "value": f"{exact_count}건", "inline": True},
+                    {"name": "유사 매칭", "value": f"{fuzzy_count}건", "inline": True},
+                ],
+            }
+        ]
+        await post_webhook(
+            COUPANG_ORDER_WEBHOOK, "소싱목록 O열 자동 매칭 완료", embeds=embeds
+        )
 
 
 # ──────────────────────────────────────────────
 # 발송처리 자동화 (송장번호 감지 → 쿠팡 배송중 처리)
 # ──────────────────────────────────────────────
+
 
 async def get_shipment_box_id(order_id: str) -> tuple[str, str]:
     """orderId로 (shipmentBoxId, vendorItemId) 조회"""
@@ -1941,12 +2484,19 @@ async def get_shipment_box_id(order_id: str) -> tuple[str, str]:
     from_date = _coupang_date_with_tz(now_kst - timedelta(days=14))
     try:
         # 상태를 순차 조회해 누락 가능성을 줄인다. (status는 ordersheets 필수 파라미터)
-        for status in ("INSTRUCT", "ACCEPT", "DEPARTURE", "DELIVERING", "FINAL_DELIVERY", "NONE_TRACKING"):
+        for status in (
+            "INSTRUCT",
+            "ACCEPT",
+            "DEPARTURE",
+            "DELIVERING",
+            "FINAL_DELIVERY",
+            "NONE_TRACKING",
+        ):
             base_params = {
                 "createdAtFrom": from_date,
-                "createdAtTo":   today,
-                "maxPerPage":    50,
-                "status":        status,
+                "createdAtTo": today,
+                "maxPerPage": 50,
+                "status": status,
             }
 
             next_token = ""
@@ -1962,7 +2512,9 @@ async def get_shipment_box_id(order_id: str) -> tuple[str, str]:
                 token_candidate = ""
                 if isinstance(data, dict):
                     orders = data.get("content", []) or data.get("data", []) or []
-                    token_candidate = str(data.get("nextToken", "") or result.get("nextToken", "") or "")
+                    token_candidate = str(
+                        data.get("nextToken", "") or result.get("nextToken", "") or ""
+                    )
                 elif isinstance(data, list):
                     orders = data
                     token_candidate = str(result.get("nextToken", "") or "")
@@ -1973,7 +2525,9 @@ async def get_shipment_box_id(order_id: str) -> tuple[str, str]:
                     if str(order.get("orderId")) == str(order_id):
                         box_id = str(order.get("shipmentBoxId", ""))
                         items = order.get("orderItems", [{}])
-                        vendor_item_id = str(items[0].get("vendorItemId", "")) if items else ""
+                        vendor_item_id = (
+                            str(items[0].get("vendorItemId", "")) if items else ""
+                        )
                         return box_id, vendor_item_id
 
                 if not token_candidate or token_candidate in seen_tokens:
@@ -1987,8 +2541,9 @@ async def get_shipment_box_id(order_id: str) -> tuple[str, str]:
         print(f"[Ship] shipmentBoxId 조회 예외: {e}")
         return "", ""
 
+
 async def ship_order_api(
-    order_item_id: str,   # shipmentBoxId
+    order_item_id: str,  # shipmentBoxId
     invoice_number: str,
     carrier_code: str,
     order_id: str = "",
@@ -2002,7 +2557,9 @@ async def ship_order_api(
         print("[Ship] ❌ shipmentBoxId 누락 — 송장등록 스킵")
         return False
     if not vendor_item_id:
-        print(f"[Ship] ❌ vendorItemId 누락 — orderId={order_id} shipmentBoxId={order_item_id}")
+        print(
+            f"[Ship] ❌ vendorItemId 누락 — orderId={order_id} shipmentBoxId={order_item_id}"
+        )
         return False
     if not str(order_id or "").isdigit():
         print(f"[Ship] ❌ orderId 형식오류 — orderId={order_id}")
@@ -2014,15 +2571,17 @@ async def ship_order_api(
     path = f"{COUPANG_OPENAPI_V4_VENDOR}/orders/invoices"
     body = {
         "vendorId": COUPANG_VENDOR_ID,
-        "orderSheetInvoiceApplyDtos": [{
-            "shipmentBoxId":       int(order_item_id),
-            "orderId":             int(order_id),
-            "vendorItemId":        int(vendor_item_id),
-            "deliveryCompanyCode": carrier_code.strip().upper(),
-            "invoiceNumber":       invoice_number.strip(),
-            "splitShipping":       False,
-            "preSplitShipped":     False,
-        }]
+        "orderSheetInvoiceApplyDtos": [
+            {
+                "shipmentBoxId": int(order_item_id),
+                "orderId": int(order_id),
+                "vendorItemId": int(vendor_item_id),
+                "deliveryCompanyCode": carrier_code.strip().upper(),
+                "invoiceNumber": invoice_number.strip(),
+                "splitShipping": False,
+                "preSplitShipped": False,
+            }
+        ],
     }
     try:
         result = await _coupang_post(path, body)
@@ -2030,7 +2589,9 @@ async def ship_order_api(
         if code in ("200", "SUCCESS"):
             response_list = result.get("data", {}).get("responseList", [])
             if response_list and response_list[0].get("succeed"):
-                print(f"[Ship] ✅ 송장등록 완료 → shipmentBoxId={order_item_id} | 송장={invoice_number} ({carrier_code})")
+                print(
+                    f"[Ship] ✅ 송장등록 완료 → shipmentBoxId={order_item_id} | 송장={invoice_number} ({carrier_code})"
+                )
                 return True
             else:
                 msg = response_list[0].get("resultMessage", "") if response_list else ""
@@ -2042,6 +2603,7 @@ async def ship_order_api(
     except Exception as e:
         print(f"[Ship] 예외: {e}")
         return False
+
 
 async def process_shipping():
     """
@@ -2060,7 +2622,7 @@ async def process_shipping():
         print(f"[Ship] 시트 열기 실패: {e}")
         return
 
-    data_rows = rows[ORDER_START_ROW - 1:]
+    data_rows = rows[ORDER_START_ROW - 1 :]
     shipped_count = 0
     pending_cell_updates: dict[str, object] = {}
     # Prevent duplicate API calls within the same run using stable business keys.
@@ -2071,15 +2633,15 @@ async def process_shipping():
         if len(row) < COL_ORDER_SHIP_DATE:
             continue
 
-        order_id      = row[COL_ORDER_ID - 1].strip()
-        product_name  = row[COL_ORDER_PRODUCT - 1].strip()
-        buyer_name    = row[COL_ORDER_NAME - 1].strip()
-        status        = row[COL_ORDER_STATUS - 1].strip()
+        order_id = row[COL_ORDER_ID - 1].strip()
+        product_name = row[COL_ORDER_PRODUCT - 1].strip()
+        buyer_name = row[COL_ORDER_NAME - 1].strip()
+        status = row[COL_ORDER_STATUS - 1].strip()
         order_item_id = row[COL_ORDER_ITEM_ID - 1].strip()
-        invoice       = row[COL_ORDER_INVOICE - 1].strip()    # K열
-        carrier       = row[COL_ORDER_CARRIER - 1].strip()    # L열
-        carrier_code  = normalize_carrier_code(carrier)
-        ship_date     = row[COL_ORDER_SHIP_DATE - 1].strip()  # M열
+        invoice = row[COL_ORDER_INVOICE - 1].strip()  # K열
+        carrier = row[COL_ORDER_CARRIER - 1].strip()  # L열
+        carrier_code = normalize_carrier_code(carrier)
+        ship_date = row[COL_ORDER_SHIP_DATE - 1].strip()  # M열
 
         # 처리 조건: 상품준비중 + 송장/택배사 존재 + 미처리
         if status != "상품준비중":
@@ -2089,7 +2651,9 @@ async def process_shipping():
         if not invoice or not carrier:
             continue
         if carrier_code not in VALID_CARRIER_CODES:
-            print(f"[Ship] ⚠️ 택배사코드 오류 → orderId={order_id} | 입력='{carrier}' | 변환='{carrier_code}'")
+            print(
+                f"[Ship] ⚠️ 택배사코드 오류 → orderId={order_id} | 입력='{carrier}' | 변환='{carrier_code}'"
+            )
             continue
 
         if carrier_code != carrier.upper():
@@ -2117,35 +2681,47 @@ async def process_shipping():
                 print(f"[Ship] ⚠️ {order_id} vendorItemId 조회 실패 — 스킵")
                 continue
 
-        print(f"  → 배송처리: {order_id} | {product_name} | 송장={invoice} ({carrier_code})")
+        print(
+            f"  → 배송처리: {order_id} | {product_name} | 송장={invoice} ({carrier_code})"
+        )
 
         # 쿠팡 송장등록 API
-        success = await ship_order_api(order_item_id, invoice, carrier_code, order_id=order_id, vendor_item_id=vendor_item_id)
+        success = await ship_order_api(
+            order_item_id,
+            invoice,
+            carrier_code,
+            order_id=order_id,
+            vendor_item_id=vendor_item_id,
+        )
         ts = _now_kst_str()
 
         if success:
             # 시트 갱신: 쿠팡은 배송처리 API 호출 시 '배송지시' 상태로 변경됨
-            _queue_sheet_cell_update(pending_cell_updates, i, COL_ORDER_STATUS, "배송지시")
+            _queue_sheet_cell_update(
+                pending_cell_updates, i, COL_ORDER_STATUS, "배송지시"
+            )
             _queue_sheet_cell_update(pending_cell_updates, i, COL_ORDER_SHIP_DATE, ts)
 
             # Discord 알림
-            embeds = [{
-                "title": "🚚 배송처리 완료",
-                "color": 5763719,
-                "fields": [
-                    {"name": "주문 ID",   "value": order_id,      "inline": True},
-                    {"name": "상품",      "value": product_name,  "inline": True},
-                    {"name": "구매자",    "value": buyer_name,    "inline": True},
-                    {"name": "택배사",    "value": carrier_code,  "inline": True},
-                    {"name": "송장번호",  "value": invoice,       "inline": True},
-                    {"name": "처리시각",  "value": ts,            "inline": True},
-                ],
-            }]
+            embeds = [
+                {
+                    "title": "🚚 배송처리 완료",
+                    "color": 5763719,
+                    "fields": [
+                        {"name": "주문 ID", "value": order_id, "inline": True},
+                        {"name": "상품", "value": product_name, "inline": True},
+                        {"name": "구매자", "value": buyer_name, "inline": True},
+                        {"name": "택배사", "value": carrier_code, "inline": True},
+                        {"name": "송장번호", "value": invoice, "inline": True},
+                        {"name": "처리시각", "value": ts, "inline": True},
+                    ],
+                }
+            ]
             await post_webhook(COUPANG_ORDER_WEBHOOK, "배송처리 완료", embeds=embeds)
 
             processed_keys_in_run.add(dedupe_key)
             shipped_count += 1
-        
+
         await asyncio.sleep(0.5)
 
     _flush_sheet_cell_updates(ws, pending_cell_updates)
@@ -2162,6 +2738,7 @@ async def process_shipping():
 
 _stock_status: dict[str, bool] = {}  # {vendorItemId: is_on_sale}
 
+
 async def get_vendor_item_stock(vendor_item_id: str) -> dict:
     """단일 vendorItemId 재고·상태 조회"""
     path = f"{COUPANG_SELLER_MARKETPLACE}/vendor-items/{vendor_item_id}/inventories"
@@ -2170,13 +2747,16 @@ async def get_vendor_item_stock(vendor_item_id: str) -> dict:
         return result.get("data", {})
     except httpx.HTTPStatusError as e:
         if getattr(e.response, "status_code", None) == 404:
-            print(f"[StockCheck] vendorItemId={vendor_item_id} 미존재/비공개(404) - 시트 확인 필요")
+            print(
+                f"[StockCheck] vendorItemId={vendor_item_id} 미존재/비공개(404) - 시트 확인 필요"
+            )
             return {}
         print(f"[StockCheck] vendorItemId={vendor_item_id} 조회 실패: {e}")
         return {}
     except Exception as e:
         print(f"[StockCheck] vendorItemId={vendor_item_id} 조회 실패: {e}")
         return {}
+
 
 async def auto_stock_out_check():
     """
@@ -2193,7 +2773,7 @@ async def auto_stock_out_check():
         print(f"[StockCheck] 시트 열기 실패: {e}")
         return
 
-    data_rows = rows[PRODUCT_START_ROW - 1:]
+    data_rows = rows[PRODUCT_START_ROW - 1 :]
     alerts = []
     pending_cell_updates: dict[str, object] = {}
 
@@ -2202,8 +2782,12 @@ async def auto_stock_out_check():
             continue
 
         vendor_item_id = row[COL_VENDOR_ITEM_ID - 1].strip()
-        product_name   = row[COL_PRODUCT_NAME - 1].strip() if len(row) > COL_PRODUCT_NAME - 1 else ""
-        sale_status    = row[COL_SALE_STATUS - 1].strip() if len(row) > COL_SALE_STATUS - 1 else ""
+        product_name = (
+            row[COL_PRODUCT_NAME - 1].strip() if len(row) > COL_PRODUCT_NAME - 1 else ""
+        )
+        sale_status = (
+            row[COL_SALE_STATUS - 1].strip() if len(row) > COL_SALE_STATUS - 1 else ""
+        )
         is_manual_stop = _is_manual_stop_status(sale_status)
         is_soldout_row = _is_soldout_status(sale_status)
 
@@ -2235,27 +2819,49 @@ async def auto_stock_out_check():
 
         if real_stock == 0 and on_sale:
             # ── 재고 0 이고 판매중 → 품절처리 ──
-            print(f"[StockCheck] 품절 감지 → {product_name} (vendorItemId={vendor_item_id})")
+            print(
+                f"[StockCheck] 품절 감지 → {product_name} (vendorItemId={vendor_item_id})"
+            )
             success = await update_sale_status(vendor_item_id, False)
             if success:
                 _stock_status[vendor_item_id] = False
-                _queue_sheet_cell_update(pending_cell_updates, i, COL_SALE_STATUS, "품절")
+                _queue_sheet_cell_update(
+                    pending_cell_updates, i, COL_SALE_STATUS, "품절"
+                )
                 _queue_sheet_cell_update(pending_cell_updates, i, COL_STOCK, "0")
                 _queue_sheet_cell_update(pending_cell_updates, i, COL_UPDATED_AT, ts)
-                alerts.append({"type": "품절", "name": product_name, "vid": vendor_item_id})
+                alerts.append(
+                    {"type": "품절", "name": product_name, "vid": vendor_item_id}
+                )
 
-        elif real_stock > 0 and not on_sale and prev_on_sale is False and is_soldout_row and not is_manual_stop:
+        elif (
+            real_stock > 0
+            and not on_sale
+            and prev_on_sale is False
+            and is_soldout_row
+            and not is_manual_stop
+        ):
             # ── 재고 복구 이고 품절상태 → 판매재개 ──
             print(f"[StockCheck] 재고 복구 → {product_name} ({real_stock}개)")
             success = await update_sale_status(vendor_item_id, True)
             if success:
                 _stock_status[vendor_item_id] = True
-                _queue_sheet_cell_update(pending_cell_updates, i, COL_SALE_STATUS, "판매중")
-                _queue_sheet_cell_update(pending_cell_updates, i, COL_STOCK, str(real_stock))
+                _queue_sheet_cell_update(
+                    pending_cell_updates, i, COL_SALE_STATUS, "판매중"
+                )
+                _queue_sheet_cell_update(
+                    pending_cell_updates, i, COL_STOCK, str(real_stock)
+                )
                 _queue_sheet_cell_update(pending_cell_updates, i, COL_UPDATED_AT, ts)
-                alerts.append({"type": "판매재개", "name": product_name, "stock": real_stock})
-        elif real_stock > 0 and not on_sale and prev_on_sale is False and is_manual_stop:
-            print(f"[StockCheck] 판매중지 유지 → {product_name} (재고 {real_stock}개, 판매재개 생략)")
+                alerts.append(
+                    {"type": "판매재개", "name": product_name, "stock": real_stock}
+                )
+        elif (
+            real_stock > 0 and not on_sale and prev_on_sale is False and is_manual_stop
+        ):
+            print(
+                f"[StockCheck] 판매중지 유지 → {product_name} (재고 {real_stock}개, 판매재개 생략)"
+            )
             _stock_status[vendor_item_id] = False
         else:
             _stock_status[vendor_item_id] = on_sale
@@ -2272,16 +2878,20 @@ async def auto_stock_out_check():
             else:
                 lines.append(f"• 🟢 판매재개: {a['name']} ({a.get('stock', 0)}개)")
 
-        embeds = [{
-            "title": "📦 재고 자동 품절/판매재개 처리",
-            "description": "\n".join(lines),
-            "color": 15158332,
-            "fields": [
-                {"name": "처리 건수", "value": f"{len(alerts)}개", "inline": True},
-                {"name": "처리 시각", "value": _now_kst_str(), "inline": True},
-            ],
-        }]
-        await post_webhook(COUPANG_ORDER_WEBHOOK, "재고 자동 품절/판매재개", embeds=embeds)
+        embeds = [
+            {
+                "title": "📦 재고 자동 품절/판매재개 처리",
+                "description": "\n".join(lines),
+                "color": 15158332,
+                "fields": [
+                    {"name": "처리 건수", "value": f"{len(alerts)}개", "inline": True},
+                    {"name": "처리 시각", "value": _now_kst_str(), "inline": True},
+                ],
+            }
+        ]
+        await post_webhook(
+            COUPANG_ORDER_WEBHOOK, "재고 자동 품절/판매재개", embeds=embeds
+        )
     else:
         print("[StockCheck] 품절/재개 변동 없음")
 
@@ -2291,6 +2901,7 @@ async def auto_stock_out_check():
 # ──────────────────────────────────────────────
 
 SETTLEMENT_SHEET = "정산집계"
+
 
 async def update_settlement():
     """
@@ -2318,19 +2929,23 @@ async def update_settlement():
         print(f"[Settlement] '{SETTLEMENT_SHEET}' 탭 자동 생성")
 
     # ── 주문 데이터 파싱 ──
-    data_rows = rows[ORDER_START_ROW - 1:]
+    data_rows = rows[ORDER_START_ROW - 1 :]
 
-    monthly: dict[str, dict] = {}   # {"2025-01": {"count": N, "total": M}}
+    monthly: dict[str, dict] = {}  # {"2025-01": {"count": N, "total": M}}
     by_product: dict[str, dict] = {}  # {product_name: {"count": N}}
 
     for row in data_rows:
         if not row or not row[COL_ORDER_ID - 1].strip():
             continue
 
-        product  = row[COL_ORDER_PRODUCT - 1].strip() if len(row) >= COL_ORDER_PRODUCT else ""
-        qty_str  = row[COL_ORDER_QTY - 1].strip() if len(row) >= COL_ORDER_QTY else "1"
+        product = (
+            row[COL_ORDER_PRODUCT - 1].strip() if len(row) >= COL_ORDER_PRODUCT else ""
+        )
+        qty_str = row[COL_ORDER_QTY - 1].strip() if len(row) >= COL_ORDER_QTY else "1"
         date_str = row[COL_ORDER_DATE - 1].strip() if len(row) >= COL_ORDER_DATE else ""
-        status   = row[COL_ORDER_STATUS - 1].strip() if len(row) >= COL_ORDER_STATUS else ""
+        status = (
+            row[COL_ORDER_STATUS - 1].strip() if len(row) >= COL_ORDER_STATUS else ""
+        )
 
         # 취소/반품/환불 및 가격미달보류 제외
         if status in ("취소", "반품", "환불", ORDER_STATUS_PRICE_HOLD):
@@ -2399,7 +3014,9 @@ async def update_settlement():
         if existing_data_rows > required_rows:
             settle_ws.batch_clear([f"A{required_rows + 1}:E{existing_data_rows}"])
 
-        print(f"[Settlement] ✅ 정산집계 갱신 완료 | 월별 {len(monthly)}개월 / 상품 {len(by_product)}종")
+        print(
+            f"[Settlement] ✅ 정산집계 갱신 완료 | 월별 {len(monthly)}개월 / 상품 {len(by_product)}종"
+        )
     except Exception as e:
         print(f"[Settlement] 시트 기록 실패: {e}")
         return
@@ -2408,16 +3025,18 @@ async def update_settlement():
     now_month = datetime.now(KST).strftime("%Y-%m")
     if now_month in monthly:
         m = monthly[now_month]
-        embeds = [{
-            "title": "📊 정산집계 갱신 완료",
-            "color": 9807270,
-            "fields": [
-                {"name": "당월 주문수",  "value": f"{m['count']}건",  "inline": True},
-                {"name": "당월 총수량",  "value": f"{m['qty']}개",    "inline": True},
-                {"name": "집계 기준월",  "value": now_month,          "inline": True},
-                {"name": "갱신 시각",    "value": ts,                 "inline": False},
-            ],
-        }]
+        embeds = [
+            {
+                "title": "📊 정산집계 갱신 완료",
+                "color": 9807270,
+                "fields": [
+                    {"name": "당월 주문수", "value": f"{m['count']}건", "inline": True},
+                    {"name": "당월 총수량", "value": f"{m['qty']}개", "inline": True},
+                    {"name": "집계 기준월", "value": now_month, "inline": True},
+                    {"name": "갱신 시각", "value": ts, "inline": False},
+                ],
+            }
+        ]
         await post_webhook(COUPANG_ORDER_WEBHOOK, "정산집계 자동 갱신", embeds=embeds)
 
 
@@ -2433,12 +3052,15 @@ async def coupang_order_job():
         print(f"[Order Job] 오류: {e}")
         await post_webhook(COUPANG_ORDER_WEBHOOK, f"⚠️ 주문 처리 오류: {e}")
 
+
 async def coupang_sync_job():
-    """5분마다 실행: 구글 시트 → 쿠팡 상품 동기화"""
+    """5분마다 실행: 시트 변경을 쿠팡에 반영하고 주기적으로 시트를 최신화."""
     try:
         await sync_products_from_sheet()
+        await refresh_product_sheet_from_api()
     except Exception as e:
         print(f"[Sync Job] 오류: {e}")
+
 
 async def sourcing_price_job():
     """5분마다 실행: 소싱목록 가격 변동/품절 문구 → 쿠팡 가격·판매상태 자동 반영"""
@@ -2447,12 +3069,14 @@ async def sourcing_price_job():
     except Exception as e:
         print(f"[SourcingSync Job] 오류: {e}")
 
+
 async def sourcing_match_job():
     """15분마다 실행: 소싱목록 B열 상품명 기반 O열 vendorItemId 자동 매칭"""
     try:
         await auto_match_sourcing_vendor_item_ids()
     except Exception as e:
         print(f"[SourcingMatch Job] 오류: {e}")
+
 
 async def shipping_job():
     """5분마다 실행: 시트 송장번호 감지 → 쿠팡 배송중 처리"""
@@ -2462,12 +3086,14 @@ async def shipping_job():
         print(f"[Ship Job] 오류: {e}")
         await post_webhook(COUPANG_ORDER_WEBHOOK, f"⚠️ 발송처리 오류: {e}")
 
+
 async def stock_check_job():
     """30분마다 실행: 쿠팡 실재고 조회 → 재고 0 자동 품절처리"""
     try:
         await auto_stock_out_check()
     except Exception as e:
         print(f"[StockCheck Job] 오류: {e}")
+
 
 async def settlement_job():
     """1시간마다 실행: 주문 데이터 집계 → 정산집계 탭 자동 갱신"""
@@ -2476,10 +3102,12 @@ async def settlement_job():
     except Exception as e:
         print(f"[Settlement Job] 오류: {e}")
 
+
 # ──────────────────────────────────────────────
 # 단독 실행 (테스트용)
 # ──────────────────────────────────────────────
 if __name__ == "__main__":
+
     async def _test():
         print("=== 쿠팡 매니저 테스트 ===")
         print(f"VENDOR_ID: {COUPANG_VENDOR_ID or '❌ 미설정'}")

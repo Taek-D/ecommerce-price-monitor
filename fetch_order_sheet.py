@@ -25,33 +25,45 @@ from google.oauth2.service_account import Credentials
 load_dotenv()
 
 # ── 환경변수 ──
-SPREADSHEET_ID  = os.getenv("SHEETS_SPREADSHEET_ID", "").strip()
-SERVICE_ACCOUNT = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "safe/service_account.json").strip()
-ORDER_SHEET     = os.getenv("COUPANG_ORDER_SHEET", "쿠팡주문관리").strip()
+SPREADSHEET_ID = os.getenv("SHEETS_SPREADSHEET_ID", "").strip()
+SERVICE_ACCOUNT = os.getenv(
+    "GOOGLE_SERVICE_ACCOUNT_JSON", "safe/service_account.json"
+).strip()
+ORDER_SHEET = os.getenv("COUPANG_ORDER_SHEET", "쿠팡주문관리").strip()
 KST = timezone(timedelta(hours=9))
 
 # ── 컬럼 인덱스 (1-based) ──
-COL_ORDER_ID        = 1   # A: 주문ID
-COL_ORDER_PRODUCT   = 2   # B: 상품명
-COL_ORDER_QTY       = 3   # C: 수량
-COL_ORDER_NAME      = 4   # D: 수신자
-COL_ORDER_PHONE     = 5   # E: 연락처
-COL_ORDER_ADDR      = 6   # F: 주소
-COL_ORDER_STATUS    = 7   # G: 상태
-COL_ORDER_DATE      = 8   # H: 주문일시
-COL_ORDER_SMS       = 9   # I: SMS발송
-COL_ORDER_ITEM_ID   = 10  # J: orderItemId
-COL_ORDER_INVOICE   = 11  # K: 송장번호 (수기입력)
-COL_ORDER_CARRIER   = 12  # L: 택배사코드 (수기입력)
+COL_ORDER_ID = 1  # A: 주문ID
+COL_ORDER_PRODUCT = 2  # B: 상품명
+COL_ORDER_QTY = 3  # C: 수량
+COL_ORDER_NAME = 4  # D: 수신자
+COL_ORDER_PHONE = 5  # E: 연락처
+COL_ORDER_ADDR = 6  # F: 주소
+COL_ORDER_STATUS = 7  # G: 상태
+COL_ORDER_DATE = 8  # H: 주문일시
+COL_ORDER_SMS = 9  # I: SMS발송
+COL_ORDER_ITEM_ID = 10  # J: orderItemId
+COL_ORDER_INVOICE = 11  # K: 송장번호 (수기입력)
+COL_ORDER_CARRIER = 12  # L: 택배사코드 (수기입력)
 COL_ORDER_SHIP_DATE = 13  # M: 발송처리일시 (자동)
-ORDER_HEADER_ROW    = 1
-ORDER_START_ROW     = 2
-TOTAL_COLS          = 13
+ORDER_HEADER_ROW = 1
+ORDER_START_ROW = 2
+TOTAL_COLS = 13
 
 HEADERS = [
-    "주문ID", "상품명", "수량", "수신자", "연락처", "주소",
-    "상태", "주문일시", "SMS발송", "orderItemId",
-    "송장번호", "택배사코드", "발송처리일시",
+    "주문ID",
+    "상품명",
+    "수량",
+    "수신자",
+    "연락처",
+    "주소",
+    "상태",
+    "주문일시",
+    "SMS발송",
+    "orderItemId",
+    "송장번호",
+    "택배사코드",
+    "발송처리일시",
 ]
 
 
@@ -62,7 +74,7 @@ def _gc():
         scopes=[
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive",
-        ]
+        ],
     )
     return gspread.authorize(creds)
 
@@ -103,7 +115,8 @@ def read_order_sheet(gc=None) -> list[dict]:
     all_rows = ws.get_all_values()
 
     results = []
-    for i, row in enumerate(all_rows[ORDER_START_ROW - 1:], start=ORDER_START_ROW):
+    for i, row in enumerate(all_rows[ORDER_START_ROW - 1 :], start=ORDER_START_ROW):
+
         def _get(col_idx):
             idx = col_idx - 1
             return row[idx].strip() if idx < len(row) else ""
@@ -112,22 +125,24 @@ def read_order_sheet(gc=None) -> list[dict]:
         if not order_id:
             continue  # 빈 행 스킵
 
-        results.append({
-            "row":           i,
-            "order_id":      order_id,
-            "product":       _get(COL_ORDER_PRODUCT),
-            "qty":           _get(COL_ORDER_QTY),
-            "receiver":      _get(COL_ORDER_NAME),
-            "phone":         _get(COL_ORDER_PHONE),
-            "address":       _get(COL_ORDER_ADDR),
-            "status":        _get(COL_ORDER_STATUS),
-            "order_date":    _get(COL_ORDER_DATE),
-            "sms_sent":      _get(COL_ORDER_SMS),
-            "order_item_id": _get(COL_ORDER_ITEM_ID),
-            "invoice":       _get(COL_ORDER_INVOICE),
-            "carrier":       _get(COL_ORDER_CARRIER),
-            "ship_date":     _get(COL_ORDER_SHIP_DATE),
-        })
+        results.append(
+            {
+                "row": i,
+                "order_id": order_id,
+                "product": _get(COL_ORDER_PRODUCT),
+                "qty": _get(COL_ORDER_QTY),
+                "receiver": _get(COL_ORDER_NAME),
+                "phone": _get(COL_ORDER_PHONE),
+                "address": _get(COL_ORDER_ADDR),
+                "status": _get(COL_ORDER_STATUS),
+                "order_date": _get(COL_ORDER_DATE),
+                "sms_sent": _get(COL_ORDER_SMS),
+                "order_item_id": _get(COL_ORDER_ITEM_ID),
+                "invoice": _get(COL_ORDER_INVOICE),
+                "carrier": _get(COL_ORDER_CARRIER),
+                "ship_date": _get(COL_ORDER_SHIP_DATE),
+            }
+        )
 
     return results
 
@@ -182,7 +197,9 @@ def write_order_rows(orders: list[dict], gc=None, mode: str = "upsert"):
         last_row = ORDER_START_ROW + len(orders) - 1
         ws.batch_clear([f"A{ORDER_START_ROW}:M1000"])
         rows = [_to_row(o) for o in orders]
-        ws.update(f"A{ORDER_START_ROW}:M{last_row}", rows, value_input_option="USER_ENTERED")
+        ws.update(
+            f"A{ORDER_START_ROW}:M{last_row}", rows, value_input_option="USER_ENTERED"
+        )
         print(f"  ✅ {len(rows)}개 주문 덮어쓰기 완료")
 
     elif mode == "append":
@@ -199,12 +216,12 @@ def write_order_rows(orders: list[dict], gc=None, mode: str = "upsert"):
         all_vals = ws.get_all_values()
         # order_id → 행번호 맵
         existing = {}
-        for i, row in enumerate(all_vals[ORDER_START_ROW - 1:], start=ORDER_START_ROW):
+        for i, row in enumerate(all_vals[ORDER_START_ROW - 1 :], start=ORDER_START_ROW):
             if row and row[0].strip():
                 existing[row[0].strip()] = i
 
-        updates = []   # (row_num, row_data)
-        appends = []   # row_data
+        updates = []  # (row_num, row_data)
+        appends = []  # row_data
 
         for o in orders:
             oid = o.get("order_id", "")
@@ -216,13 +233,17 @@ def write_order_rows(orders: list[dict], gc=None, mode: str = "upsert"):
 
         # 갱신
         for row_num, row_data in updates:
-            ws.update(f"A{row_num}:M{row_num}", [row_data], value_input_option="USER_ENTERED")
+            ws.update(
+                f"A{row_num}:M{row_num}", [row_data], value_input_option="USER_ENTERED"
+            )
 
         # 추가
         if appends:
             next_row = max(len(all_vals) + 1, ORDER_START_ROW)
             last_row = next_row + len(appends) - 1
-            ws.update(f"A{next_row}:M{last_row}", appends, value_input_option="USER_ENTERED")
+            ws.update(
+                f"A{next_row}:M{last_row}", appends, value_input_option="USER_ENTERED"
+            )
 
         print(f"  ✅ {len(updates)}개 갱신 / {len(appends)}개 신규 추가")
 
@@ -240,8 +261,10 @@ def print_orders(orders: list[dict]):
         return
 
     print(f"\n  총 {len(orders)}건\n")
-    print(f"  {'행':>3} {'주문ID':<15} {'상품명':<25} {'수량':>3} {'수신자':<8} "
-          f"{'상태':<10} {'송장번호':<15} {'택배사':<8}")
+    print(
+        f"  {'행':>3} {'주문ID':<15} {'상품명':<25} {'수량':>3} {'수신자':<8} "
+        f"{'상태':<10} {'송장번호':<15} {'택배사':<8}"
+    )
     print("  " + "-" * 100)
     for o in orders:
         print(
@@ -273,8 +296,13 @@ if __name__ == "__main__":
     # 상태별 요약
     if orders:
         from collections import Counter
+
         status_counts = Counter(o["status"] for o in orders)
-        pending_invoice = [o for o in orders if o["status"] in ("결제완료", "상품준비중") and not o["invoice"]]
+        pending_invoice = [
+            o
+            for o in orders
+            if o["status"] in ("결제완료", "상품준비중") and not o["invoice"]
+        ]
 
         print(f"\n  ── 상태별 요약 ──")
         for status, cnt in sorted(status_counts.items()):

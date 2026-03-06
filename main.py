@@ -109,12 +109,10 @@ def release_single_instance_lock() -> None:
 # 湲곗〈 紐⑤뱢
 from musinsa_price_watch import (
     load_state,
-    load_urls_from_sheet,
     check_once,
     post_webhook,
     log_webhook_routing_once,
     DEFAULT_WEBHOOK,
-    URLS_RELOAD_MINUTES,
 )
 import musinsa_price_watch as mpw
 
@@ -146,17 +144,6 @@ def _resolve_bot_mode() -> str:
     return raw
 
 
-async def reload_urls_job():
-    status_webhook = _status_webhook_url()
-    try:
-        mpw.URLS = load_urls_from_sheet()
-        print(f"[URL Reload] {len(mpw.URLS)} URLs loaded")
-        await post_webhook(status_webhook, f"URL list reloaded: {len(mpw.URLS)}")
-    except Exception as e:
-        await post_webhook(status_webhook, f"URL reload failed: {e}")
-
-
-
 async def _run_with_lane_lock(
     lock: asyncio.Lock,
     lane_name: str,
@@ -172,17 +159,23 @@ async def _run_with_lane_lock(
     async with lock:
         if waited_from is not None:
             waited = loop.time() - waited_from
-            print(f"[LaneLock] {job_name} acquired {lane_name} lane after {waited:.1f}s")
+            print(
+                f"[LaneLock] {job_name} acquired {lane_name} lane after {waited:.1f}s"
+            )
         # Run each job in its own event loop thread so blocking I/O inside
         # one lane does not freeze the other lane on the main scheduler loop.
         await asyncio.to_thread(lambda: asyncio.run(job_func()))
 
 
-async def run_order_lane_job(job_name: str, job_func: Callable[[], Awaitable[None]]) -> None:
+async def run_order_lane_job(
+    job_name: str, job_func: Callable[[], Awaitable[None]]
+) -> None:
     await _run_with_lane_lock(_ORDER_LANE_LOCK, "order", job_name, job_func)
 
 
-async def run_product_lane_job(job_name: str, job_func: Callable[[], Awaitable[None]]) -> None:
+async def run_product_lane_job(
+    job_name: str, job_func: Callable[[], Awaitable[None]]
+) -> None:
     await _run_with_lane_lock(_PRODUCT_LANE_LOCK, "product", job_name, job_func)
 
 
@@ -249,7 +242,9 @@ async def main():
     print("=" * 50)
     print("  [무신사봇] 가격 모니터링")
     print(f"  [쿠팡]    주문 자동화  | VENDOR_ID: {COUPANG_VENDOR_ID or '❌ 미설정'}")
-    print(f"  [쿠팡]    상품 동기화  | ACCESS_KEY: {'✅' if COUPANG_ACCESS_KEY else '❌ 미설정'}")
+    print(
+        f"  [쿠팡]    상품 동기화  | ACCESS_KEY: {'✅' if COUPANG_ACCESS_KEY else '❌ 미설정'}"
+    )
     print("  [쿠팡]    발송 자동화  | 송장번호 감지 → 배송중 실시간 처리")
     print("  [쿠팡]    재고 품절    | 쿠팡 실재고 30분 주기 자동 컨트롤")
     print("  [쿠팡]    정산 집계    | 1시간 주기 자동 집계 탭 갱신")
@@ -260,13 +255,6 @@ async def main():
     # ?? 珥덇린 濡쒕뱶 ??????????????????????????????
     if bot_mode == "full":
         load_state()
-        try:
-            mpw.URLS = load_urls_from_sheet()
-            await post_webhook(status_webhook, f"Initial URL load complete: {len(mpw.URLS)}")
-        except Exception as e:
-            print(f"[Init] URL 로드 실패: {e}")
-            await post_webhook(status_webhook, f"Initial URL load failed: {e}")
-            mpw.URLS = []
 
         await check_once()
         await run_initial_coupang_lanes()  # startup: two-lane parallel
@@ -289,12 +277,6 @@ async def main():
             trigger=IntervalTrigger(minutes=5, jitter=10),
             id="musinsa_check",
             name="무신사봇 가격 모니터링",
-        )
-        sched.add_job(
-            reload_urls_job,
-            trigger=IntervalTrigger(minutes=URLS_RELOAD_MINUTES, jitter=30),
-            id="url_reload",
-            name="URL 목록 리로드",
         )
         sched.add_job(
             scheduled_coupang_order_job,
@@ -367,4 +349,3 @@ if __name__ == "__main__":
         asyncio.run(main())
     finally:
         release_single_instance_lock()
-
