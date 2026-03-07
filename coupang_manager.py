@@ -1412,8 +1412,79 @@ SOURCING_MATCH_MIN_GAP = _env_int("SOURCING_MATCH_MIN_GAP", 6)
 
 def _normalize_product_name(name: str) -> str:
     value = (name or "").strip().lower()
+    value = _canonicalize_measure_tokens(value)
+    value = _canonicalize_count_tokens(value)
     value = re.sub(r"[^0-9a-z가-힣]+", " ", value)
     return re.sub(r"\s+", " ", value).strip()
+
+
+def _parse_product_number(raw: str) -> float | None:
+    value = (raw or "").strip()
+    if not value:
+        return None
+
+    if "," in value and "." not in value:
+        head, tail = value.split(",", 1)
+        if len(tail) == 3:
+            value = value.replace(",", "")
+        else:
+            value = value.replace(",", ".")
+    else:
+        value = value.replace(",", "")
+
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _compact_number_str(value: float) -> str:
+    if abs(value - round(value)) < 1e-9:
+        return str(int(round(value)))
+    return f"{value:.3f}".rstrip("0").rstrip(".")
+
+
+def _canonicalize_measure_tokens(value: str) -> str:
+    def repl(match: re.Match[str]) -> str:
+        number = _parse_product_number(match.group("num"))
+        unit = (match.group("unit") or "").lower()
+        if number is None:
+            return match.group(0)
+        if unit == "kg":
+            return f"{int(round(number * 1000))}g"
+        if unit in {"g", "gr"}:
+            return f"{_compact_number_str(number)}g"
+        if unit == "l":
+            return f"{int(round(number * 1000))}ml"
+        if unit == "ml":
+            return f"{_compact_number_str(number)}ml"
+        return match.group(0)
+
+    return re.sub(
+        r"(?P<num>\d+(?:[.,]\d+)?)\s*(?P<unit>kg|g|gr|ml|l)\b",
+        repl,
+        value,
+        flags=re.IGNORECASE,
+    )
+
+
+def _canonicalize_count_tokens(value: str) -> str:
+    normalized = value
+    normalized = re.sub(r"\b단일상품\b", " 1개 ", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\b단품\b", " 1개 ", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(
+        r"(?<![0-9a-z가-힣])(?:x|×|\*)\s*(\d+)\b",
+        lambda m: f" {m.group(1)}개 ",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(
+        r"\b(\d+)\s*(?:ea|개입|입|개|박스|box|팩|pack|세트)\b",
+        lambda m: f" {m.group(1)}개 ",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    return normalized
 
 
 def _product_name_variants(name: str) -> list[str]:
@@ -1425,7 +1496,27 @@ def _product_name_variants(name: str) -> list[str]:
         variants.add(raw.split(" / ", 1)[0].strip())
     if "/" in raw:
         variants.add(raw.split("/", 1)[0].strip())
-    return [v for v in variants if v]
+
+    expanded: list[str] = []
+    seen: set[str] = set()
+    for variant in variants:
+        for candidate in (
+            variant,
+            re.sub(r"\([^)]*\)", " ", variant),
+            re.sub(r"\[[^\]]*\]", " ", variant),
+            re.sub(r"[\(\[][^)\]]*[\)\]]", " ", variant),
+            re.sub(
+                r"\b(?:단일상품|단품|1\s*(?:개|박스|box|팩|pack|세트|입|개입|ea))\b",
+                " ",
+                variant,
+                flags=re.IGNORECASE,
+            ),
+        ):
+            cleaned = re.sub(r"\s+", " ", candidate).strip(" /").strip()
+            if cleaned and cleaned not in seen:
+                seen.add(cleaned)
+                expanded.append(cleaned)
+    return expanded
 
 
 def _fuzzy_name_score(a: str, b: str) -> int:
@@ -2362,30 +2453,51 @@ async def auto_match_sourcing_vendor_item_ids():
         if existing_vid:
             continue
 
-        source_key = _normalize_product_name(sourcing_name)
-        if not source_key:
+        source_keys: list[str] = []
+        seen_source_keys: set[str] = set()
+        for source_variant in _product_name_variants(sourcing_name):
+            source_key = _normalize_product_name(source_variant)
+            if source_key and source_key not in seen_source_keys:
+                seen_source_keys.add(source_key)
+                source_keys.append(source_key)
+        if not source_keys:
             continue
 
         matched_key = ""
         matched_score = 100
 
         # 1) exact
-        if source_key in name_to_vids:
-            matched_key = source_key
+        exact_keys = [key for key in source_keys if key in name_to_vids]
+        if exact_keys:
+            matched_key = max(exact_keys, key=len)
             exact_count += 1
         else:
             # 2) fuzzy with confidence gate
-            scored = [
-                (_fuzzy_name_score(source_key, ckey), ckey) for ckey in candidate_keys
-            ]
-            scored.sort(key=lambda x: x[0], reverse=True)
-            if not scored:
+            best_candidate: tuple[int, int, int, str] | None = None
+            for source_key in source_keys:
+                scored = [
+                    (_fuzzy_name_score(source_key, ckey), ckey) for ckey in candidate_keys
+                ]
+                scored.sort(key=lambda x: x[0], reverse=True)
+                if not scored:
+                    continue
+                best_score, best_key = scored[0]
+                second_score = scored[1][0] if len(scored) > 1 else 0
+                candidate = (
+                    best_score,
+                    best_score - second_score,
+                    len(source_key),
+                    best_key,
+                )
+                if best_candidate is None or candidate > best_candidate:
+                    best_candidate = candidate
+
+            if best_candidate is None:
                 continue
-            best_score, best_key = scored[0]
-            second_score = scored[1][0] if len(scored) > 1 else 0
+            best_score, score_gap, _, best_key = best_candidate
             if (
                 best_score >= SOURCING_MATCH_THRESHOLD
-                and (best_score - second_score) >= SOURCING_MATCH_MIN_GAP
+                and score_gap >= SOURCING_MATCH_MIN_GAP
             ):
                 matched_key = best_key
                 matched_score = best_score
