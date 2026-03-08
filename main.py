@@ -12,6 +12,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
 
@@ -23,7 +24,7 @@ LOCK_FILE = PROJECT_ROOT / ".main.lock"
 _INSTANCE_LOCK_HELD = False
 _ORDER_LANE_LOCK = asyncio.Lock()
 _PRODUCT_LANE_LOCK = asyncio.Lock()
-_VALID_BOT_MODES = {"full", "sourcing_only"}
+_VALID_BOT_MODES = {"full", "sourcing_only", "discovery_only"}
 
 
 def _configure_stdio() -> None:
@@ -130,6 +131,15 @@ from coupang_manager import (
     MYMUNJA_ID,
 )
 
+# 상품 발굴 모듈
+from product_discovery import (
+    DISCOVERY_ENABLED,
+    DISCOVERY_INTERVAL_MINUTES,
+    DISCOVERY_DAILY_SUMMARY_HOUR,
+    discovery_job,
+    discovery_daily_summary_job,
+)
+
 
 def _status_webhook_url() -> str:
     # Keep legacy behavior: prefer default webhook, fallback to Musinsa-specific webhook.
@@ -207,6 +217,14 @@ async def scheduled_stock_check_job() -> None:
     await run_product_lane_job("stock_check_job", stock_check_job)
 
 
+async def scheduled_discovery_job() -> None:
+    await run_product_lane_job("discovery_job", discovery_job)
+
+
+async def scheduled_discovery_daily_summary() -> None:
+    await run_product_lane_job("discovery_daily_summary", discovery_daily_summary_job)
+
+
 async def run_initial_coupang_lanes() -> None:
     """Run startup Coupang jobs in two conflict-free lanes."""
 
@@ -222,6 +240,8 @@ async def run_initial_coupang_lanes() -> None:
         await run_product_lane_job("sourcing_match_job", sourcing_match_job)
         await run_product_lane_job("sourcing_price_job", sourcing_price_job)
         await run_product_lane_job("stock_check_job", stock_check_job)
+        if DISCOVERY_ENABLED:
+            await run_product_lane_job("discovery_job", discovery_job)
 
     await asyncio.gather(run_order_lane(), run_product_lane())
 
@@ -249,6 +269,9 @@ async def main():
     print("  [쿠팡]    재고 품절    | 쿠팡 실재고 30분 주기 자동 컨트롤")
     print("  [쿠팡]    정산 집계    | 1시간 주기 자동 집계 탭 갱신")
     print(f"  [마이문자] SMS 연동    | ID: {MYMUNJA_ID or '❌ 미설정'}")
+    print(
+        f"  [발굴]    상품 발굴    | {'✅ 활성' if DISCOVERY_ENABLED else '❌ 비활성'}"
+    )
     print(f"  [MODE]      BOT_MODE={bot_mode}")
     print("=" * 50)
 
@@ -258,6 +281,11 @@ async def main():
 
         await check_once()
         await run_initial_coupang_lanes()  # startup: two-lane parallel
+    elif bot_mode == "discovery_only":
+        if DISCOVERY_ENABLED:
+            await run_product_lane_job("discovery_job", discovery_job)
+        else:
+            print("[Mode] discovery_only but DISCOVERY_ENABLED=false; nothing to run")
     else:
         await run_initial_sourcing_only_lane()
 
@@ -320,6 +348,8 @@ async def main():
             id="settlement",
             name="정산/매출 자동 집계",
         )
+    elif bot_mode == "discovery_only":
+        pass  # discovery jobs added below
     else:
         sched.add_job(
             scheduled_sourcing_match_job,
@@ -332,6 +362,27 @@ async def main():
             trigger=IntervalTrigger(minutes=5, jitter=10),
             id="sourcing_price",
             name="소싱목록 가격 자동 동기화",
+        )
+
+    # 상품 발굴 스케줄 (full / discovery_only 모드에서 활성)
+    if DISCOVERY_ENABLED and bot_mode in ("full", "discovery_only"):
+        sched.add_job(
+            scheduled_discovery_job,
+            trigger=IntervalTrigger(minutes=DISCOVERY_INTERVAL_MINUTES, jitter=60),
+            id="discovery",
+            name="상품 발굴 자동화",
+        )
+        sched.add_job(
+            scheduled_discovery_daily_summary,
+            trigger=CronTrigger(
+                hour=DISCOVERY_DAILY_SUMMARY_HOUR, timezone="Asia/Seoul"
+            ),
+            id="discovery_daily_summary",
+            name="발굴 일일 요약",
+        )
+        print(
+            f"[Discovery] 스케줄 등록: {DISCOVERY_INTERVAL_MINUTES}분 주기 "
+            f"+ 매일 {DISCOVERY_DAILY_SUMMARY_HOUR}:00 요약"
         )
 
     sched.start()

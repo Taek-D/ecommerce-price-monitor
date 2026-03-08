@@ -411,6 +411,60 @@ def _now_kst_str() -> str:
     return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _format_won(value: int | None) -> str:
+    if value is None:
+        return "-"
+    return f"{value:,}원"
+
+
+def _short_text(value: str, limit: int = 60) -> str:
+    text = (value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
+def _price_change_detail_text(details: list[dict], limit: int = 8) -> str:
+    lines = []
+    for detail in details[:limit]:
+        option_name = _short_text(detail.get("product_name", ""), 42) or "옵션명 없음"
+        lines.append(
+            f"• `{detail.get('vid', '-')}` | {option_name} | "
+            f"`{_format_won(detail.get('old_price'))}` → **`{_format_won(detail.get('new_price'))}`**"
+        )
+    if len(details) > limit:
+        lines.append(f"... 외 {len(details) - limit}개")
+    return "\n".join(lines) if lines else "-"
+
+
+def _build_price_change_embed(change: dict) -> dict:
+    changed_count = len(change.get("details", []))
+    skipped_total = change.get("skip_floor", 0) + change.get("skip_unknown", 0)
+    fields = [
+        {"name": "상품명", "value": _short_text(change.get("name", ""), 180), "inline": False},
+        {
+            "name": "기준 판매가",
+            "value": f"이전: **`{_format_won(change.get('prev'))}`**\n"
+            f"변경: **`{_format_won(change.get('new'))}`**",
+            "inline": False,
+        },
+        {"name": "업데이트 옵션", "value": f"{changed_count}개", "inline": True},
+        {"name": "스킵", "value": f"{skipped_total}개", "inline": True},
+        {"name": "처리 시각", "value": _now_kst_str(), "inline": True},
+        {
+            "name": "vendorItemId / 옵션 / 판매가",
+            "value": _price_change_detail_text(change.get("details", [])),
+            "inline": False,
+        },
+    ]
+    return {
+        "title": "💰 판매가 자동 변경",
+        "description": "소싱목록 K열 기준으로 쿠팡 판매가가 상향 조정되었습니다.",
+        "color": 5763719,
+        "fields": fields,
+    }
+
+
 def _to_positive_int(value) -> int | None:
     if value is None:
         return None
@@ -1554,7 +1608,9 @@ def _inventory_on_sale(item_data: dict | None, default: bool = True) -> bool:
     return bool(raw)
 
 
-def _inventory_stock(item_data: dict | None, fallback: dict | None = None) -> int | None:
+def _inventory_stock(
+    item_data: dict | None, fallback: dict | None = None
+) -> int | None:
     data = item_data or {}
     stock = _to_int(data.get("amountInStock"))
     if stock is None:
@@ -1618,7 +1674,7 @@ async def _fetch_product_sheet_snapshot_from_api() -> list[dict]:
                 await asyncio.sleep(0.1)
                 continue
 
-            items = ((detail.get("data") or {}).get("items") or [])
+            items = (detail.get("data") or {}).get("items") or []
             for item in items:
                 vendor_item_id = str(item.get("vendorItemId", "")).strip()
                 if not vendor_item_id or vendor_item_id in seen_vendor_item_ids:
@@ -1729,7 +1785,9 @@ async def refresh_product_sheet_from_api(force: bool = False) -> bool:
 
     existing_data_count = max(len(current_rows) - 1, 0)
     write_count = max(existing_data_count, len(output_rows), 1)
-    padded_rows = output_rows + [["", "", "", "", "", ""]] * (write_count - len(output_rows))
+    padded_rows = output_rows + [["", "", "", "", "", ""]] * (
+        write_count - len(output_rows)
+    )
 
     try:
         ws.batch_update(
@@ -2032,6 +2090,7 @@ async def sync_price_from_sourcing():
 
     # 상품명 기반 vendorItemId 보강 인덱스 (O열에 1개만 있는 행 보완용)
     product_name_to_vids: dict[str, set[str]] = {}
+    vid_to_product_name: dict[str, str] = {}
     try:
         ws_product = sh.worksheet(COUPANG_PRODUCT_SHEET)
         product_rows = ws_product.get_all_values()
@@ -2057,6 +2116,7 @@ async def sync_price_from_sourcing():
                     product_name_to_vids[key] = set()
                 for vid in parsed_vids:
                     product_name_to_vids[key].add(vid)
+                    vid_to_product_name[vid] = pname
     except Exception as e:
         print(f"[SourcingSync] 쿠팡상품관리 매핑 인덱스 생성 실패: {e}")
 
@@ -2275,6 +2335,7 @@ async def sync_price_from_sourcing():
         )
 
         success_ids = []
+        success_details = []
         skipped_floor = 0
         skipped_unknown = 0
         for vid in vendor_item_ids:
@@ -2293,6 +2354,14 @@ async def sync_price_from_sourcing():
             if ok:
                 success_ids.append(vid)
                 current_price_by_vid[vid] = new_price
+                success_details.append(
+                    {
+                        "vid": vid,
+                        "product_name": vid_to_product_name.get(vid, name_cell),
+                        "old_price": current_sale_price,
+                        "new_price": new_price,
+                    }
+                )
             await asyncio.sleep(0.2)
 
         # 현재 판매가를 전혀 확인하지 못한 경우엔 상태를 확정하지 않아 다음 주기에 재시도한다.
@@ -2315,32 +2384,23 @@ async def sync_price_from_sourcing():
                     "count": len(success_ids),
                     "skip_floor": skipped_floor,
                     "skip_unknown": skipped_unknown,
+                    "details": success_details,
                 }
             )
 
-    if price_changes or soldout_changes:
+    if soldout_changes:
         lines = []
         for c in soldout_changes:
             lines.append(
                 f"• {c['name']}: 품절 판매중지 {c['stopped']}개"
                 f" (이미중지 {c['already_stopped']}개)"
             )
-        for c in price_changes:
-            lines.append(
-                f"• {c['name']}: {c['prev']:,}원 → {c['new']:,}원 "
-                f"(업데이트 {c['count']}개, 스킵 {c['skip_floor'] + c['skip_unknown']}개)"
-            )
         embeds = [
             {
-                "title": "💰 소싱목록 가격/품절 자동 업데이트",
+                "title": "🚫 소싱목록 품절 자동 업데이트",
                 "description": "\n".join(lines),
-                "color": 5763719,
+                "color": 15158332,
                 "fields": [
-                    {
-                        "name": "가격 변경",
-                        "value": f"{len(price_changes)}개 상품",
-                        "inline": True,
-                    },
                     {
                         "name": "품절 중지",
                         "value": f"{len(soldout_changes)}개 상품",
@@ -2351,9 +2411,17 @@ async def sync_price_from_sourcing():
             }
         ]
         await post_webhook(
-            COUPANG_ORDER_WEBHOOK, "소싱목록 가격/품절 자동 업데이트", embeds=embeds
+            COUPANG_ORDER_WEBHOOK, "소싱목록 품절 자동 업데이트", embeds=embeds
         )
-    else:
+
+    for change in price_changes:
+        await post_webhook(
+            COUPANG_ORDER_WEBHOOK,
+            "판매가 자동 변경",
+            embeds=[_build_price_change_embed(change)],
+        )
+
+    if not price_changes and not soldout_changes:
         print("[SourcingSync] 변경 없음")
 
     print(f"[SourcingSync] 품절 트리거 행 수: {soldout_row_seen}")
@@ -2853,6 +2921,8 @@ _stock_status: dict[str, bool] = {}  # {vendorItemId: is_on_sale}
 
 async def get_vendor_item_stock(vendor_item_id: str) -> dict:
     """단일 vendorItemId 재고·상태 조회"""
+    if not vendor_item_id or vendor_item_id.lower() == "none":
+        return {}
     path = f"{COUPANG_SELLER_MARKETPLACE}/vendor-items/{vendor_item_id}/inventories"
     try:
         result = await _coupang_get(path)
@@ -2894,6 +2964,8 @@ async def auto_stock_out_check():
             continue
 
         vendor_item_id = row[COL_VENDOR_ITEM_ID - 1].strip()
+        if not vendor_item_id or vendor_item_id.lower() == "none":
+            continue
         product_name = (
             row[COL_PRODUCT_NAME - 1].strip() if len(row) > COL_PRODUCT_NAME - 1 else ""
         )
