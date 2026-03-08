@@ -36,11 +36,18 @@ class CompetitionResult:
     seller_count: int  # 일반배송 셀러 수
     has_rocket: bool  # 로켓배송 상품 존재 여부
     rocket_price: int | None  # 로켓배송 가격 (참고용)
-    grade: str  # "blue" | "moderate" | "red"
+    grade: str  # "blue" | "moderate" | "red" | "unknown"
+    search_failed: bool = False
+    search_failure_reason: str = ""
 
     @property
     def grade_emoji(self) -> str:
-        return {"blue": "🟢", "moderate": "🟡", "red": "🔴"}.get(self.grade, "⚪")
+        return {
+            "blue": "🟢",
+            "moderate": "🟡",
+            "red": "🔴",
+            "unknown": "⚪",
+        }.get(self.grade, "⚪")
 
 
 def calculate_margin(
@@ -84,7 +91,7 @@ def score_product(
     popularity = _popularity_score(product.review_count)
     discount = _discount_score(product.discount_rate)
 
-    if margin is None or competition is None:
+    if margin is None or competition is None or competition.search_failed:
         # Sprint 1: 마진/경쟁 데이터 없으면 인기도+할인만 반영
         return round(popularity * 0.55 + discount * 0.45, 1)
 

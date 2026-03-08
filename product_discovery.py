@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -138,6 +139,15 @@ class AnalyzedProduct:
     margin: MarginResult | None
     score: float
     grade: str  # "S", "A", "B", "C"
+
+
+@dataclass
+class CoupangSearchFetchResult:
+    """단일 쿠팡 검색 요청 결과."""
+
+    items: list[dict]
+    failed: bool = False
+    failure_reason: str = ""
 
 
 # ──────────────────────────────────────────────
@@ -274,6 +284,31 @@ _COUPANG_SEARCH_JS = """
 _COUPANG_NAME_MATCH_THRESHOLD = 55
 
 
+def _build_coupang_search_queries(product_name: str, brand: str) -> list[str]:
+    """브랜드 중복 없이 쿠팡 검색어 후보를 생성한다."""
+    clean_product = (product_name or "").strip()
+    clean_brand = (brand or "").strip()
+    product_norm = _normalize_product_name(clean_product)
+    brand_norm = _normalize_product_name(clean_brand)
+
+    candidates: list[str] = []
+    if clean_product:
+        if clean_brand and brand_norm and brand_norm not in product_norm:
+            candidates.append(f"{clean_brand} {clean_product}".strip())
+        candidates.append(clean_product)
+    if clean_brand:
+        candidates.append(clean_brand)
+
+    queries: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        query = re.sub(r"\s+", " ", candidate).strip()
+        if query and query not in seen:
+            seen.add(query)
+            queries.append(query)
+    return queries
+
+
 async def _search_coupang(page, product_name: str, brand: str) -> CompetitionResult:
     """쿠팡 검색 → 로켓 필터링 → 일반배송 셀러 분석."""
     norm_query = _normalize_product_name(f"{brand} {product_name}")
@@ -288,16 +323,37 @@ async def _search_coupang(page, product_name: str, brand: str) -> CompetitionRes
         grade=classify_competition(0),
     )
 
-    # 1차: 브랜드 + 상품명 검색
-    query = f"{brand} {product_name}".strip()
-    raw = await _fetch_coupang_results(page, query)
+    queries = _build_coupang_search_queries(product_name, brand)
+    raw: list[dict] = []
+    search_failures: list[str] = []
+    saw_successful_search = False
 
-    # 2차: 결과 부족 시 브랜드만으로 재검색
-    if len(raw) < 2 and brand:
-        raw2 = await _fetch_coupang_results(page, brand)
-        raw = raw or raw2
+    for query in queries:
+        fetched = await _fetch_coupang_results(page, query)
+        if fetched.failed:
+            search_failures.append(f"{query[:30]}: {fetched.failure_reason}")
+            continue
+
+        saw_successful_search = True
+        if fetched.items:
+            raw = fetched.items
+            break
 
     if not raw:
+        if not saw_successful_search and search_failures:
+            reason = " | ".join(search_failures[:2])
+            print(f"[Discovery] 쿠팡 검색 차단/실패: {reason}")
+            return CompetitionResult(
+                coupang_exists=False,
+                coupang_min_price=None,
+                coupang_avg_price=None,
+                seller_count=0,
+                has_rocket=False,
+                rocket_price=None,
+                grade="unknown",
+                search_failed=True,
+                search_failure_reason=reason,
+            )
         return no_result
 
     # 이름 유사도 기반 필터링
@@ -337,16 +393,23 @@ async def _search_coupang(page, product_name: str, brand: str) -> CompetitionRes
     )
 
 
-async def _fetch_coupang_results(page, query: str) -> list[dict]:
+async def _fetch_coupang_results(page, query: str) -> CoupangSearchFetchResult:
     """쿠팡 검색 페이지에서 상품 목록 추출."""
     search_url = f"https://www.coupang.com/np/search?q={quote(query)}"
     try:
-        await page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
+        response = await page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
         await asyncio.sleep(2)
-        return await page.evaluate(_COUPANG_SEARCH_JS)
+        title = await page.title()
+        status = response.status if response else None
+        if status == 403 or "Access Denied" in title:
+            reason = f"HTTP {status or '-'} {title}".strip()
+            return CoupangSearchFetchResult(items=[], failed=True, failure_reason=reason)
+
+        items = await page.evaluate(_COUPANG_SEARCH_JS)
+        return CoupangSearchFetchResult(items=items or [])
     except Exception as e:
         print(f"[Discovery] 쿠팡 검색 실패 ({query[:30]}): {e}")
-        return []
+        return CoupangSearchFetchResult(items=[], failed=True, failure_reason=str(e))
 
 
 # ──────────────────────────────────────────────
@@ -456,8 +519,13 @@ def _record_to_sheet(ws, analyzed: list[AnalyzedProduct]) -> None:
         discount_pct = f"{p.discount_rate * 100:.0f}%" if p.discount_rate else ""
 
         # 경쟁 등급 표시
-        grade_emoji = c.grade_emoji if c else ""
-        if c and c.has_rocket:
+        seller_count_value = ""
+        if c and c.search_failed:
+            grade_emoji = "검색실패"
+        else:
+            grade_emoji = c.grade_emoji if c else ""
+            seller_count_value = c.seller_count if c else ""
+        if c and c.has_rocket and not c.search_failed:
             grade_emoji += " ⚡로켓"
 
         rows.append(
@@ -474,7 +542,7 @@ def _record_to_sheet(ws, analyzed: list[AnalyzedProduct]) -> None:
                 m.estimated_sale_price if m else "",  # J: 예상판매가
                 m.net_margin if m else "",  # K: 예상순마진
                 f"{m.margin_rate_pct}%" if m else "",  # L: 순마진율
-                c.seller_count if c else "",  # M: 일반셀러수
+                seller_count_value,  # M: 일반셀러수
                 grade_emoji,  # N: 경쟁등급
                 p.review_count,  # O: 리뷰수
                 p.rank,  # P: 랭킹순위
@@ -497,10 +565,15 @@ def _build_s_grade_embed(a: AnalyzedProduct) -> dict:
     m = a.margin
     c = a.competition
 
-    rocket_str = " ⚡로켓" if (c and c.has_rocket) else ""
-    comp_str = (
-        f"{c.grade_emoji} 일반셀러 {c.seller_count}명{rocket_str}" if c else "분석불가"
-    )
+    if c and c.search_failed:
+        comp_str = "쿠팡 검색 실패"
+    else:
+        rocket_str = " ⚡로켓" if (c and c.has_rocket) else ""
+        comp_str = (
+            f"{c.grade_emoji} 일반셀러 {c.seller_count}명{rocket_str}"
+            if c
+            else "분석불가"
+        )
     discount_str = f" (할인 {p.discount_rate * 100:.0f}%)" if p.discount_rate else ""
 
     return {
