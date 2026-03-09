@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import random
 import re
 import tempfile
 from dataclasses import dataclass
@@ -47,10 +48,25 @@ from musinsa_price_watch import KST, normalize_price
 
 load_dotenv()
 
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _env_csv(name: str) -> list[str]:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return []
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
 # ──────────────────────────────────────────────
 # 환경 변수
 # ──────────────────────────────────────────────
-DISCOVERY_ENABLED = os.getenv("DISCOVERY_ENABLED", "false").strip().lower() == "true"
+DISCOVERY_ENABLED = _env_bool("DISCOVERY_ENABLED", False)
 DISCOVERY_WEBHOOK = os.getenv("DISCOVERY_WEBHOOK", "").strip()
 DISCOVERY_TOP_N = int(os.getenv("DISCOVERY_TOP_N", "20").strip() or "20")
 DISCOVERY_INTERVAL_MINUTES = int(
@@ -90,6 +106,39 @@ DISCOVERY_B_THRESHOLD = int(
 _cat_env = os.getenv("DISCOVERY_CATEGORIES", "").strip()
 DISCOVERY_CATEGORIES: list[str] | None = (
     [c.strip() for c in _cat_env.split(",") if c.strip()] if _cat_env else None
+)
+
+DISCOVERY_SOURCE_BROWSER_HEADLESS = _env_bool("DISCOVERY_SOURCE_BROWSER_HEADLESS", True)
+DISCOVERY_COUPANG_BROWSER_HEADLESS = _env_bool(
+    "DISCOVERY_COUPANG_BROWSER_HEADLESS", True
+)
+DISCOVERY_COUPANG_BROWSER_CHANNEL = (
+    os.getenv("DISCOVERY_COUPANG_BROWSER_CHANNEL", "chrome").strip() or None
+)
+DISCOVERY_COUPANG_BROWSER_EXECUTABLE_PATH = os.getenv(
+    "DISCOVERY_COUPANG_BROWSER_EXECUTABLE_PATH", ""
+).strip()
+DISCOVERY_COUPANG_BROWSER_USER_DATA_DIR = os.getenv(
+    "DISCOVERY_COUPANG_BROWSER_USER_DATA_DIR", ""
+).strip()
+DISCOVERY_COUPANG_BROWSER_LOCALE = (
+    os.getenv("DISCOVERY_COUPANG_BROWSER_LOCALE", "ko-KR").strip() or "ko-KR"
+)
+DISCOVERY_COUPANG_BROWSER_TIMEZONE = (
+    os.getenv("DISCOVERY_COUPANG_BROWSER_TIMEZONE", "Asia/Seoul").strip()
+    or "Asia/Seoul"
+)
+DISCOVERY_COUPANG_BROWSER_ARGS = _env_csv("DISCOVERY_COUPANG_BROWSER_ARGS")
+DISCOVERY_COUPANG_WARMUP_URL = (
+    os.getenv("DISCOVERY_COUPANG_WARMUP_URL", "https://www.coupang.com/").strip()
+    or "https://www.coupang.com/"
+)
+DISCOVERY_COUPANG_BROWSER_BLOCK_RETRIES = int(
+    os.getenv("DISCOVERY_COUPANG_BROWSER_BLOCK_RETRIES", "1").strip() or "1"
+)
+DISCOVERY_COUPANG_BROWSER_BLOCK_RETRY_DELAY_MS = int(
+    os.getenv("DISCOVERY_COUPANG_BROWSER_BLOCK_RETRY_DELAY_MS", "3000").strip()
+    or "3000"
 )
 
 STATE_FILE = "discovery_state.json"
@@ -309,6 +358,170 @@ def _build_coupang_search_queries(product_name: str, brand: str) -> list[str]:
     return queries
 
 
+_COUPANG_BLOCK_MARKERS = (
+    "access denied",
+    "you don't have permission to access",
+    "errors.edgesuite.net",
+)
+
+_COUPANG_STEALTH_INIT_JS = """
+Object.defineProperty(navigator, 'webdriver', { get: () => false });
+Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+Object.defineProperty(navigator, 'language', { get: () => 'ko-KR' });
+Object.defineProperty(navigator, 'languages', {
+    get: () => ['ko-KR', 'ko', 'en-US', 'en'],
+});
+window.chrome = window.chrome || { runtime: {}, app: {isInstalled: false} };
+Object.defineProperty(navigator, 'plugins', {
+    get: () => [1, 2, 3, 4, 5],
+});
+Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 0 });
+const originalQuery = window.navigator.permissions.query;
+window.navigator.permissions.query = (parameters) =>
+    parameters.name === 'notifications'
+        ? Promise.resolve({ state: Notification.permission })
+        : originalQuery(parameters);
+"""
+
+
+def _default_coupang_browser_args() -> list[str]:
+    return [
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-blink-features=AutomationControlled",
+        f"--lang={DISCOVERY_COUPANG_BROWSER_LOCALE}",
+    ]
+
+
+def _build_source_context_options() -> dict:
+    return {
+        "user_agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "viewport": {"width": 1920, "height": 1080},
+    }
+
+
+def _build_coupang_browser_launch_options() -> dict:
+    options: dict = {
+        "headless": DISCOVERY_COUPANG_BROWSER_HEADLESS,
+        "args": DISCOVERY_COUPANG_BROWSER_ARGS or _default_coupang_browser_args(),
+    }
+    if DISCOVERY_COUPANG_BROWSER_CHANNEL:
+        options["channel"] = DISCOVERY_COUPANG_BROWSER_CHANNEL
+    if DISCOVERY_COUPANG_BROWSER_EXECUTABLE_PATH:
+        options["executable_path"] = DISCOVERY_COUPANG_BROWSER_EXECUTABLE_PATH
+    return options
+
+
+def _build_coupang_context_options() -> dict:
+    return {
+        "user_agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/131.0.0.0 Safari/537.36"
+        ),
+        "viewport": {"width": 1689, "height": 1277},
+        "screen": {"width": 3440, "height": 1440},
+        "locale": DISCOVERY_COUPANG_BROWSER_LOCALE,
+        "timezone_id": DISCOVERY_COUPANG_BROWSER_TIMEZONE,
+        "extra_http_headers": {
+            "Accept-Language": (
+                f"{DISCOVERY_COUPANG_BROWSER_LOCALE},ko;q=0.9,en-US;q=0.8,en;q=0.7"
+            ),
+            "Upgrade-Insecure-Requests": "1",
+            "sec-ch-ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"',
+        },
+    }
+
+
+async def _open_coupang_browser_session(pw):
+    launch_options = _build_coupang_browser_launch_options()
+    context_options = _build_coupang_context_options()
+    profile_mode = bool(DISCOVERY_COUPANG_BROWSER_USER_DATA_DIR)
+    print(
+        "[Discovery] Coupang browser session: "
+        f"headless={launch_options['headless']} "
+        f"channel={launch_options.get('channel') or 'chromium'} "
+        f"profile={'on' if profile_mode else 'off'}"
+    )
+
+    if profile_mode:
+        context = await pw.chromium.launch_persistent_context(
+            DISCOVERY_COUPANG_BROWSER_USER_DATA_DIR,
+            **launch_options,
+            **context_options,
+        )
+        browser = None
+    else:
+        browser = await pw.chromium.launch(**launch_options)
+        context = await browser.new_context(**context_options)
+
+    await context.add_init_script(_COUPANG_STEALTH_INIT_JS)
+    page = context.pages[0] if context.pages else await context.new_page()
+    return browser, context, page
+
+
+async def _close_coupang_browser_session(browser, context) -> None:
+    try:
+        await context.close()
+    finally:
+        if browser:
+            await browser.close()
+
+
+async def _warmup_coupang_page(page) -> None:
+    if not DISCOVERY_COUPANG_WARMUP_URL:
+        return
+    try:
+        response = await page.goto(
+            DISCOVERY_COUPANG_WARMUP_URL,
+            wait_until="domcontentloaded",
+            timeout=30000,
+        )
+        await page.wait_for_timeout(DISCOVERY_COUPANG_BROWSER_BLOCK_RETRY_DELAY_MS)
+        blocked, reason = await _detect_coupang_block(page, response)
+        if blocked:
+            print(f"[Discovery] 쿠팡 warmup 차단 감지: {reason}")
+    except Exception as e:
+        print(f"[Discovery] 쿠팡 warmup 실패 (무시): {e}")
+
+
+async def _detect_coupang_block(page, response) -> tuple[bool, str]:
+    title = ""
+    body_text = ""
+    try:
+        title = await page.title()
+    except Exception:
+        pass
+    try:
+        body_text = await page.locator("body").inner_text(timeout=5000)
+    except Exception:
+        pass
+
+    lowered_title = title.lower()
+    lowered_body = body_text.lower()
+    signals: list[str] = []
+    status = response.status if response else None
+
+    if status in {403, 429}:
+        signals.append(f"HTTP {status}")
+    if "access denied" in lowered_title:
+        signals.append("title=Access Denied")
+    for marker in _COUPANG_BLOCK_MARKERS:
+        if marker in lowered_body:
+            signals.append(f"body~{marker}")
+
+    if signals:
+        reason = " | ".join(dict.fromkeys(signals))
+        return True, reason
+    return False, f"HTTP {status or '-'} {title}".strip()
+
+
 async def _search_coupang(page, product_name: str, brand: str) -> CompetitionResult:
     """쿠팡 검색 → 로켓 필터링 → 일반배송 셀러 분석."""
     norm_query = _normalize_product_name(f"{brand} {product_name}")
@@ -329,7 +542,7 @@ async def _search_coupang(page, product_name: str, brand: str) -> CompetitionRes
     saw_successful_search = False
 
     for query in queries:
-        fetched = await _fetch_coupang_results(page, query)
+        fetched = await _fetch_coupang_results_with_retry(page, query)
         if fetched.failed:
             search_failures.append(f"{query[:30]}: {fetched.failure_reason}")
             continue
@@ -397,19 +610,62 @@ async def _fetch_coupang_results(page, query: str) -> CoupangSearchFetchResult:
     """쿠팡 검색 페이지에서 상품 목록 추출."""
     search_url = f"https://www.coupang.com/np/search?q={quote(query)}"
     try:
-        response = await page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
-        await asyncio.sleep(2)
-        title = await page.title()
-        status = response.status if response else None
-        if status == 403 or "Access Denied" in title:
-            reason = f"HTTP {status or '-'} {title}".strip()
-            return CoupangSearchFetchResult(items=[], failed=True, failure_reason=reason)
+        response = await page.goto(
+            search_url, wait_until="domcontentloaded", timeout=30000
+        )
+        # 페이지 로딩 후 랜덤 대기 (3~6초) — 인간 행동 모방
+        await asyncio.sleep(3 + random.random() * 3)
+        blocked, reason = await _detect_coupang_block(page, response)
+        if blocked:
+            return CoupangSearchFetchResult(
+                items=[], failed=True, failure_reason=reason
+            )
 
         items = await page.evaluate(_COUPANG_SEARCH_JS)
         return CoupangSearchFetchResult(items=items or [])
     except Exception as e:
         print(f"[Discovery] 쿠팡 검색 실패 ({query[:30]}): {e}")
         return CoupangSearchFetchResult(items=[], failed=True, failure_reason=str(e))
+
+
+async def _fetch_coupang_results_with_retry(
+    page, query: str
+) -> CoupangSearchFetchResult:
+    attempts = max(1, DISCOVERY_COUPANG_BROWSER_BLOCK_RETRIES + 1)
+    last_error = ""
+    last_blocked = False
+
+    for attempt in range(attempts):
+        fetched = await _fetch_coupang_results(page, query)
+        if not fetched.failed:
+            return fetched
+
+        last_error = fetched.failure_reason
+        lowered = last_error.lower()
+        blocked = any(marker in lowered for marker in _COUPANG_BLOCK_MARKERS)
+        blocked = blocked or "http 403" in lowered or "access denied" in lowered
+        last_blocked = blocked
+        if not blocked or attempt >= attempts - 1:
+            break
+
+        print(
+            "[Discovery] 쿠팡 차단 감지, warmup 후 재시도: "
+            f"{last_error} ({attempt + 1}/{attempts})"
+        )
+        await _warmup_coupang_page(page)
+
+    if last_error:
+        if last_blocked and DISCOVERY_COUPANG_BROWSER_USER_DATA_DIR:
+            last_error = (
+                f"{last_error} | profile={DISCOVERY_COUPANG_BROWSER_USER_DATA_DIR}"
+            )
+        elif last_blocked:
+            last_error = f"{last_error} | hint=Chrome 프로필 연결 권장"
+    return CoupangSearchFetchResult(
+        items=[],
+        failed=True,
+        failure_reason=last_error or "unknown coupang search failure",
+    )
 
 
 # ──────────────────────────────────────────────
@@ -434,11 +690,18 @@ def _grade_label(score: float) -> str:
     return "C"
 
 
+_CONSECUTIVE_BLOCK_RESET_THRESHOLD = 3
+
+
 async def _analyze_products(
-    page, products: list[DiscoveredProduct]
-) -> list[AnalyzedProduct]:
-    """수집된 상품에 대해 쿠팡 검색 → 마진 계산 → 스코어링."""
+    pw, browser, context, page, products: list[DiscoveredProduct]
+) -> tuple[list[AnalyzedProduct], object, object, object]:
+    """수집된 상품에 대해 쿠팡 검색 → 마진 계산 → 스코어링.
+    연속 차단 시 브라우저 세션을 재시작한다.
+    Returns (results, browser, context, page) — 세션이 교체될 수 있으므로.
+    """
     results: list[AnalyzedProduct] = []
+    consecutive_blocks = 0
 
     for i, product in enumerate(products):
         print(
@@ -452,6 +715,25 @@ async def _analyze_products(
         except Exception as e:
             print(f"[Discovery] 쿠팡 검색 실패: {e}")
             competition = None
+
+        # 연속 차단 감지 → 세션 리셋
+        if competition and getattr(competition, "search_failed", False):
+            consecutive_blocks += 1
+            if consecutive_blocks >= _CONSECUTIVE_BLOCK_RESET_THRESHOLD:
+                print(
+                    f"[Discovery] 연속 {consecutive_blocks}회 차단 → "
+                    "브라우저 세션 재시작"
+                )
+                await _close_coupang_browser_session(browser, context)
+                # 재시작 전 쿨다운 (15~25초)
+                cooldown = 15 + random.random() * 10
+                print(f"[Discovery] 쿨다운 {cooldown:.0f}초...")
+                await asyncio.sleep(cooldown)
+                browser, context, page = await _open_coupang_browser_session(pw)
+                await _warmup_coupang_page(page)
+                consecutive_blocks = 0
+        else:
+            consecutive_blocks = 0
 
         # 마진 계산
         sale_price = _determine_sale_price(product, competition)
@@ -481,11 +763,11 @@ async def _analyze_products(
             )
         )
 
-        # anti-detection: 쿠팡 검색 간 딜레이
+        # anti-detection: 쿠팡 검색 간 랜덤 딜레이 (4~8초)
         if i < len(products) - 1:
-            await asyncio.sleep(2)
+            await asyncio.sleep(4 + random.random() * 4)
 
-    return results
+    return results, browser, context, page
 
 
 # ──────────────────────────────────────────────
@@ -649,27 +931,25 @@ async def run_discovery() -> dict:
 
     all_products: list[DiscoveredProduct] = []
     source_counts: dict[str, int] = {}
+    analyzed: list[AnalyzedProduct] = []
 
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(
-            headless=True,
+        source_browser = await pw.chromium.launch(
+            headless=DISCOVERY_SOURCE_BROWSER_HEADLESS,
             args=["--no-sandbox", "--disable-dev-shm-usage"],
         )
-        context = await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1920, "height": 1080},
+        source_context = await source_browser.new_context(
+            **_build_source_context_options()
         )
-        page = await context.new_page()
+        source_page = await source_context.new_page()
 
         # Phase 1: 소싱처 수집
         for adapter in DISCOVERY_ADAPTERS:
             try:
                 products = await adapter.discover_all(
-                    page, top_n=DISCOVERY_TOP_N, categories=DISCOVERY_CATEGORIES
+                    source_page,
+                    top_n=DISCOVERY_TOP_N,
+                    categories=DISCOVERY_CATEGORIES,
                 )
                 new_products = [
                     p for p in products if p.url not in state.get("discovered_urls", {})
@@ -684,6 +964,8 @@ async def run_discovery() -> dict:
                 print(f"[Discovery] {adapter.name} 전체 실패: {e}")
                 source_counts[adapter.name] = 0
 
+        await source_browser.close()
+
         # 중복 제거 (소싱목록 기등록 필터링 포함)
         existing_names = _get_existing_sourced_names()
         unique_products = _deduplicate(all_products, existing_names=existing_names)
@@ -693,9 +975,27 @@ async def run_discovery() -> dict:
         )
 
         # Phase 2: 쿠팡 경쟁 분석 + 마진 계산 + 스코어링
-        analyzed = await _analyze_products(page, unique_products)
-
-        await browser.close()
+        (
+            coupang_browser,
+            coupang_context,
+            coupang_page,
+        ) = await _open_coupang_browser_session(pw)
+        try:
+            await _warmup_coupang_page(coupang_page)
+            (
+                analyzed,
+                coupang_browser,
+                coupang_context,
+                coupang_page,
+            ) = await _analyze_products(
+                pw,
+                coupang_browser,
+                coupang_context,
+                coupang_page,
+                unique_products,
+            )
+        finally:
+            await _close_coupang_browser_session(coupang_browser, coupang_context)
 
     # Phase 3: 등급별 분류
     recordable = [a for a in analyzed if a.grade != "C"]
