@@ -3086,8 +3086,8 @@ async def process_shipping():
         carrier_code = normalize_carrier_code(carrier)
         ship_date = row[COL_ORDER_SHIP_DATE - 1].strip()  # M열
 
-        # 처리 조건: 상품준비중 + 송장/택배사 존재 + 미처리
-        if status != "상품준비중":
+        # 처리 조건: 주문완료 + 송장/택배사 존재 + 미처리
+        if status != "주문완료":
             continue
         if not order_id:
             continue
