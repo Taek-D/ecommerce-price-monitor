@@ -122,6 +122,7 @@ from coupang_manager import (
     coupang_order_job,
     coupang_sync_job,
     sourcing_match_job,
+    sourcing_order_match_job,
     sourcing_price_job,
     shipping_job,
     stock_check_job,
@@ -201,6 +202,10 @@ async def scheduled_settlement_job() -> None:
     await run_order_lane_job("settlement_job", settlement_job)
 
 
+async def scheduled_sourcing_order_match_job() -> None:
+    await run_order_lane_job("sourcing_order_match_job", sourcing_order_match_job)
+
+
 async def scheduled_coupang_sync_job() -> None:
     await run_product_lane_job("coupang_sync_job", coupang_sync_job)
 
@@ -233,6 +238,7 @@ async def run_initial_coupang_lanes() -> None:
         await run_order_lane_job("coupang_order_job", coupang_order_job)
         await run_order_lane_job("shipping_job", shipping_job)
         await run_order_lane_job("settlement_job", settlement_job)
+        await run_order_lane_job("sourcing_order_match_job", sourcing_order_match_job)
 
     async def run_product_lane() -> None:
         # Product/sourcing lane: keep strict ordering to avoid sheet contention.
@@ -347,6 +353,12 @@ async def main():
             trigger=IntervalTrigger(hours=1, jitter=120),
             id="settlement",
             name="정산/매출 자동 집계",
+        )
+        sched.add_job(
+            scheduled_sourcing_order_match_job,
+            trigger=IntervalTrigger(minutes=10, jitter=30),
+            id="sourcing_order_match",
+            name="소싱처 주문 매칭",
         )
     elif bot_mode == "discovery_only":
         pass  # discovery jobs added below
