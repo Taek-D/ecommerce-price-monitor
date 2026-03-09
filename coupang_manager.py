@@ -3582,7 +3582,7 @@ async def match_sourcing_orders_to_coupang() -> None:
             continue
 
         if recipient in all_orderers:
-            _queue_cell_update(pending, row_idx, COL_ORDER_STATUS, "주문완료")
+            _queue_sheet_cell_update(pending, row_idx, COL_ORDER_STATUS, "주문완료")
             matched_count += 1
 
     if pending:
