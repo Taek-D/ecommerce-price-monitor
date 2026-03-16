@@ -45,6 +45,9 @@ SOURCING_DATA_START = 3
 SOURCING_COL_NAME = 2  # B열: 상품명
 SOURCING_COL_MINPRICE = 11  # K열: 최소판매금액
 SOURCING_COL_VID = 15  # O열: vendorItemId (새로 추가)
+SOURCING_COL_PRICE_VID = 16  # P열: 가격동기화vendorItemId(쿠팡)
+SOURCING_VID_HEADER = "vendorItemId(쿠팡)"
+SOURCING_PRICE_VID_HEADER = "가격동기화vendorItemId(쿠팡)"
 
 # 유사도 임계값 (0~100, 높을수록 엄격)
 MATCH_THRESHOLD = 65
@@ -269,14 +272,32 @@ def match_sourcing_to_coupang(gc, coupang_items):
     header_row = (
         rows[SOURCING_HEADER_ROW - 1] if len(rows) >= SOURCING_HEADER_ROW else []
     )
-    while len(header_row) < SOURCING_COL_VID:
+    while len(header_row) < SOURCING_COL_PRICE_VID:
         header_row.append("")
-    if not header_row[SOURCING_COL_VID - 1]:
-        header_row[SOURCING_COL_VID - 1] = "vendorItemId(쿠팡)"
-        ws_sourcing.update_cell(
-            SOURCING_HEADER_ROW, SOURCING_COL_VID, "vendorItemId(쿠팡)"
+    header_updates = []
+    if header_row[SOURCING_COL_VID - 1] != SOURCING_VID_HEADER:
+        header_row[SOURCING_COL_VID - 1] = SOURCING_VID_HEADER
+        header_updates.append(
+            {
+                "range": gspread.utils.rowcol_to_a1(
+                    SOURCING_HEADER_ROW, SOURCING_COL_VID
+                ),
+                "values": [[SOURCING_VID_HEADER]],
+            }
         )
-        print("  → 소싱목록 O열 헤더 추가")
+    if header_row[SOURCING_COL_PRICE_VID - 1] != SOURCING_PRICE_VID_HEADER:
+        header_row[SOURCING_COL_PRICE_VID - 1] = SOURCING_PRICE_VID_HEADER
+        header_updates.append(
+            {
+                "range": gspread.utils.rowcol_to_a1(
+                    SOURCING_HEADER_ROW, SOURCING_COL_PRICE_VID
+                ),
+                "values": [[SOURCING_PRICE_VID_HEADER]],
+            }
+        )
+    if header_updates:
+        ws_sourcing.batch_update(header_updates, value_input_option="RAW")
+        print("  → 소싱목록 O/P열 헤더 추가")
 
     # 쿠팡 상품명 목록 (매칭 대상)
     # 상품명 기준으로 그룹핑: {상품명: [vendorItemId, ...]}
@@ -326,6 +347,7 @@ def match_sourcing_to_coupang(gc, coupang_items):
                     "coupang_name": best_name,
                     "score": best_score,
                     "vids": vid_str,
+                    "price_vid": vids[0] if vids else "",
                 }
             )
         else:
@@ -349,12 +371,26 @@ def match_sourcing_to_coupang(gc, coupang_items):
         )
 
     print(f"\n  총 {len(updates)}개 매칭, {skipped_count}개 스킵(이미 있음)")
-    answer = input("\n  위 결과를 소싱목록 O열에 저장할까요? (y/n): ").strip().lower()
+    answer = input("\n  위 결과를 소싱목록 O/P열에 저장할까요? (y/n): ").strip().lower()
 
     if answer == "y":
-        for u in updates:
-            ws_sourcing.update_cell(u["row"], SOURCING_COL_VID, u["vids"])
-            matched_count += 1
+        batch_body = [
+            {
+                "range": gspread.utils.rowcol_to_a1(u["row"], SOURCING_COL_VID),
+                "values": [[u["vids"]]],
+            }
+            for u in updates
+        ]
+        batch_body.extend(
+            {
+                "range": gspread.utils.rowcol_to_a1(u["row"], SOURCING_COL_PRICE_VID),
+                "values": [[u["price_vid"]]],
+            }
+            for u in updates
+            if u["price_vid"]
+        )
+        ws_sourcing.batch_update(batch_body, value_input_option="RAW")
+        matched_count = len(updates)
         print(f"\n  ✅ {matched_count}개 vendorItemId 소싱목록에 저장 완료!")
         print("  ℹ️  매칭이 잘못된 항목은 시트에서 직접 수정하거나 삭제해주세요.")
     else:

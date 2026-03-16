@@ -1,0 +1,8 @@
+[     517ms] [WARNING] document.domain mutation is ignored because the surrounding agent cluster is origin-keyed. @ https://script.auction.co.kr/common/SRUAdserverSubHeader.htm?WeblogYN=N:26
+[     539ms] SecurityError: Failed to read a named property 'document' from 'Window': Blocked a frame with origin "https://script.auction.co.kr" from accessing a cross-origin frame.
+    at BrandAd39.print (https://script.auction.co.kr/common/SRUAdserverSubHeader.htm?WeblogYN=N:102:27)
+    at BrandAd39.successCb (https://script.auction.co.kr/common/SRUAdserverSubHeader.htm?WeblogYN=N:61:35)
+    at Object.success (https://script.auction.co.kr/Ad/DACommon.js:188:35)
+    at Object.resolveWith (https://script.auction.co.kr/common/jquery.js:2:15720)
+    at w (https://script.auction.co.kr/common/jquery.js:4:8979)
+    at d.onload.d.onreadystatechange (https://script.auction.co.kr/common/jquery.js:4:13547)

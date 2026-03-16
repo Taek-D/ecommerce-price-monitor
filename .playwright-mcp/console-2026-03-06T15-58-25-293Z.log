@@ -1,0 +1,14 @@
+[     325ms] [WARNING] Datadog Browser SDK: SDK is loaded more than once. This is unsupported and might have unexpected behavior. @ https://static.msscdn.net/static/v2/search-home/search-home.js:52
+[     351ms] [WARNING] Datadog Browser SDK: SDK is loaded more than once. This is unsupported and might have unexpected behavior. @ https://static.msscdn.net/static/v2/pc/home/vendor/@datadog.js:2
+[    1138ms] TypeError: Cannot read properties of undefined (reading 'track')
+    at <anonymous>:1:20
+    at https://www.googletagmanager.com/gtm.js?id=GTM-MMJ53Z2&gtm=4e6341:963:429
+    at https://www.googletagmanager.com/gtm.js?id=GTM-MMJ53Z2&gtm=4e6341:964:132
+    at fR (https://www.googletagmanager.com/gtm.js?id=GTM-MMJ53Z2&gtm=4e6341:965:31)
+    at Od.eR (https://www.googletagmanager.com/gtm.js?id=GTM-MMJ53Z2&gtm=4e6341:962:92)
+    at Od.<anonymous> (https://www.googletagmanager.com/gtm.js?id=GTM-MMJ53Z2&gtm=4e6341:404:187)
+    at k.apply (https://www.googletagmanager.com/gtm.js?id=GTM-MMJ53Z2&gtm=4e6341:330:466)
+    at kb (https://www.googletagmanager.com/gtm.js?id=GTM-MMJ53Z2&gtm=4e6341:292:209)
+    at jb (https://www.googletagmanager.com/gtm.js?id=GTM-MMJ53Z2&gtm=4e6341:291:527)
+    at Od.<anonymous> (https://www.googletagmanager.com/gtm.js?id=GTM-MMJ53Z2&gtm=4e6341:354:473)
+[    1532ms] [ERROR] Attestation check for Attribution Reporting on https://www.facebook.com failed. @ https://www.musinsa.com/main/beauty/ranking?type=skincare&gf=A&storeCode=beauty&sectionId=231&contentsId=&categoryCode=104000&ageBand=AGE_BAND_ALL:0

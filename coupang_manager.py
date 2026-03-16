@@ -439,7 +439,11 @@ def _price_change_detail_text(details: list[dict], limit: int = 8) -> str:
 
 def _build_price_change_embed(change: dict) -> dict:
     changed_count = len(change.get("details", []))
-    skipped_total = change.get("skip_floor", 0) + change.get("skip_unknown", 0)
+    skipped_total = (
+        change.get("skip_floor", 0)
+        + change.get("skip_unknown", 0)
+        + change.get("failed", 0)
+    )
     fields = [
         {
             "name": "상품명",
@@ -453,7 +457,7 @@ def _build_price_change_embed(change: dict) -> dict:
             "inline": False,
         },
         {"name": "업데이트 옵션", "value": f"{changed_count}개", "inline": True},
-        {"name": "스킵", "value": f"{skipped_total}개", "inline": True},
+        {"name": "보류/스킵", "value": f"{skipped_total}개", "inline": True},
         {"name": "처리 시각", "value": _now_kst_str(), "inline": True},
         {
             "name": "vendorItemId / 옵션 / 판매가",
@@ -539,6 +543,8 @@ def _order_item_paid_prices(item: dict) -> tuple[int | None, int | None, int]:
 
 
 _VENDOR_ITEM_ID_MIN_LENGTH = 5
+SOURCING_VID_HEADER = "vendorItemId(쿠팡)"
+SOURCING_PRICE_VID_HEADER = "가격동기화vendorItemId(쿠팡)"
 
 
 def _normalize_vendor_item_id(raw_value: str | int | None) -> str | None:
@@ -589,6 +595,22 @@ def _parse_vendor_item_ids(raw_value: str) -> list[str]:
         ids.append(vid)
 
     return ids
+
+
+def _resolve_price_sync_vendor_item_ids(
+    price_sync_raw_value: str, fallback_vendor_item_ids: list[str]
+) -> list[str]:
+    """가격 동기화 대상 vendorItemId 목록을 정한다.
+
+    - P열은 다중 vendorItemId 입력을 허용한다.
+    - P열이 비어 있거나 파싱되지 않으면 기존 호환을 위해 O열 1개만 fallback 한다.
+    """
+    price_sync_ids = _parse_vendor_item_ids(price_sync_raw_value)
+    if price_sync_ids:
+        return price_sync_ids
+    if len(fallback_vendor_item_ids) == 1:
+        return fallback_vendor_item_ids[:1]
+    return []
 
 
 def _load_sourcing_min_price_by_vid() -> dict[str, int]:
@@ -1490,7 +1512,7 @@ SOURCING_COL_NAME = 2  # B열: 상품명
 SOURCING_COL_BUYPRICE = 8  # H열: 매입가격
 SOURCING_COL_MINPRICE = 11  # K열: 최소판매금액
 SOURCING_COL_VID = 15  # O열: vendorItemId(쿠팡)
-SOURCING_COL_PRICE_VID = 16  # P열: 대표 vendorItemId(가격동기화)
+SOURCING_COL_PRICE_VID = 16  # P열: 가격동기화vendorItemId(쿠팡)
 SOURCING_MATCH_THRESHOLD = _env_int("SOURCING_MATCH_THRESHOLD", 82)
 SOURCING_MATCH_MIN_GAP = _env_int("SOURCING_MATCH_MIN_GAP", 6)
 SOURCING_SIBLING_MATCH_MIN = _env_int("SOURCING_SIBLING_MATCH_MIN", 90)
@@ -2279,8 +2301,8 @@ async def sync_products_from_sheet():
 async def sync_price_from_sourcing():
     """
     소싱목록 K열(최소판매금액) 변동 감지 → 쿠팡 판매가 자동 업데이트
-    - 가격 동기화는 소싱목록 P열(대표 vendorItemId) 1개만 사용
-    - P열이 비어 있으면 O열이 1개일 때만 그 ID를 대표값으로 사용
+    - 가격 동기화는 소싱목록 P열(가격동기화vendorItemId) 전체를 사용
+    - P열이 비어 있으면 O열이 1개일 때만 그 ID를 fallback 으로 사용
     - 소싱목록 O열(vendorItemId)은 품절/조회용 다중 ID로 유지
     - 최소판매금액이 현재 판매가보다 높아질 때만 판매가 상향 조정
     - H열(매입가격) 값이 품절(문구)인 경우 매핑된 상품을 자동 판매중지
@@ -2403,9 +2425,9 @@ async def sync_price_from_sourcing():
             continue
 
         vendor_item_ids = _parse_vendor_item_ids(vid_cell)
-        price_vendor_item_id = _normalize_vendor_item_id(price_vid_cell)
-        if not price_vendor_item_id and len(vendor_item_ids) == 1:
-            price_vendor_item_id = vendor_item_ids[0]
+        price_vendor_item_ids = _resolve_price_sync_vendor_item_ids(
+            price_vid_cell, vendor_item_ids
+        )
         is_soldout_row = _is_soldout_status(buy_price_cell)
 
         # 품절 행에서만 O열 비어있거나 1개인 케이스를 상품명으로 보강한다.
@@ -2558,63 +2580,72 @@ async def sync_price_from_sourcing():
         if new_price == prev_price:
             continue
 
-        if not price_vendor_item_id:
+        if not price_vendor_item_ids:
             if vendor_item_ids:
                 print(
-                    f"[SourcingSync] 대표 vendorItemId 없음 스킵 → row={i} "
+                    f"[SourcingSync] 가격동기화 vendorItemId 없음 스킵 → row={i} "
                     f"name='{name_cell}' O열='{vid_cell}' P열='{price_vid_cell}'"
                 )
             continue
 
-        # 변동 감지 → 대표 vendorItemId 1개에만 가격 업데이트
+        # 변동 감지 → 가격동기화 대상 vendorItemId들에만 가격 업데이트
         print(
             f"[SourcingSync] 가격 변동 감지 → '{name_cell}' | "
-            f"{prev_price:,} → {new_price:,}원 | 대표 vendorItemId={price_vendor_item_id}"
+            f"{prev_price:,} → {new_price:,}원 | "
+            f"가격동기화 대상 {len(price_vendor_item_ids)}개"
         )
 
         success_ids = []
         success_details = []
-        skipped_floor = 0
-        skipped_unknown = 0
-        current_sale_price = await _get_current_sale_price(price_vendor_item_id)
+        skipped_floor_ids = []
+        skipped_unknown_ids = []
+        failed_ids = []
 
-        # 요청 조건: 최소판매금액 > 현재 판매가 인 경우에만 상향 업데이트
-        if current_sale_price is None:
-            skipped_unknown += 1
-            print(
-                "[SourcingSync] 현재 판매가 미확인 스킵 → "
-                f"대표 vendorItemId={price_vendor_item_id}"
-            )
-        elif new_price <= current_sale_price:
-            skipped_floor += 1
-        else:
-            ok = await update_sale_price(price_vendor_item_id, new_price)
-            if ok:
-                success_ids.append(price_vendor_item_id)
-                current_price_by_vid[price_vendor_item_id] = new_price
-                success_details.append(
-                    {
-                        "vid": price_vendor_item_id,
-                        "product_name": vid_to_product_name.get(
-                            price_vendor_item_id, name_cell
-                        ),
-                        "old_price": current_sale_price,
-                        "new_price": new_price,
-                    }
+        for price_vendor_item_id in price_vendor_item_ids:
+            current_sale_price = await _get_current_sale_price(price_vendor_item_id)
+
+            # 요청 조건: 최소판매금액 > 현재 판매가 인 경우에만 상향 업데이트
+            if current_sale_price is None:
+                skipped_unknown_ids.append(price_vendor_item_id)
+                print(
+                    "[SourcingSync] 현재 판매가 미확인 스킵 → "
+                    f"vendorItemId={price_vendor_item_id}"
                 )
+            elif new_price <= current_sale_price:
+                skipped_floor_ids.append(price_vendor_item_id)
+            else:
+                ok = await update_sale_price(price_vendor_item_id, new_price)
+                if ok:
+                    success_ids.append(price_vendor_item_id)
+                    current_price_by_vid[price_vendor_item_id] = new_price
+                    success_details.append(
+                        {
+                            "vid": price_vendor_item_id,
+                            "product_name": vid_to_product_name.get(
+                                price_vendor_item_id, name_cell
+                            ),
+                            "old_price": current_sale_price,
+                            "new_price": new_price,
+                        }
+                    )
+                else:
+                    failed_ids.append(price_vendor_item_id)
             await asyncio.sleep(0.2)
 
-        # 현재 판매가를 전혀 확인하지 못한 경우엔 상태를 확정하지 않아 다음 주기에 재시도한다.
-        if skipped_unknown > 0 and not success_ids and skipped_floor == 0:
-            print(f"[SourcingSync] 현재 판매가 미확인으로 상태 갱신 보류 → row={i}")
+        # 일부 대상이 미확인/실패면 상태를 확정하지 않아 다음 주기에 재시도한다.
+        if skipped_unknown_ids or failed_ids:
+            print(
+                f"[SourcingSync] 일부 대상 재시도 예정으로 상태 갱신 보류 → row={i} "
+                f"(unknown={len(skipped_unknown_ids)}, failed={len(failed_ids)})"
+            )
         else:
             _sourcing_price_state[i] = new_price
 
-        if skipped_floor or skipped_unknown:
+        if skipped_floor_ids or skipped_unknown_ids or failed_ids:
             print(
                 f"[SourcingSync] 조건 미충족/미확인 스킵 → "
-                f"대표 vendorItemId={price_vendor_item_id} "
-                f"floor={skipped_floor}, unknown={skipped_unknown}"
+                f"row={i} floor={len(skipped_floor_ids)}, "
+                f"unknown={len(skipped_unknown_ids)}, failed={len(failed_ids)}"
             )
 
         if success_ids:
@@ -2624,8 +2655,9 @@ async def sync_price_from_sourcing():
                     "prev": prev_price,
                     "new": new_price,
                     "count": len(success_ids),
-                    "skip_floor": skipped_floor,
-                    "skip_unknown": skipped_unknown,
+                    "skip_floor": len(skipped_floor_ids),
+                    "skip_unknown": len(skipped_unknown_ids),
+                    "failed": len(failed_ids),
                     "details": success_details,
                 }
             )
@@ -2675,7 +2707,7 @@ async def sync_price_from_sourcing():
 async def auto_match_sourcing_vendor_item_ids():
     """
     소싱목록 B열(상품명)과 쿠팡상품관리 B열(상품명)을 비교해
-    O열(vendorItemId)과 P열(대표 vendorItemId)을 자동으로 보강한다.
+    O열(vendorItemId)과 P열(가격동기화vendorItemId)을 자동으로 보강한다.
 
     매칭 규칙:
     1) 정규화 문자열 정확 일치 우선
@@ -2705,26 +2737,27 @@ async def auto_match_sourcing_vendor_item_ids():
         header_updates = []
         if (
             len(header) < SOURCING_COL_VID
-            or not (header[SOURCING_COL_VID - 1] or "").strip()
+            or (header[SOURCING_COL_VID - 1] or "").strip() != SOURCING_VID_HEADER
         ):
             header_updates.append(
                 {
                     "range": gspread.utils.rowcol_to_a1(
                         SOURCING_HEADER_ROW, SOURCING_COL_VID
                     ),
-                    "values": [["vendorItemId(쿠팡)"]],
+                    "values": [[SOURCING_VID_HEADER]],
                 }
-            )
+        )
         if (
             len(header) < SOURCING_COL_PRICE_VID
-            or not (header[SOURCING_COL_PRICE_VID - 1] or "").strip()
+            or (header[SOURCING_COL_PRICE_VID - 1] or "").strip()
+            != SOURCING_PRICE_VID_HEADER
         ):
             header_updates.append(
                 {
                     "range": gspread.utils.rowcol_to_a1(
                         SOURCING_HEADER_ROW, SOURCING_COL_PRICE_VID
                     ),
-                    "values": [["대표vendorItemId(가격)"]],
+                    "values": [[SOURCING_PRICE_VID_HEADER]],
                 }
             )
         if header_updates:
@@ -2766,13 +2799,14 @@ async def auto_match_sourcing_vendor_item_ids():
             if len(row) >= SOURCING_COL_PRICE_VID
             else ""
         )
-        existing_price_vid = _normalize_vendor_item_id(existing_price_vid_raw)
+        existing_price_vids = _parse_vendor_item_ids(existing_price_vid_raw)
         existing_vids = _parse_vendor_item_ids(existing_vid)
         matched_vids, matched_key, matched_score, match_mode = (
             _match_sourcing_vendor_item_ids(sourcing_name, name_to_vids)
         )
         if not matched_vids:
             continue
+        existing_price_vid = existing_price_vids[0] if existing_price_vids else None
         desired_price_vid = _pick_representative_vendor_item_id(
             matched_key,
             matched_vids,
@@ -2789,7 +2823,9 @@ async def auto_match_sourcing_vendor_item_ids():
             if len(existing_vids) <= len(matched_vids):
                 update_vids = True
 
-        update_price_vid = existing_price_vid != desired_price_vid
+        update_price_vid = not existing_price_vids or (
+            len(existing_price_vids) == 1 and existing_price_vids[0] not in matched_vids
+        )
         if not update_vids and not update_price_vid:
             continue
 
