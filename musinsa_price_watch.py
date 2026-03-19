@@ -1,353 +1,80 @@
-import logging, os, re, json, asyncio, random
-from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
+import logging, os, json, asyncio, random
+from datetime import datetime
 from urllib.parse import urlparse
 
-KST = timezone(timedelta(hours=9))
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
-import httpx
-from playwright.async_api import async_playwright, TimeoutError as PWTimeout
+from playwright.async_api import async_playwright
 
 # Google Sheets
 import gspread
 from google.oauth2.service_account import Credentials
 from logging_config import setup_logging
 
+from config import (
+    settings,
+    KST,
+    STATE_FILE,
+    D_COL_INDEX,
+    H_COL_INDEX,
+    J_COL_INDEX,
+    URLS_START_ROW,
+)
+from utils import (
+    _normalize_url,
+    is_blank_sheet_value,
+    is_soldout_sheet_value,
+    post_webhook,
+    _get_http_client,
+)
+from adapters import (
+    pick_adapter,
+    ADAPTERS,
+    log_webhook_routing_once,
+    ExtractionResult,
+    MusinsaAdapter,
+    OliveYoungAdapter,
+    GmarketAdapter,
+    TwentyNineCMAdapter,
+    AuctionAdapter,
+    ElevenStAdapter,
+    UniversalAdapter,
+)
+
+# backward-compat re-exports used by utils functions moved here
+from utils import normalize_price, looks_like_price_text, valid_price_value  # noqa: F401
+from utils import wait_any_selector, wait_for_network_idle  # noqa: F401
+from utils import extract_price_fallback_generic  # noqa: F401
+from adapters import BaseAdapter  # noqa: F401
+
 _log = logging.getLogger("musinsa_bot.price")
 _log_webhook = logging.getLogger("musinsa_bot.webhook")
 _log_sheet = logging.getLogger("musinsa_bot.sheet")
 
-# ---------------- 시트/컬럼 설정 ----------------
-SHEETS_SPREADSHEET_ID = ""
-SHEETS_WORKSHEET_NAME = "소싱목록"
-D_COL_INDEX = 4  # URL 열
-H_COL_INDEX = 8  # 매입가격 열
-J_COL_INDEX = 10  # 업데이트 시각 열
-URLS_START_ROW = 4
-
-# ---------------- 무신사 ----------------
-# 가격: 'Price__CalculatedPrice'가 포함된 클래스의 span 텍스트 탐색
-MUSINSA_EXACT_PRICE_SELECTOR = 'span[class*="Price__CalculatedPrice"]'
-
-# 품절/구매 버튼: 'Purchase__Container' 영역의 버튼 텍스트
-MUSINSA_SOLDOUT_SELECTOR = 'div[class*="Purchase__Container"] button span'
-
-# ---------------- 올리브영 ----------------
-OLIVE_PRICE_SELECTOR = "#Contents > div.prd_detail_box.renew > div.right_area > div > div.price > span.price-2"
-OLIVE_SOLDOUT_PRIMARY = "#Contents > div.prd_detail_box.renew > div.right_area > div > div.prd_btn_area.new-style.type1 > button.btnSoldout.recoPopBtn.temprecobell"
-OLIVE_SOLDOUT_FALLBACKS = ".btnSoldout, button[disabled], .soldout, .btnL.stSoldOut"
-OLIVE_SOLDOUT_NEW_PRIMARY = "#main > div.page_product-details-wrapper___t38G > div > div.page_right-section__Plw5V > div > div.PurchaseBottom_purchase-bottom__C_GnK > div.PurchaseBottom_purchase-bottom-contents__ztB1w > div.PurchaseBottom_btn-area__mJJ9z.PurchaseBottom_padding-top__GCRfX > button.PurchaseBottom_btn-square__oefbI.btn-soldout.css-1rhuta5 > span"
-OLIVE_SOLDOUT_NEW_FALLBACKS = (
-    "#main button.btn-soldout span, "
-    "#main button[class*='btn-soldout'] span, "
-    "#main div[class*='PurchaseBottom'] button[class*='btn-soldout'] span, "
-    "#main button[disabled] span"
-)
-
-# ---------------- 지마켓 (XPath) ----------------
-GMARKET_COUPON_XPATH = "xpath=//*[@id='itemcase_basic']//span[contains(@class,'price_innerwrap-coupon')]//strong"
-GMARKET_NORMAL_XPATH = "xpath=//*[@id='itemcase_basic']//div[contains(@class,'box__price')]//strong[contains(@class,'price_real')]"
-GMARKET_SOLDOUT_SELECTOR = ".btn_soldout, .soldout, button[disabled], .box__supply .text__state, .layer_soldout, [aria-disabled='true']"
-GMARKET_PRICE_STATUS_SELECTOR = (
-    "#itemcase_basic > div > div.box__price.price > span > strong"
-)
-GMARKET_SOLDOUT_KEYWORDS = [
-    "품절",
-    "일시품절",
-    "판매종료",
-    "매진",
-    "sold out",
-    "soldout",
-    "out of stock",
-]
-
-# ---------------- 29CM ----------------
-TWENTYNINE_PRICE_SELECTOR = "#pdp_product_price"
-TWENTYNINE_SOLDOUT_SELECTOR = "#pdp_buy_now > span"
-
-# ---------------- 옥션 (Auction) [추가] ----------------
-AUCTION_PRICE_SELECTOR = (
-    "#frmMain > div.box__item-info > div.price_wrap > div:nth-child(2) > strong"
-)
-AUCTION_SOLDOUT_SELECTOR = ".btn_soldout, .layer_soldout, .soldout, button[disabled]"
-
-# ---------------- 11번가 (11st) [추가] ----------------
-ELEVENST_PRICE_SELECTOR = "#finalDscPrcArea > dd.price > strong > span.value"
-ELEVENST_SOLDOUT_SELECTOR = (
-    ".btn_soldout, .sold_out, button:has-text('품절'), span:has-text('판매종료')"
-)
-
-# ---------------- 플랫폼 프리픽스 ----------------
-MUSINSA_PREFIXES = ["https://www.musinsa.com/products/"]
-OLIVE_PREFIXES = [
-    "https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do",
-    "https://m.oliveyoung.co.kr/m/goods/getGoodsDetail.do",
-]
-GMARKET_PREFIXES = [
-    "https://item.gmarket.co.kr/Item",
-    "https://item2.gmarket.co.kr/Item",
-    "https://mitem.gmarket.co.kr/Item",
-]
-TWENTYNINE_PREFIXES = [
-    "https://www.29cm.co.kr/products/",
-    "https://m.29cm.co.kr/product/",
-]
-AUCTION_PREFIXES = [
-    "http://itempage3.auction.co.kr",
-    "https://itempage3.auction.co.kr",
-    "http://mobile.auction.co.kr",
-]
-ELEVENST_PREFIXES = [
-    "https://www.11st.co.kr/products/",
-    "https://m.11st.co.kr/products/",
-    "http://www.11st.co.kr/products/",
-]
-
-# ---------------- 동작 파라미터 ----------------
-STATE_FILE = "price_state.json"
-MIN_PRICE = 5000
-WEB_TIMEOUT = 120000
-
-PRICE_SECTION_SELECTORS = [
-    "[class*='member'][class*='price']",
-    "[class*='price'][class*='member']",
-    "[class*='member'] [class*='price']",
-    "[class*='price_area']",
-    "[class*='priceBox']",
-    "[class*='product'] [class*='price']",
-    "[class*='sale'] [class*='price']",
-    "[class*='discount'] [class*='price']",
-    "[class*='price']",
-]
-EXCLUDE_KEYWORDS = [
-    "적립",
-    "포인트",
-    "포인트적립",
-    "쿠폰",
-    "배송",
-    "배송비",
-    "리뷰",
-    "평점",
-    "적용",
-    "최대",
-    "%",
-    "기간",
-    "혜택",
-    "사이즈",
-    "수량",
-    "옵션",
-    "남은",
-    "품절",
-    "무이자",
-    "카드",
-    "스마일",
-    "네이버",
-    "카카오",
-    "머니",
-    "coupon",
-    "shipping",
-    "delivery",
-    "review",
-    "rating",
-    "benefit",
-    "point",
-    "signin",
-    "login",
-    "max",
-    "period",
-    "option",
-    "quantity",
-    "sold out",
-    "card",
-    "pay",
-    "money",
-    "event",
-    "notice",
-]
-
 # ---------------- 환경/웹훅 ----------------
 load_dotenv()
 
-
-def _env_first(*names: str) -> str:
-    for name in names:
-        value = os.getenv(name, "").strip()
-        if value:
-            return value
-    return ""
-
-
-def _env_int(name: str, default: int, min_value: int = 1) -> int:
-    try:
-        return max(min_value, int((os.getenv(name, str(default)) or "").strip()))
-    except Exception:
-        return default
-
-
-def _env_float(name: str, default: float, min_value: float = 0.0) -> float:
-    try:
-        return max(min_value, float((os.getenv(name, str(default)) or "").strip()))
-    except Exception:
-        return default
-
-
-def _env_bool(name: str, default: bool = False) -> bool:
-    raw = (os.getenv(name, "") or "").strip().lower()
-    if not raw:
-        return default
-    return raw in {"1", "true", "t", "yes", "y", "on"}
-
-
-MAX_CONCURRENCY = _env_int("MAX_CONCURRENCY", 5, min_value=1)
-PER_DOMAIN_CONCURRENCY = _env_int("PER_DOMAIN_CONCURRENCY", 2, min_value=1)
-URL_RETRY_COUNT = _env_int("URL_RETRY_COUNT", 2, min_value=1)
-RETRY_BACKOFF_BASE_SECONDS = _env_float(
-    "RETRY_BACKOFF_BASE_SECONDS", 0.6, min_value=0.0
-)
-DRY_RUN = _env_bool("DRY_RUN", default=False)
-
-SHEETS_SPREADSHEET_ID = os.getenv("SHEETS_SPREADSHEET_ID", "").strip()
-SHEETS_WORKSHEET_NAME = (
-    os.getenv("SHEETS_WORKSHEET_NAME", SHEETS_WORKSHEET_NAME) or ""
-).strip() or "소싱목록"
-
-DEFAULT_WEBHOOK = _env_first("DISCORD_WEBHOOK_URL", "DEFAULT_WEBHOOK")
-MUSINSA_WEBHOOK = _env_first("MUSINSA_WEBHOOK")
-OLIVE_WEBHOOK = _env_first("OLIVE_WEBHOOK", "OLIVEYOUNG_WEBHOOK")
-GMARKET_WEBHOOK = _env_first("GMARKET_WEBHOOK")
-TWENTYNINE_WEBHOOK = _env_first("TWENTYNINE_WEBHOOK", "29CM_WEBHOOK")
-AUCTION_WEBHOOK = _env_first("AUCTION_WEBHOOK")
-ELEVENST_WEBHOOK = _env_first("ELEVENST_WEBHOOK", "ELEVENSTREET_WEBHOOK")
-
-GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv(
-    "GOOGLE_SERVICE_ACCOUNT_JSON", "safe/service_account.json"
-).strip()
+DEFAULT_WEBHOOK = settings.discord_webhook_url
 
 state = {}
 URLS: list[str] = []
 
 
-# ---------------- 공유 httpx.AsyncClient (lazy init) ----------------
-_http_client: httpx.AsyncClient | None = None
-
-
-def _get_http_client() -> httpx.AsyncClient:
-    global _http_client
-    if _http_client is None or _http_client.is_closed:
-        _http_client = httpx.AsyncClient(timeout=20)
-    return _http_client
-
-
-# ---------------- 공통 유틸 ----------------
-async def post_webhook(url: str, content: str, embeds=None):
-    if DRY_RUN:
-        preview = (content or "").replace("\n", " ")[:120]
-        _log_webhook.debug(f"DRY_RUN webhook skipped: {preview}")
-        return
-
-    if not url:
-        _log_webhook.warning(f"Webhook URL not configured: {content[:80]}")
-        return
-    client = _get_http_client()
-    payload = {"content": content}
-    if embeds:
-        payload["embeds"] = embeds
-    try:
-        r = await client.post(url, json=payload)
-        r.raise_for_status()
-    except Exception as e:
-        _log_webhook.error(f"Webhook send failed: {e}")
-
-
-def normalize_price(text: str) -> int | None:
-    if not text:
-        return None
-    m = re.search(r"([0-9][0-9,]*)", text)
-    if not m:
-        return None
-    try:
-        return int(m.group(1).replace(",", ""))
-    except Exception:
-        return None
-
-
-def looks_like_price_text(t: str) -> bool:
-    if not t:
-        return False
-    low = t.lower()
-    for kw in EXCLUDE_KEYWORDS:
-        if kw in low:
-            return False
-    return True
-
-
-def valid_price_value(v: int | None) -> bool:
-    return v is not None and v >= MIN_PRICE
-
-
-async def wait_any_selector(page, selectors: list[str], timeout_each=3000) -> bool:
-    for sel in selectors:
-        try:
-            await page.wait_for_selector(sel, state="visible", timeout=timeout_each)
-            return True
-        except PWTimeout:
-            continue
-    return False
-
-
-async def wait_for_network_idle(page, idle_ms=500, timeout_ms=10000):
-    pending = set()
-
-    def on_request(req):
-        pending.add(req)
-
-    def on_done(req):
-        pending.discard(req)
-
-    page.on("request", on_request)
-    page.on("requestfinished", on_done)
-    page.on("requestfailed", on_done)
-    try:
-        start = asyncio.get_event_loop().time()
-        last_quiet = start
-        while True:
-            now = asyncio.get_event_loop().time()
-            if not pending and (now - last_quiet) * 1000 >= idle_ms:
-                return
-            if not pending:
-                last_quiet = now
-            if (now - start) * 1000 > timeout_ms:
-                return
-            await asyncio.sleep(0.05)
-    finally:
-        try:
-            page.remove_listener("request", on_request)
-            page.remove_listener("requestfinished", on_done)
-            page.remove_listener("requestfailed", on_done)
-        except Exception:
-            pass
-
-
 # ---------------- Google Sheets ----------------
 def google_creds():
     return Credentials.from_service_account_file(
-        GOOGLE_SERVICE_ACCOUNT_JSON,
+        settings.google_service_account_json,
         scopes=["https://www.googleapis.com/auth/spreadsheets"],
     )
 
 
 def _open_sheet():
-    if not SHEETS_SPREADSHEET_ID:
+    if not settings.sheets_spreadsheet_id:
         raise RuntimeError("SHEETS_SPREADSHEET_ID is not configured")
     gc = gspread.authorize(google_creds())
-    sh = gc.open_by_key(SHEETS_SPREADSHEET_ID)
-    return sh.worksheet(SHEETS_WORKSHEET_NAME)
-
-
-def _normalize_url(u: str) -> str:
-    return (u or "").strip()
+    sh = gc.open_by_key(settings.sheets_spreadsheet_id)
+    return sh.worksheet(settings.sheets_worksheet_name)
 
 
 def load_urls_from_sheet() -> list[str]:
@@ -394,27 +121,6 @@ def build_sheet_row_index(ws):
     return row_by_url, price_by_url
 
 
-def is_blank_sheet_value(v) -> bool:
-    return ("" if v is None else str(v)).strip() == ""
-
-
-def is_soldout_sheet_value(v) -> bool:
-    txt = ("" if v is None else str(v)).strip().lower()
-    if not txt:
-        return False
-    return any(
-        keyword in txt
-        for keyword in (
-            "품절",
-            "일시품절",
-            "매진",
-            "판매종료",
-            "sold out",
-            "out of stock",
-        )
-    )
-
-
 def collect_sheet_cells(
     row: int, value, ts_iso: str, write_time: bool, write_price: bool = True
 ) -> list[gspread.Cell]:
@@ -424,515 +130,6 @@ def collect_sheet_cells(
     if write_time:
         cells.append(gspread.Cell(row, J_COL_INDEX, ts_iso))
     return cells
-
-
-# ---------------- 범용 가격 추출 ----------------
-async def extract_price_fallback_generic(page) -> int | None:
-    candidates: list[int] = []
-    # 1. 일반적인 가격 섹션 시도
-    if await wait_any_selector(page, PRICE_SECTION_SELECTORS, timeout_each=2000):
-        for sel in PRICE_SECTION_SELECTORS:
-            loc = page.locator(sel)
-            if await loc.count() == 0:
-                continue
-            texts = await loc.all_text_contents()
-            for t in texts:
-                if not looks_like_price_text(t):
-                    continue
-                p = normalize_price(t)
-                if valid_price_value(p):
-                    candidates.append(p)
-    # 2. 광범위한 태그 시도
-    if not candidates:
-        for sel in [
-            "[class*='price']",
-            "[class*='Price']",
-            "[class*='cost']",
-            "strong",
-            "b",
-            "em",
-            "span",
-        ]:
-            try:
-                texts = await page.locator(sel).all_text_contents()
-                for t in texts:
-                    if not looks_like_price_text(t):
-                        continue
-                    p = normalize_price(t)
-                    if valid_price_value(p):
-                        candidates.append(p)
-            except Exception:
-                continue
-
-    return min(candidates) if candidates else None
-
-
-# ---------------- 추출 결과 ----------------
-@dataclass(frozen=True, slots=True)
-class ExtractionResult:
-    kind: str  # "price" | "soldout" | "error"
-    value: int | None = None
-
-
-# ---------------- 어댑터 베이스 ----------------
-class BaseAdapter:
-    ALLOWED_PREFIXES: list[str] = []
-    name: str = "base"
-    _sleep_after_load: float = 0.5
-    _retry_on_timeout: int = 0
-    _retry_backoff: float = 6.0
-    _wrap_errors: bool = False
-    _network_idle_before_retry: bool = False
-    _idle_ms: int = 500
-    _idle_timeout_ms: int = 8000
-    _post_extract_idle: bool = False
-    _post_extract_idle_timeout_ms: int = 8000
-
-    def matches(self, url: str) -> bool:
-        return any(url.startswith(p) for p in self.ALLOWED_PREFIXES)
-
-    def webhook_url(self) -> str:
-        return DEFAULT_WEBHOOK
-
-    def _get_sleep_after_load(self) -> float:
-        return self._sleep_after_load
-
-    async def extract(self, page, url: str) -> ExtractionResult:
-        """템플릿 메서드: 공통 추출 흐름."""
-        try:
-            return await self._do_extract(page, url)
-        except Exception:
-            if self._wrap_errors:
-                return ExtractionResult("error")
-            raise
-
-    async def _do_extract(self, page, url: str) -> ExtractionResult:
-        for attempt in range(1, self._retry_on_timeout + 2):
-            try:
-                await page.goto(url, wait_until="domcontentloaded", timeout=WEB_TIMEOUT)
-                await asyncio.sleep(self._get_sleep_after_load())
-                if await self.is_sold_out(page):
-                    return ExtractionResult("soldout")
-                p = await self.extract_precise(page)
-                if not valid_price_value(p) and self._network_idle_before_retry:
-                    await wait_for_network_idle(
-                        page, idle_ms=self._idle_ms, timeout_ms=self._idle_timeout_ms
-                    )
-                    p = await self.extract_precise(page)
-                if not valid_price_value(p):
-                    p = await self._fallback(page)
-                if self._post_extract_idle:
-                    await wait_for_network_idle(
-                        page,
-                        idle_ms=self._idle_ms,
-                        timeout_ms=self._post_extract_idle_timeout_ms,
-                    )
-                return ExtractionResult("price", p)
-            except PWTimeout:
-                if attempt > self._retry_on_timeout:
-                    raise
-                await asyncio.sleep(self._retry_backoff * attempt)
-
-    async def extract_precise(self, page) -> int | None:
-        return None
-
-    async def is_sold_out(self, page) -> bool:
-        return False
-
-    async def _fallback(self, page) -> int | None:
-        return await extract_price_fallback_generic(page)
-
-
-# ---------------- Musinsa ----------------
-class MusinsaAdapter(BaseAdapter):
-    name = "musinsa"
-    ALLOWED_PREFIXES = MUSINSA_PREFIXES
-    EXACT_PRICE_SELECTOR = MUSINSA_EXACT_PRICE_SELECTOR
-    SOLDOUT_SELECTOR = MUSINSA_SOLDOUT_SELECTOR
-    _post_extract_idle = True
-
-    def webhook_url(self) -> str:
-        return MUSINSA_WEBHOOK or DEFAULT_WEBHOOK
-
-    async def is_sold_out(self, page) -> bool:
-        try:
-            await page.wait_for_selector(
-                self.SOLDOUT_SELECTOR, state="visible", timeout=2000
-            )
-            txt = await page.locator(self.SOLDOUT_SELECTOR).inner_text()
-            return bool(txt and "품절" in txt)
-        except Exception:
-            return False
-
-    async def extract_precise(self, page) -> int | None:
-        try:
-            await page.wait_for_selector(
-                self.EXACT_PRICE_SELECTOR, state="visible", timeout=6000
-            )
-            text = await page.locator(self.EXACT_PRICE_SELECTOR).inner_text()
-            p = normalize_price(text)
-            return p if valid_price_value(p) else None
-        except Exception:
-            return None
-
-
-# ---------------- Olive Young ----------------
-class OliveYoungAdapter(BaseAdapter):
-    name = "oliveyoung"
-    ALLOWED_PREFIXES = OLIVE_PREFIXES
-    EXACT_PRICE_SELECTOR = OLIVE_PRICE_SELECTOR
-    SOLDOUT_PRIMARY = OLIVE_SOLDOUT_PRIMARY
-    SOLDOUT_FALLBACKS = OLIVE_SOLDOUT_FALLBACKS
-    _retry_on_timeout = 1
-    _retry_backoff = 8.0
-    _post_extract_idle = True
-    _post_extract_idle_timeout_ms = 9000
-
-    def _get_sleep_after_load(self) -> float:
-        return 0.7 + random.random() * 0.6
-
-    def webhook_url(self) -> str:
-        return OLIVE_WEBHOOK or DEFAULT_WEBHOOK
-
-    async def is_sold_out(self, page) -> bool:
-        # 신형 올리브영 상세 페이지: 사용자가 제보한 정확 셀렉터 우선 체크
-        try:
-            await page.wait_for_selector(
-                OLIVE_SOLDOUT_NEW_PRIMARY, state="visible", timeout=2000
-            )
-            txt = await page.locator(OLIVE_SOLDOUT_NEW_PRIMARY).inner_text()
-            if txt and ("일시품절" in txt or "품절" in txt):
-                return True
-        except Exception:
-            pass
-
-        # 신형 DOM fallback (class 기반)
-        try:
-            await page.wait_for_selector(
-                OLIVE_SOLDOUT_NEW_FALLBACKS, state="visible", timeout=2000
-            )
-            txts = await page.locator(OLIVE_SOLDOUT_NEW_FALLBACKS).all_text_contents()
-            txt = " ".join(txts) if txts else ""
-            if any(k in txt for k in ["품절", "일시품절"]):
-                return True
-        except Exception:
-            pass
-
-        # 구형 상세 페이지 DOM
-        try:
-            await page.wait_for_selector(
-                self.SOLDOUT_PRIMARY, state="visible", timeout=2000
-            )
-            txt = await page.locator(self.SOLDOUT_PRIMARY).inner_text()
-            if txt and ("품절" in txt or "일시품절" in txt):
-                return True
-        except Exception:
-            pass
-        try:
-            await page.wait_for_selector(
-                self.SOLDOUT_FALLBACKS, state="visible", timeout=2000
-            )
-            txts = await page.locator(self.SOLDOUT_FALLBACKS).all_text_contents()
-            txt = " ".join(txts) if txts else ""
-            return any(k in txt for k in ["품절", "일시품절"])
-        except Exception:
-            return False
-
-    async def extract_precise(self, page) -> int | None:
-        try:
-            await page.wait_for_selector(
-                self.EXACT_PRICE_SELECTOR, state="visible", timeout=10000
-            )
-            text = await page.locator(self.EXACT_PRICE_SELECTOR).inner_text()
-            p = normalize_price(text)
-            return p if valid_price_value(p) else None
-        except Exception:
-            return None
-
-
-# ---------------- Gmarket (XPath) ----------------
-class GmarketAdapter(BaseAdapter):
-    name = "gmarket"
-    ALLOWED_PREFIXES = GMARKET_PREFIXES
-    COUPON_XPATH = GMARKET_COUPON_XPATH
-    NORMAL_XPATH = GMARKET_NORMAL_XPATH
-    SOLDOUT_SELECTOR = GMARKET_SOLDOUT_SELECTOR
-    PRICE_STATUS_SELECTOR = GMARKET_PRICE_STATUS_SELECTOR
-    SOLDOUT_KEYWORDS = GMARKET_SOLDOUT_KEYWORDS
-    _sleep_after_load = 0.6
-    _retry_on_timeout = 1
-    _network_idle_before_retry = True
-    _idle_ms = 600
-
-    def webhook_url(self) -> str:
-        return GMARKET_WEBHOOK or DEFAULT_WEBHOOK
-
-    async def _selector_has_soldout_keyword(self, page, selector: str) -> bool:
-        try:
-            loc = page.locator(selector)
-            if await loc.count() == 0:
-                return False
-            txts = await loc.all_text_contents()
-            txt = " ".join((t or "").strip().lower() for t in txts)
-            return any(k in txt for k in self.SOLDOUT_KEYWORDS)
-        except Exception:
-            return False
-
-    async def is_sold_out(self, page) -> bool:
-        if await self._selector_has_soldout_keyword(page, self.SOLDOUT_SELECTOR):
-            return True
-
-        # Some sold-out items keep a visible price block but render "SOLD OUT" in this area.
-        for sel in [
-            self.PRICE_STATUS_SELECTOR,
-            "#itemcase_basic .box__price strong",
-            "#itemcase_basic .box__price",
-        ]:
-            if await self._selector_has_soldout_keyword(page, sel):
-                return True
-
-        try:
-            txt = (await page.locator("#itemcase_basic").inner_text() or "").lower()
-            return any(k in txt for k in self.SOLDOUT_KEYWORDS)
-        except Exception:
-            return False
-
-    async def extract_precise(self, page) -> int | None:
-        try:
-            await page.wait_for_selector(
-                self.COUPON_XPATH, state="visible", timeout=4000
-            )
-            text = await page.locator(self.COUPON_XPATH).first.inner_text()
-            p = normalize_price(text)
-            if valid_price_value(p):
-                return p
-        except Exception:
-            pass
-        try:
-            await page.wait_for_selector(
-                self.NORMAL_XPATH, state="visible", timeout=6000
-            )
-            text = await page.locator(self.NORMAL_XPATH).first.inner_text()
-            p = normalize_price(text)
-            if valid_price_value(p):
-                return p
-        except Exception:
-            pass
-        return None
-
-
-# ---------------- 29CM ----------------
-class TwentyNineCMAdapter(BaseAdapter):
-    name = "29cm"
-    ALLOWED_PREFIXES = TWENTYNINE_PREFIXES
-    EXACT_PRICE_SELECTOR = TWENTYNINE_PRICE_SELECTOR
-    SOLDOUT_SELECTOR = TWENTYNINE_SOLDOUT_SELECTOR
-    _network_idle_before_retry = True
-    _idle_timeout_ms = 7000
-
-    def webhook_url(self) -> str:
-        return TWENTYNINE_WEBHOOK or DEFAULT_WEBHOOK
-
-    async def is_sold_out(self, page) -> bool:
-        try:
-            await page.wait_for_selector(
-                self.SOLDOUT_SELECTOR, state="visible", timeout=2500
-            )
-            txt = await page.locator(self.SOLDOUT_SELECTOR).inner_text()
-            return bool(txt and ("품절" in txt or "일시품절" in txt))
-        except Exception:
-            return False
-
-    async def extract_precise(self, page) -> int | None:
-        try:
-            await page.wait_for_selector(
-                self.EXACT_PRICE_SELECTOR, state="visible", timeout=8000
-            )
-            text = await page.locator(self.EXACT_PRICE_SELECTOR).inner_text()
-            p = normalize_price(text)
-            return p if valid_price_value(p) else None
-        except Exception:
-            return None
-
-
-# ---------------- Auction (옥션) ----------------
-class AuctionAdapter(BaseAdapter):
-    name = "auction"
-    ALLOWED_PREFIXES = AUCTION_PREFIXES
-    EXACT_PRICE_SELECTOR = AUCTION_PRICE_SELECTOR
-    SOLDOUT_SELECTOR = AUCTION_SOLDOUT_SELECTOR
-    _sleep_after_load = 0.8
-    _wrap_errors = True
-    _network_idle_before_retry = True
-
-    def webhook_url(self) -> str:
-        return AUCTION_WEBHOOK or DEFAULT_WEBHOOK
-
-    async def is_sold_out(self, page) -> bool:
-        try:
-            if await page.is_visible(self.SOLDOUT_SELECTOR):
-                return True
-            # 텍스트로도 확인
-            txt = await page.locator(".item_top_info").text_content()
-            return "품절" in (txt or "")
-        except Exception:
-            return False
-
-    async def extract_precise(self, page) -> int | None:
-        try:
-            await page.wait_for_selector(
-                self.EXACT_PRICE_SELECTOR, state="visible", timeout=5000
-            )
-            text = await page.locator(self.EXACT_PRICE_SELECTOR).first.inner_text()
-            p = normalize_price(text)
-            return p if valid_price_value(p) else None
-        except Exception:
-            return None
-
-
-# ---------------- 11st (11번가) ----------------
-class ElevenStAdapter(BaseAdapter):
-    name = "11st"
-    ALLOWED_PREFIXES = ELEVENST_PREFIXES
-    EXACT_PRICE_SELECTOR = ELEVENST_PRICE_SELECTOR
-    SOLDOUT_SELECTOR = ELEVENST_SOLDOUT_SELECTOR
-    _sleep_after_load = 1.0
-    _wrap_errors = True
-    _network_idle_before_retry = True
-
-    def webhook_url(self) -> str:
-        return ELEVENST_WEBHOOK or DEFAULT_WEBHOOK
-
-    async def is_sold_out(self, page) -> bool:
-        try:
-            if await page.is_visible(self.SOLDOUT_SELECTOR):
-                return True
-            return False
-        except Exception:
-            return False
-
-    async def extract_precise(self, page) -> int | None:
-        try:
-            await page.wait_for_selector(
-                self.EXACT_PRICE_SELECTOR, state="visible", timeout=6000
-            )
-            text = await page.locator(self.EXACT_PRICE_SELECTOR).first.inner_text()
-            p = normalize_price(text)
-            return p if valid_price_value(p) else None
-        except Exception:
-            return None
-
-
-# ---------------- Universal (catch-all) ----------------
-class UniversalAdapter(BaseAdapter):
-    name = "universal"
-    SOLDOUT_KEYWORDS = [
-        "품절",
-        "일시품절",
-        "판매종료",
-        "매진",
-        "sold out",
-        "out of stock",
-    ]
-    SOLDOUT_SELECTORS = [
-        ".btn_soldout",
-        ".btnSoldout",
-        ".soldout",
-        ".sold_out",
-        "button[disabled]",
-        "[aria-disabled='true']",
-        ".layer_soldout",
-        ".box__supply .text__state",
-    ]
-    _sleep_after_load = 1.0
-    _wrap_errors = True
-
-    def matches(self, url: str) -> bool:
-        return True
-
-    def webhook_url(self) -> str:
-        return DEFAULT_WEBHOOK
-
-    async def is_sold_out(self, page) -> bool:
-        for sel in self.SOLDOUT_SELECTORS:
-            try:
-                if await page.is_visible(sel):
-                    txt = await page.locator(sel).first.text_content() or ""
-                    if any(kw in txt for kw in self.SOLDOUT_KEYWORDS):
-                        return True
-            except Exception:
-                continue
-        try:
-            body_text = await page.locator("body").text_content() or ""
-            lower = body_text[:3000].lower()
-            if "품절" in lower or "sold out" in lower:
-                for sel in [
-                    "button:has-text('품절')",
-                    "span:has-text('품절')",
-                    "div:has-text('품절')>> nth=0",
-                ]:
-                    try:
-                        if await page.is_visible(sel):
-                            return True
-                    except Exception:
-                        continue
-        except Exception:
-            pass
-        return False
-
-
-# ---------------- 라우팅 ----------------
-ADAPTERS: list[BaseAdapter] = [
-    MusinsaAdapter(),
-    OliveYoungAdapter(),
-    GmarketAdapter(),
-    TwentyNineCMAdapter(),
-    AuctionAdapter(),
-    ElevenStAdapter(),
-    UniversalAdapter(),
-]
-
-_WEBHOOK_ROUTE_WARNED = False
-
-
-def _webhook_routing_summary() -> dict[str, str]:
-    return {
-        "musinsa": "site" if MUSINSA_WEBHOOK else "default",
-        "oliveyoung": "site" if OLIVE_WEBHOOK else "default",
-        "gmarket": "site" if GMARKET_WEBHOOK else "default",
-        "29cm": "site" if TWENTYNINE_WEBHOOK else "default",
-        "auction": "site" if AUCTION_WEBHOOK else "default",
-        "11st": "site" if ELEVENST_WEBHOOK else "default",
-        "universal": "default",
-    }
-
-
-def log_webhook_routing_once() -> None:
-    global _WEBHOOK_ROUTE_WARNED
-    if _WEBHOOK_ROUTE_WARNED:
-        return
-    _WEBHOOK_ROUTE_WARNED = True
-
-    summary = _webhook_routing_summary()
-    route_text = ", ".join(f"{name}={route}" for name, route in summary.items())
-    _log_webhook.info(f"Routing: {route_text}")
-
-    default_sites = [
-        name
-        for name, route in summary.items()
-        if route == "default" and name != "universal"
-    ]
-    if default_sites:
-        _log_webhook.info(
-            "Site webhook not set -> fallback to default: " + ", ".join(default_sites)
-        )
-
-
-def pick_adapter(url: str) -> BaseAdapter:
-    for ad in ADAPTERS:
-        if ad.matches(url):
-            return ad
-    return ADAPTERS[-1]  # UniversalAdapter (catch-all)
 
 
 # ---------------- 상태/주기 작업 ----------------
@@ -949,7 +146,7 @@ def load_state():
 
 
 def save_state():
-    if DRY_RUN:
+    if settings.dry_run:
         _log.debug("DRY_RUN state save skipped")
         return
 
@@ -979,7 +176,7 @@ async def process_one_url(
     started = loop.time()
     last_error = None
 
-    for attempt in range(1, URL_RETRY_COUNT + 1):
+    for attempt in range(1, settings.url_retry_count + 1):
         page = None
         try:
             if domain_sem is None:
@@ -1015,8 +212,10 @@ async def process_one_url(
                 except Exception:
                     pass
 
-        if attempt < URL_RETRY_COUNT:
-            backoff = (RETRY_BACKOFF_BASE_SECONDS * attempt) + random.uniform(0, 0.35)
+        if attempt < settings.url_retry_count:
+            backoff = (settings.retry_backoff_base_seconds * attempt) + random.uniform(
+                0, 0.35
+            )
             await asyncio.sleep(backoff)
 
     elapsed = loop.time() - started
@@ -1071,12 +270,12 @@ async def check_once():
             locale="ko-KR",
         )
 
-        global_sem = asyncio.Semaphore(MAX_CONCURRENCY)
+        global_sem = asyncio.Semaphore(settings.max_concurrency)
         domain_sems: dict[str, asyncio.Semaphore] = {}
         for u in urls_snapshot:
             key = _domain_key(u)
             if key and key not in domain_sems:
-                domain_sems[key] = asyncio.Semaphore(PER_DOMAIN_CONCURRENCY)
+                domain_sems[key] = asyncio.Semaphore(settings.per_domain_concurrency)
 
         tasks = [
             asyncio.create_task(process_one_url(url, context, global_sem, domain_sems))
@@ -1157,7 +356,7 @@ async def check_once():
                 sheet_value = curr
 
         if write_price or write_time:
-            if DRY_RUN:
+            if settings.dry_run:
                 _log.debug(
                     f"DRY_RUN sheet row update skipped: row={row}, value={sheet_value}, "
                     f"write_price={write_price}, write_time={write_time}"
@@ -1250,14 +449,15 @@ async def check_once():
     _log.info(
         f"Check summary: total={len(urls_snapshot)} changed={changed_count} "
         f"filled_blank={filled_blank_count} removed={removed_count} "
-        f"errors={error_count} concurrency={MAX_CONCURRENCY} dry_run={DRY_RUN} elapsed={elapsed:.2f}s"
+        f"errors={error_count} concurrency={settings.max_concurrency} "
+        f"dry_run={settings.dry_run} elapsed={elapsed:.2f}s"
     )
 
 
 # ---------------- 진입점 ----------------
 async def main():
     setup_logging()
-    _log.info(f"DRY_RUN={DRY_RUN}")
+    _log.info(f"DRY_RUN={settings.dry_run}")
     load_state()
 
     await check_once()

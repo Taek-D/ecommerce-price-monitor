@@ -1,14 +1,16 @@
-"""Unit tests for pure functions in musinsa_price_watch.py."""
+"""Unit tests for pure functions in utils / adapters modules."""
 
 import pytest
 
-from musinsa_price_watch import (
+from utils import (
     normalize_price,
     looks_like_price_text,
     valid_price_value,
     _normalize_url,
     is_blank_sheet_value,
     is_soldout_sheet_value,
+)
+from adapters import (
     pick_adapter,
     MusinsaAdapter,
     OliveYoungAdapter,
