@@ -112,9 +112,7 @@ def release_single_instance_lock() -> None:
 
 # 湲곗〈 紐⑤뱢
 from musinsa_price_watch import load_state, check_once
-from utils import post_webhook
 from adapters import log_webhook_routing_once
-from config import settings
 
 # 荑좏뙜 紐⑤뱢 (?좉퇋)
 from coupang_manager import (
@@ -130,11 +128,6 @@ from coupang_manager import (
     COUPANG_VENDOR_ID,
     MYMUNJA_ID,
 )
-
-
-def _status_webhook_url() -> str:
-    # Keep legacy behavior: prefer default webhook, fallback to Musinsa-specific webhook.
-    return (settings.discord_webhook_url or settings.musinsa_webhook).strip()
 
 
 def _resolve_bot_mode() -> str:
@@ -243,7 +236,6 @@ async def main():
     setup_logging()
     bot_mode = _resolve_bot_mode()
     log_webhook_routing_once()
-    status_webhook = _status_webhook_url()
 
     print("=" * 50)
     print("  통합 이커머스 자동화 봇 시작")
