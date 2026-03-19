@@ -6,6 +6,7 @@ musinsa-bot + 荑좏뙜 ?먮룞???듯빀 ?ㅽ뻾
 """
 
 import asyncio
+import logging
 import os
 import sys
 from collections.abc import Awaitable, Callable
@@ -14,6 +15,7 @@ from pathlib import Path
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
+from logging_config import setup_logging
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -24,6 +26,8 @@ _INSTANCE_LOCK_HELD = False
 _ORDER_LANE_LOCK = asyncio.Lock()
 _PRODUCT_LANE_LOCK = asyncio.Lock()
 _VALID_BOT_MODES = {"full", "sourcing_only"}
+
+_log = logging.getLogger("musinsa_bot.main")
 
 
 def _configure_stdio() -> None:
@@ -76,18 +80,18 @@ def acquire_single_instance_lock() -> bool:
         except FileExistsError:
             existing_pid = _read_lock_pid()
             if existing_pid and _is_pid_running(existing_pid):
-                print(f"[SingleInstance] already running (pid={existing_pid}); exit.")
+                _log.warning(f"Already running (pid={existing_pid}); exit")
                 return False
             try:
                 LOCK_FILE.unlink()
-                print("[SingleInstance] removed stale lock file.")
+                _log.info("Removed stale lock file")
             except FileNotFoundError:
                 continue
             except Exception as e:
-                print(f"[SingleInstance] stale lock cleanup failed: {e}")
+                _log.error(f"Stale lock cleanup failed: {e}")
                 return False
 
-    print("[SingleInstance] lock acquire failed.")
+    _log.error("Lock acquire failed")
     return False
 
 
@@ -131,6 +135,7 @@ from coupang_manager import (
     MYMUNJA_ID,
 )
 
+
 def _status_webhook_url() -> str:
     # Keep legacy behavior: prefer default webhook, fallback to Musinsa-specific webhook.
     return (DEFAULT_WEBHOOK or getattr(mpw, "MUSINSA_WEBHOOK", "")).strip()
@@ -139,10 +144,10 @@ def _status_webhook_url() -> str:
 def _resolve_bot_mode() -> str:
     raw = (os.getenv("BOT_MODE", "full") or "full").strip().lower()
     if raw == "discovery_only":
-        print("[Mode] BOT_MODE='discovery_only' removed; fallback to 'sourcing_only'")
+        _log.warning("BOT_MODE='discovery_only' removed; fallback to 'sourcing_only'")
         return "sourcing_only"
     if raw not in _VALID_BOT_MODES:
-        print(f"[Mode] invalid BOT_MODE='{raw}', fallback to 'full'")
+        _log.warning(f"Invalid BOT_MODE='{raw}', fallback to 'full'")
         return "full"
     return raw
 
@@ -157,14 +162,12 @@ async def _run_with_lane_lock(
     waited_from: float | None = None
     if lock.locked():
         waited_from = loop.time()
-        print(f"[LaneLock] {job_name} waiting for {lane_name} lane...")
+        _log.debug(f"{job_name} waiting for {lane_name} lane...")
 
     async with lock:
         if waited_from is not None:
             waited = loop.time() - waited_from
-            print(
-                f"[LaneLock] {job_name} acquired {lane_name} lane after {waited:.1f}s"
-            )
+            _log.debug(f"{job_name} acquired {lane_name} lane after {waited:.1f}s")
         # Run each job in its own event loop thread so blocking I/O inside
         # one lane does not freeze the other lane on the main scheduler loop.
         await asyncio.to_thread(lambda: asyncio.run(job_func()))
@@ -241,6 +244,7 @@ async def run_initial_sourcing_only_lane() -> None:
 
 
 async def main():
+    setup_logging()
     bot_mode = _resolve_bot_mode()
     log_webhook_routing_once()
     status_webhook = _status_webhook_url()
@@ -349,7 +353,7 @@ async def main():
         )
 
     sched.start()
-    print("\nScheduler running.. (Ctrl+C to stop)")
+    _log.info("Scheduler running.. (Ctrl+C to stop)")
 
     while True:
         await asyncio.sleep(3600)

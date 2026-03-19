@@ -1,4 +1,4 @@
-import os, re, json, asyncio, random
+import logging, os, re, json, asyncio, random
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse
 
@@ -12,6 +12,11 @@ from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 # Google Sheets
 import gspread
 from google.oauth2.service_account import Credentials
+from logging_config import setup_logging
+
+_log = logging.getLogger("musinsa_bot.price")
+_log_webhook = logging.getLogger("musinsa_bot.webhook")
+_log_sheet = logging.getLogger("musinsa_bot.sheet")
 
 # ---------------- 시트/컬럼 설정 ----------------
 SHEETS_SPREADSHEET_ID = ""
@@ -227,11 +232,11 @@ URLS: list[str] = []
 async def post_webhook(url: str, content: str, embeds=None):
     if DRY_RUN:
         preview = (content or "").replace("\n", " ")[:120]
-        print(f"[DRY_RUN] webhook skipped: {preview}")
+        _log_webhook.debug(f"DRY_RUN webhook skipped: {preview}")
         return
 
     if not url:
-        print(f"[Webhook not configured] {content}")
+        _log_webhook.warning(f"Webhook URL not configured: {content[:80]}")
         return
     async with httpx.AsyncClient(timeout=20) as client:
         payload = {"content": content}
@@ -241,7 +246,7 @@ async def post_webhook(url: str, content: str, embeds=None):
             r = await client.post(url, json=payload)
             r.raise_for_status()
         except Exception as e:
-            print(f"[Webhook send failed] {e}")
+            _log_webhook.error(f"Webhook send failed: {e}")
 
 
 def normalize_price(text: str) -> int | None:
@@ -932,7 +937,7 @@ def log_webhook_routing_once() -> None:
 
     summary = _webhook_routing_summary()
     route_text = ", ".join(f"{name}={route}" for name, route in summary.items())
-    print(f"[Webhook Routing] {route_text}")
+    _log_webhook.info(f"Routing: {route_text}")
 
     default_sites = [
         name
@@ -940,9 +945,8 @@ def log_webhook_routing_once() -> None:
         if route == "default" and name != "universal"
     ]
     if default_sites:
-        print(
-            "[Webhook Routing] site webhook not set -> fallback to default: "
-            + ", ".join(default_sites)
+        _log_webhook.info(
+            "Site webhook not set -> fallback to default: " + ", ".join(default_sites)
         )
 
 
@@ -968,7 +972,7 @@ def load_state():
 
 def save_state():
     if DRY_RUN:
-        print("[DRY_RUN] state save skipped.")
+        _log.debug("DRY_RUN state save skipped")
         return
 
     tmp_path = STATE_FILE + ".tmp"
@@ -1012,7 +1016,7 @@ async def process_one_url(
 
             if kind != "error":
                 elapsed = loop.time() - started
-                print(f"[{ad.name}] {url} -> {kind} ({elapsed:.2f}s)")
+                _log.info(f"{ad.name} {url} -> {kind} ({elapsed:.2f}s)")
                 return {
                     "url": url,
                     "adapter": ad,
@@ -1036,7 +1040,7 @@ async def process_one_url(
             await asyncio.sleep(backoff)
 
     elapsed = loop.time() - started
-    print(f"[{ad.name}] {url} -> error ({elapsed:.2f}s) reason={last_error}")
+    _log.warning(f"{ad.name} {url} -> error ({elapsed:.2f}s) reason={last_error}")
     return {
         "url": url,
         "adapter": ad,
@@ -1064,10 +1068,10 @@ async def check_once():
         if fresh:
             URLS = fresh
     except Exception as e:
-        print(f"[Check] URL reload failed, using cached list: {e}")
+        _log.warning(f"URL reload failed, using cached list: {e}")
 
     if not URLS:
-        print("[Check] URL list is empty; skip.")
+        _log.warning("URL list is empty; skip")
         save_state()
         return
 
@@ -1107,13 +1111,13 @@ async def check_once():
         try:
             ws = _open_sheet()
         except Exception as e:
-            print(f"[Sheet Open Error] {e}")
+            _log_sheet.error(f"Sheet open error: {e}")
             save_state()
             return
     try:
         row_by_url, sheet_price_by_url = build_sheet_row_index(ws)
     except Exception as e:
-        print(f"[Sheet Index Error] {e}")
+        _log_sheet.error(f"Sheet index error: {e}")
         save_state()
         return
 
@@ -1125,7 +1129,7 @@ async def check_once():
 
     for result in results:
         if isinstance(result, Exception):
-            print(f"[Task Error] {result}")
+            _log.error(f"Task error: {result}")
             error_count += 1
             continue
 
@@ -1135,7 +1139,7 @@ async def check_once():
         value = result.get("value")
 
         if kind == "error":
-            print(f"[{ad.name}] Error extracting {url}: {result.get('error')}")
+            _log.error(f"{ad.name} error extracting {url}: {result.get('error')}")
             error_count += 1
             continue
 
@@ -1174,8 +1178,8 @@ async def check_once():
 
         if write_price or write_time:
             if DRY_RUN:
-                print(
-                    f"[DRY_RUN] sheet row update skipped: row={row}, value={sheet_value}, "
+                _log.debug(
+                    f"DRY_RUN sheet row update skipped: row={row}, value={sheet_value}, "
                     f"write_price={write_price}, write_time={write_time}"
                 )
             else:
@@ -1253,18 +1257,18 @@ async def check_once():
             changed_count += 1
         if filled_blank:
             filled_blank_count += 1
-            print(f"[Sheet Fill] {url} -> {curr}")
+            _log_sheet.info(f"Fill: {url} -> {curr}")
 
     if pending_cells:
         try:
             ws.update_cells(pending_cells)
         except Exception as e:
-            print(f"[Sheet Batch Update Error] {e}")
+            _log_sheet.error(f"Batch update error: {e}")
 
     save_state()
     elapsed = asyncio.get_running_loop().time() - run_started
-    print(
-        f"[Check Summary] total={len(urls_snapshot)} changed={changed_count} "
+    _log.info(
+        f"Check summary: total={len(urls_snapshot)} changed={changed_count} "
         f"filled_blank={filled_blank_count} removed={removed_count} "
         f"errors={error_count} concurrency={MAX_CONCURRENCY} dry_run={DRY_RUN} elapsed={elapsed:.2f}s"
     )
@@ -1272,7 +1276,8 @@ async def check_once():
 
 # ---------------- 진입점 ----------------
 async def main():
-    print(f"[Mode] DRY_RUN={DRY_RUN}")
+    setup_logging()
+    _log.info(f"DRY_RUN={DRY_RUN}")
     load_state()
 
     await check_once()
