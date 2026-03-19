@@ -175,6 +175,18 @@ COUPANG_OPENAPI_V4_VENDOR = (
 )
 COUPANG_SELLER_MARKETPLACE = "/v2/providers/seller_api/apis/api/v1/marketplace"
 
+# ──────────────────────────────────────────────
+# 공유 httpx.AsyncClient (lazy init)
+# ──────────────────────────────────────────────
+_http_client: httpx.AsyncClient | None = None
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(timeout=30)
+    return _http_client
+
 
 # ──────────────────────────────────────────────
 # 쿠팡 Open API HMAC 인증
@@ -229,12 +241,12 @@ async def _coupang_get(
     full_path = f"{path}?{query}" if query else path
     headers = _make_coupang_signature("GET", path, query)
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.get(COUPANG_BASE_URL + full_path, headers=headers)
-        if not r.is_success and log_error:
-            _log_api_error("GET", r)
-        r.raise_for_status()
-        return r.json()
+    client = _get_http_client()
+    r = await client.get(COUPANG_BASE_URL + full_path, headers=headers)
+    if not r.is_success and log_error:
+        _log_api_error("GET", r)
+    r.raise_for_status()
+    return r.json()
 
 
 async def _coupang_put(
@@ -244,17 +256,15 @@ async def _coupang_put(
     query = _encode_query(params)
     full_path = f"{path}?{query}" if query else path
     headers = _make_coupang_signature("PUT", path, query)
-    async with httpx.AsyncClient(timeout=30) as client:
-        if body is None:
-            r = await client.put(COUPANG_BASE_URL + full_path, headers=headers)
-        else:
-            r = await client.put(
-                COUPANG_BASE_URL + full_path, headers=headers, json=body
-            )
-        if not r.is_success:
-            _log_api_error("PUT", r)
-        r.raise_for_status()
-        return r.json()
+    client = _get_http_client()
+    if body is None:
+        r = await client.put(COUPANG_BASE_URL + full_path, headers=headers)
+    else:
+        r = await client.put(COUPANG_BASE_URL + full_path, headers=headers, json=body)
+    if not r.is_success:
+        _log_api_error("PUT", r)
+    r.raise_for_status()
+    return r.json()
 
 
 async def _coupang_post(
@@ -264,17 +274,15 @@ async def _coupang_post(
     query = _encode_query(params)
     full_path = f"{path}?{query}" if query else path
     headers = _make_coupang_signature("POST", path, query)
-    async with httpx.AsyncClient(timeout=30) as client:
-        if body is None:
-            r = await client.post(COUPANG_BASE_URL + full_path, headers=headers)
-        else:
-            r = await client.post(
-                COUPANG_BASE_URL + full_path, headers=headers, json=body
-            )
-        if not r.is_success:
-            _log_api_error("POST", r)
-        r.raise_for_status()
-        return r.json()
+    client = _get_http_client()
+    if body is None:
+        r = await client.post(COUPANG_BASE_URL + full_path, headers=headers)
+    else:
+        r = await client.post(COUPANG_BASE_URL + full_path, headers=headers, json=body)
+    if not r.is_success:
+        _log_api_error("POST", r)
+    r.raise_for_status()
+    return r.json()
 
 
 # ──────────────────────────────────────────────
@@ -320,26 +328,24 @@ async def send_sms(phone: str, message: str, msg_type: str = "sms") -> dict:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            # 마이문자 Remote API는 EUC-KR/CP949 기반 폼 인코딩을 기대한다.
-            encoded_body = urlencode(data, encoding="cp949", errors="replace")
-            headers = {
-                "Content-Type": "application/x-www-form-urlencoded; charset=EUC-KR"
-            }
-            r = await client.post(url, content=encoded_body, headers=headers)
-            r.raise_for_status()
-            # 응답: 결과코드|결과메시지|잔여건수|etc1|etc2
-            parts = r.text.strip().split("|")
-            code = parts[0] if parts else "9999"
-            msg = parts[1] if len(parts) > 1 else ""
-            cols = parts[2] if len(parts) > 2 else "0"
+        client = _get_http_client()
+        # 마이문자 Remote API는 EUC-KR/CP949 기반 폼 인코딩을 기대한다.
+        encoded_body = urlencode(data, encoding="cp949", errors="replace")
+        headers = {"Content-Type": "application/x-www-form-urlencoded; charset=EUC-KR"}
+        r = await client.post(url, content=encoded_body, headers=headers, timeout=20)
+        r.raise_for_status()
+        # 응답: 결과코드|결과메시지|잔여건수|etc1|etc2
+        parts = r.text.strip().split("|")
+        code = parts[0] if parts else "9999"
+        msg = parts[1] if len(parts) > 1 else ""
+        cols = parts[2] if len(parts) > 2 else "0"
 
-            if code == "0000":
-                _log_sms.info(f"OK send success -> {phone_clean} | remain: {cols}")
-            else:
-                _log_sms.error(f"FAIL send failed -> code={code} msg={msg}")
+        if code == "0000":
+            _log_sms.info(f"OK send success -> {phone_clean} | remain: {cols}")
+        else:
+            _log_sms.error(f"FAIL send failed -> code={code} msg={msg}")
 
-            return {"code": code, "msg": msg, "cols": cols}
+        return {"code": code, "msg": msg, "cols": cols}
     except Exception as e:
         _log_sms.error(f"Exception: {e}")
         return {"code": "ERROR", "msg": str(e)}
@@ -370,18 +376,16 @@ async def send_sms_bulk(phones: list[str], messages: list[str]) -> dict:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            encoded_body = urlencode(data, encoding="cp949", errors="replace")
-            headers = {
-                "Content-Type": "application/x-www-form-urlencoded; charset=EUC-KR"
-            }
-            r = await client.post(
-                "https://www.mymunja.co.kr/Remote/RemoteSms.html",
-                content=encoded_body,
-                headers=headers,
-            )
-            parts = r.text.strip().split("|")
-            return {"code": parts[0], "cols": parts[2] if len(parts) > 2 else "0"}
+        client = _get_http_client()
+        encoded_body = urlencode(data, encoding="cp949", errors="replace")
+        headers = {"Content-Type": "application/x-www-form-urlencoded; charset=EUC-KR"}
+        r = await client.post(
+            "https://www.mymunja.co.kr/Remote/RemoteSms.html",
+            content=encoded_body,
+            headers=headers,
+        )
+        parts = r.text.strip().split("|")
+        return {"code": parts[0], "cols": parts[2] if len(parts) > 2 else "0"}
     except Exception as e:
         return {"code": "ERROR", "msg": str(e)}
 
@@ -393,15 +397,15 @@ async def post_webhook(url: str, content: str, embeds=None):
     if not url:
         _log_api.warning(f"URL 미설정: {content[:80]}")
         return
-    async with httpx.AsyncClient(timeout=20) as client:
-        payload = {"content": content}
-        if embeds:
-            payload["embeds"] = embeds
-        try:
-            r = await client.post(url, json=payload)
-            r.raise_for_status()
-        except Exception as e:
-            _log_api.error(f"Webhook 오류: {e}")
+    client = _get_http_client()
+    payload = {"content": content}
+    if embeds:
+        payload["embeds"] = embeds
+    try:
+        r = await client.post(url, json=payload, timeout=20)
+        r.raise_for_status()
+    except Exception as e:
+        _log_api.error(f"Webhook 오류: {e}")
 
 
 # ──────────────────────────────────────────────

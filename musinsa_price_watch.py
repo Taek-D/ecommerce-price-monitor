@@ -229,6 +229,17 @@ state = {}
 URLS: list[str] = []
 
 
+# ---------------- 공유 httpx.AsyncClient (lazy init) ----------------
+_http_client: httpx.AsyncClient | None = None
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(timeout=20)
+    return _http_client
+
+
 # ---------------- 공통 유틸 ----------------
 async def post_webhook(url: str, content: str, embeds=None):
     if DRY_RUN:
@@ -239,15 +250,15 @@ async def post_webhook(url: str, content: str, embeds=None):
     if not url:
         _log_webhook.warning(f"Webhook URL not configured: {content[:80]}")
         return
-    async with httpx.AsyncClient(timeout=20) as client:
-        payload = {"content": content}
-        if embeds:
-            payload["embeds"] = embeds
-        try:
-            r = await client.post(url, json=payload)
-            r.raise_for_status()
-        except Exception as e:
-            _log_webhook.error(f"Webhook send failed: {e}")
+    client = _get_http_client()
+    payload = {"content": content}
+    if embeds:
+        payload["embeds"] = embeds
+    try:
+        r = await client.post(url, json=payload)
+        r.raise_for_status()
+    except Exception as e:
+        _log_webhook.error(f"Webhook send failed: {e}")
 
 
 def normalize_price(text: str) -> int | None:
