@@ -18,6 +18,7 @@ from config import (
     settings,
     KST,
     STATE_FILE,
+    URL_TOTAL_TIMEOUT,
     D_COL_INDEX,
     H_COL_INDEX,
     J_COL_INDEX,
@@ -130,18 +131,31 @@ async def process_one_url(
     last_error = None
 
     for attempt in range(1, settings.url_retry_count + 1):
+        # 전체 경과시간이 URL_TOTAL_TIMEOUT을 넘으면 즉시 중단
+        total_elapsed = loop.time() - started
+        if total_elapsed > URL_TOTAL_TIMEOUT:
+            last_error = (
+                f"url total timeout ({total_elapsed:.0f}s > {URL_TOTAL_TIMEOUT}s)"
+            )
+            break
+
+        remaining = URL_TOTAL_TIMEOUT - total_elapsed
         page = None
         try:
             if domain_sem is None:
                 async with global_sem:
                     page = await context.new_page()
-                    _res = await ad.extract(page, url)
+                    _res = await asyncio.wait_for(
+                        ad.extract(page, url), timeout=remaining
+                    )
                     kind, value = _res.kind, _res.value
             else:
                 async with domain_sem:
                     async with global_sem:
                         page = await context.new_page()
-                        _res = await ad.extract(page, url)
+                        _res = await asyncio.wait_for(
+                            ad.extract(page, url), timeout=remaining
+                        )
                         kind, value = _res.kind, _res.value
 
             if kind != "error":
@@ -156,6 +170,8 @@ async def process_one_url(
                 }
 
             last_error = "extract returned error"
+        except asyncio.TimeoutError:
+            last_error = f"url total timeout ({URL_TOTAL_TIMEOUT}s)"
         except Exception as e:
             last_error = str(e)
         finally:

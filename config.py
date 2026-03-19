@@ -22,7 +22,8 @@ URLS_START_ROW = 4
 # ---------------- 동작 파라미터 ----------------
 STATE_FILE = "price_state.json"
 MIN_PRICE = 5000
-WEB_TIMEOUT = 120000
+WEB_TIMEOUT = 45000
+URL_TOTAL_TIMEOUT = 90
 
 # ---------------- 무신사 ----------------
 MUSINSA_EXACT_PRICE_SELECTOR = 'span[class*="Price__CalculatedPrice"]'

@@ -125,13 +125,13 @@ async def wait_for_network_idle(page, idle_ms=500, timeout_ms=10000):
     page.on("requestfailed", on_done)
     try:
         start = asyncio.get_event_loop().time()
-        last_quiet = start
+        last_activity = start
         while True:
             now = asyncio.get_event_loop().time()
-            if not pending and (now - last_quiet) * 1000 >= idle_ms:
+            if not pending and (now - last_activity) * 1000 >= idle_ms:
                 return
-            if not pending:
-                last_quiet = now
+            if pending:
+                last_activity = now
             if (now - start) * 1000 > timeout_ms:
                 return
             await asyncio.sleep(0.05)

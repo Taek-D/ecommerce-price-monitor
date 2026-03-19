@@ -146,32 +146,37 @@ async def _run_with_lane_lock(
     lane_name: str,
     job_name: str,
     job_func: Callable[[], Awaitable[None]],
+    *,
+    wait_for_lock: bool = False,
 ) -> None:
-    loop = asyncio.get_running_loop()
-    waited_from: float | None = None
-    if lock.locked():
-        waited_from = loop.time()
-        _log.debug(f"{job_name} waiting for {lane_name} lane...")
+    if not wait_for_lock and lock.locked():
+        _log.info(f"{job_name} skipped: {lane_name} lane busy")
+        return
 
     async with lock:
-        if waited_from is not None:
-            waited = loop.time() - waited_from
-            _log.debug(f"{job_name} acquired {lane_name} lane after {waited:.1f}s")
-        # Run each job in its own event loop thread so blocking I/O inside
-        # one lane does not freeze the other lane on the main scheduler loop.
-        await asyncio.to_thread(lambda: asyncio.run(job_func()))
+        await job_func()
 
 
 async def run_order_lane_job(
-    job_name: str, job_func: Callable[[], Awaitable[None]]
+    job_name: str,
+    job_func: Callable[[], Awaitable[None]],
+    *,
+    wait_for_lock: bool = False,
 ) -> None:
-    await _run_with_lane_lock(_ORDER_LANE_LOCK, "order", job_name, job_func)
+    await _run_with_lane_lock(
+        _ORDER_LANE_LOCK, "order", job_name, job_func, wait_for_lock=wait_for_lock
+    )
 
 
 async def run_product_lane_job(
-    job_name: str, job_func: Callable[[], Awaitable[None]]
+    job_name: str,
+    job_func: Callable[[], Awaitable[None]],
+    *,
+    wait_for_lock: bool = False,
 ) -> None:
-    await _run_with_lane_lock(_PRODUCT_LANE_LOCK, "product", job_name, job_func)
+    await _run_with_lane_lock(
+        _PRODUCT_LANE_LOCK, "product", job_name, job_func, wait_for_lock=wait_for_lock
+    )
 
 
 async def scheduled_coupang_order_job() -> None:
@@ -211,25 +216,41 @@ async def run_initial_coupang_lanes() -> None:
 
     async def run_order_lane() -> None:
         # Order sheet lane: keep strict ordering to avoid row/state races.
-        await run_order_lane_job("coupang_order_job", coupang_order_job)
-        await run_order_lane_job("shipping_job", shipping_job)
-        await run_order_lane_job("settlement_job", settlement_job)
-        await run_order_lane_job("sourcing_order_match_job", sourcing_order_match_job)
+        await run_order_lane_job(
+            "coupang_order_job", coupang_order_job, wait_for_lock=True
+        )
+        await run_order_lane_job("shipping_job", shipping_job, wait_for_lock=True)
+        await run_order_lane_job("settlement_job", settlement_job, wait_for_lock=True)
+        await run_order_lane_job(
+            "sourcing_order_match_job", sourcing_order_match_job, wait_for_lock=True
+        )
 
     async def run_product_lane() -> None:
         # Product/sourcing lane: keep strict ordering to avoid sheet contention.
-        await run_product_lane_job("coupang_sync_job", coupang_sync_job)
-        await run_product_lane_job("sourcing_match_job", sourcing_match_job)
-        await run_product_lane_job("sourcing_price_job", sourcing_price_job)
-        await run_product_lane_job("stock_check_job", stock_check_job)
+        await run_product_lane_job(
+            "coupang_sync_job", coupang_sync_job, wait_for_lock=True
+        )
+        await run_product_lane_job(
+            "sourcing_match_job", sourcing_match_job, wait_for_lock=True
+        )
+        await run_product_lane_job(
+            "sourcing_price_job", sourcing_price_job, wait_for_lock=True
+        )
+        await run_product_lane_job(
+            "stock_check_job", stock_check_job, wait_for_lock=True
+        )
 
     await asyncio.gather(run_order_lane(), run_product_lane())
 
 
 async def run_initial_sourcing_only_lane() -> None:
     """Run startup sourcing-only lane."""
-    await run_product_lane_job("sourcing_match_job", sourcing_match_job)
-    await run_product_lane_job("sourcing_price_job", sourcing_price_job)
+    await run_product_lane_job(
+        "sourcing_match_job", sourcing_match_job, wait_for_lock=True
+    )
+    await run_product_lane_job(
+        "sourcing_price_job", sourcing_price_job, wait_for_lock=True
+    )
 
 
 async def main():
