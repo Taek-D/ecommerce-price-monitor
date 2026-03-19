@@ -1,4 +1,5 @@
 import logging, os, re, json, asyncio, random
+from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse
 
@@ -455,6 +456,13 @@ async def extract_price_fallback_generic(page) -> int | None:
     return min(candidates) if candidates else None
 
 
+# ---------------- 추출 결과 ----------------
+@dataclass(frozen=True, slots=True)
+class ExtractionResult:
+    kind: str  # "price" | "soldout" | "error"
+    value: int | None = None
+
+
 # ---------------- 어댑터 베이스 ----------------
 class BaseAdapter:
     ALLOWED_PREFIXES: list[str] = []
@@ -505,12 +513,12 @@ class MusinsaAdapter(BaseAdapter):
         await page.goto(url, wait_until="domcontentloaded", timeout=WEB_TIMEOUT)
         await asyncio.sleep(0.5)
         if await self.is_sold_out(page):
-            return ("soldout", None)
+            return ExtractionResult("soldout")
         p = await self.extract_precise(page)
         if not valid_price_value(p):
             p = await extract_price_fallback_generic(page)
         await wait_for_network_idle(page, idle_ms=500, timeout_ms=8000)
-        return ("price", p)
+        return ExtractionResult("price", p)
 
 
 # ---------------- Olive Young ----------------
@@ -590,12 +598,12 @@ class OliveYoungAdapter(BaseAdapter):
                 await page.goto(url, wait_until="domcontentloaded", timeout=WEB_TIMEOUT)
                 await asyncio.sleep(0.7 + random.random() * 0.6)
                 if await self.is_sold_out(page):
-                    return ("soldout", None)
+                    return ExtractionResult("soldout")
                 p = await self.extract_precise(page)
                 if not valid_price_value(p):
                     p = await self.extract_fallback(page)
                 await wait_for_network_idle(page, idle_ms=500, timeout_ms=9000)
-                return ("price", p)
+                return ExtractionResult("price", p)
             except PWTimeout:
                 if tries >= 2:
                     raise
@@ -680,14 +688,14 @@ class GmarketAdapter(BaseAdapter):
                 await page.goto(url, wait_until="domcontentloaded", timeout=WEB_TIMEOUT)
                 await asyncio.sleep(0.6)
                 if await self.is_sold_out(page):
-                    return ("soldout", None)
+                    return ExtractionResult("soldout")
                 p = await self.extract_precise(page)
                 if not valid_price_value(p):
                     await wait_for_network_idle(page, idle_ms=600, timeout_ms=8000)
                     p = await self.extract_precise(page)
                 if not valid_price_value(p):
                     p = await self.extract_fallback(page)
-                return ("price", p)
+                return ExtractionResult("price", p)
             except PWTimeout:
                 if tries >= 2:
                     raise
@@ -730,14 +738,14 @@ class TwentyNineCMAdapter(BaseAdapter):
         await page.goto(url, wait_until="domcontentloaded", timeout=WEB_TIMEOUT)
         await asyncio.sleep(0.5)
         if await self.is_sold_out(page):
-            return ("soldout", None)
+            return ExtractionResult("soldout")
         p = await self.extract_precise(page)
         if not valid_price_value(p):
             await wait_for_network_idle(page, idle_ms=500, timeout_ms=7000)
             p = await self.extract_precise(page)
         if not valid_price_value(p):
             p = await extract_price_fallback_generic(page)
-        return ("price", p)
+        return ExtractionResult("price", p)
 
 
 # ---------------- Auction (옥션) ----------------
@@ -776,7 +784,7 @@ class AuctionAdapter(BaseAdapter):
             await page.goto(url, wait_until="domcontentloaded", timeout=WEB_TIMEOUT)
             await asyncio.sleep(0.8)
             if await self.is_sold_out(page):
-                return ("soldout", None)
+                return ExtractionResult("soldout")
 
             p = await self.extract_precise(page)
             if not valid_price_value(p):
@@ -784,9 +792,9 @@ class AuctionAdapter(BaseAdapter):
                 p = await self.extract_precise(page)
             if not valid_price_value(p):
                 p = await extract_price_fallback_generic(page)
-            return ("price", p)
+            return ExtractionResult("price", p)
         except Exception:
-            return ("error", None)
+            return ExtractionResult("error")
 
 
 # ---------------- 11st (11번가) ----------------
@@ -823,7 +831,7 @@ class ElevenStAdapter(BaseAdapter):
             await page.goto(url, wait_until="domcontentloaded", timeout=WEB_TIMEOUT)
             await asyncio.sleep(1.0)
             if await self.is_sold_out(page):
-                return ("soldout", None)
+                return ExtractionResult("soldout")
 
             p = await self.extract_precise(page)
             if not valid_price_value(p):
@@ -831,9 +839,9 @@ class ElevenStAdapter(BaseAdapter):
                 p = await self.extract_precise(page)
             if not valid_price_value(p):
                 p = await extract_price_fallback_generic(page)
-            return ("price", p)
+            return ExtractionResult("price", p)
         except Exception:
-            return ("error", None)
+            return ExtractionResult("error")
 
 
 # ---------------- Universal (catch-all) ----------------
@@ -896,11 +904,11 @@ class UniversalAdapter(BaseAdapter):
             await page.goto(url, wait_until="domcontentloaded", timeout=WEB_TIMEOUT)
             await asyncio.sleep(1.0)
             if await self.is_sold_out(page):
-                return ("soldout", None)
+                return ExtractionResult("soldout")
             p = await extract_price_fallback_generic(page)
-            return ("price", p)
+            return ExtractionResult("price", p)
         except Exception:
-            return ("error", None)
+            return ExtractionResult("error")
 
 
 # ---------------- 라우팅 ----------------
@@ -1007,12 +1015,14 @@ async def process_one_url(
             if domain_sem is None:
                 async with global_sem:
                     page = await context.new_page()
-                    kind, value = await ad.extract(page, url)
+                    _res = await ad.extract(page, url)
+                    kind, value = _res.kind, _res.value
             else:
                 async with domain_sem:
                     async with global_sem:
                         page = await context.new_page()
-                        kind, value = await ad.extract(page, url)
+                        _res = await ad.extract(page, url)
+                        kind, value = _res.kind, _res.value
 
             if kind != "error":
                 elapsed = loop.time() - started
