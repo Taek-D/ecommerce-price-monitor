@@ -5,6 +5,7 @@ gspread==6.2.1
 google-auth-oauthlib==1.2.2
 google-auth-httplib2==0.2.0
 python-dotenv==1.0.1
+pydantic-settings>=2.0
 apscheduler==3.11.1
 
 # Optional: fuzzy matching (try/except in coupang_manager.py)
