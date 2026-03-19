@@ -467,6 +467,15 @@ class ExtractionResult:
 class BaseAdapter:
     ALLOWED_PREFIXES: list[str] = []
     name: str = "base"
+    _sleep_after_load: float = 0.5
+    _retry_on_timeout: int = 0
+    _retry_backoff: float = 6.0
+    _wrap_errors: bool = False
+    _network_idle_before_retry: bool = False
+    _idle_ms: int = 500
+    _idle_timeout_ms: int = 8000
+    _post_extract_idle: bool = False
+    _post_extract_idle_timeout_ms: int = 8000
 
     def matches(self, url: str) -> bool:
         return any(url.startswith(p) for p in self.ALLOWED_PREFIXES)
@@ -474,8 +483,53 @@ class BaseAdapter:
     def webhook_url(self) -> str:
         return DEFAULT_WEBHOOK
 
-    async def extract(self, page, url: str):
-        raise NotImplementedError
+    def _get_sleep_after_load(self) -> float:
+        return self._sleep_after_load
+
+    async def extract(self, page, url: str) -> ExtractionResult:
+        """템플릿 메서드: 공통 추출 흐름."""
+        try:
+            return await self._do_extract(page, url)
+        except Exception:
+            if self._wrap_errors:
+                return ExtractionResult("error")
+            raise
+
+    async def _do_extract(self, page, url: str) -> ExtractionResult:
+        for attempt in range(1, self._retry_on_timeout + 2):
+            try:
+                await page.goto(url, wait_until="domcontentloaded", timeout=WEB_TIMEOUT)
+                await asyncio.sleep(self._get_sleep_after_load())
+                if await self.is_sold_out(page):
+                    return ExtractionResult("soldout")
+                p = await self.extract_precise(page)
+                if not valid_price_value(p) and self._network_idle_before_retry:
+                    await wait_for_network_idle(
+                        page, idle_ms=self._idle_ms, timeout_ms=self._idle_timeout_ms
+                    )
+                    p = await self.extract_precise(page)
+                if not valid_price_value(p):
+                    p = await self._fallback(page)
+                if self._post_extract_idle:
+                    await wait_for_network_idle(
+                        page,
+                        idle_ms=self._idle_ms,
+                        timeout_ms=self._post_extract_idle_timeout_ms,
+                    )
+                return ExtractionResult("price", p)
+            except PWTimeout:
+                if attempt > self._retry_on_timeout:
+                    raise
+                await asyncio.sleep(self._retry_backoff * attempt)
+
+    async def extract_precise(self, page) -> int | None:
+        return None
+
+    async def is_sold_out(self, page) -> bool:
+        return False
+
+    async def _fallback(self, page) -> int | None:
+        return await extract_price_fallback_generic(page)
 
 
 # ---------------- Musinsa ----------------
@@ -484,6 +538,7 @@ class MusinsaAdapter(BaseAdapter):
     ALLOWED_PREFIXES = MUSINSA_PREFIXES
     EXACT_PRICE_SELECTOR = MUSINSA_EXACT_PRICE_SELECTOR
     SOLDOUT_SELECTOR = MUSINSA_SOLDOUT_SELECTOR
+    _post_extract_idle = True
 
     def webhook_url(self) -> str:
         return MUSINSA_WEBHOOK or DEFAULT_WEBHOOK
@@ -509,17 +564,6 @@ class MusinsaAdapter(BaseAdapter):
         except Exception:
             return None
 
-    async def extract(self, page, url: str):
-        await page.goto(url, wait_until="domcontentloaded", timeout=WEB_TIMEOUT)
-        await asyncio.sleep(0.5)
-        if await self.is_sold_out(page):
-            return ExtractionResult("soldout")
-        p = await self.extract_precise(page)
-        if not valid_price_value(p):
-            p = await extract_price_fallback_generic(page)
-        await wait_for_network_idle(page, idle_ms=500, timeout_ms=8000)
-        return ExtractionResult("price", p)
-
 
 # ---------------- Olive Young ----------------
 class OliveYoungAdapter(BaseAdapter):
@@ -528,6 +572,13 @@ class OliveYoungAdapter(BaseAdapter):
     EXACT_PRICE_SELECTOR = OLIVE_PRICE_SELECTOR
     SOLDOUT_PRIMARY = OLIVE_SOLDOUT_PRIMARY
     SOLDOUT_FALLBACKS = OLIVE_SOLDOUT_FALLBACKS
+    _retry_on_timeout = 1
+    _retry_backoff = 8.0
+    _post_extract_idle = True
+    _post_extract_idle_timeout_ms = 9000
+
+    def _get_sleep_after_load(self) -> float:
+        return 0.7 + random.random() * 0.6
 
     def webhook_url(self) -> str:
         return OLIVE_WEBHOOK or DEFAULT_WEBHOOK
@@ -587,29 +638,6 @@ class OliveYoungAdapter(BaseAdapter):
         except Exception:
             return None
 
-    async def extract_fallback(self, page) -> int | None:
-        return await extract_price_fallback_generic(page)
-
-    async def extract(self, page, url: str):
-        tries, backoff = 0, 8
-        while True:
-            tries += 1
-            try:
-                await page.goto(url, wait_until="domcontentloaded", timeout=WEB_TIMEOUT)
-                await asyncio.sleep(0.7 + random.random() * 0.6)
-                if await self.is_sold_out(page):
-                    return ExtractionResult("soldout")
-                p = await self.extract_precise(page)
-                if not valid_price_value(p):
-                    p = await self.extract_fallback(page)
-                await wait_for_network_idle(page, idle_ms=500, timeout_ms=9000)
-                return ExtractionResult("price", p)
-            except PWTimeout:
-                if tries >= 2:
-                    raise
-                await asyncio.sleep(backoff)
-                backoff *= 2
-
 
 # ---------------- Gmarket (XPath) ----------------
 class GmarketAdapter(BaseAdapter):
@@ -620,6 +648,10 @@ class GmarketAdapter(BaseAdapter):
     SOLDOUT_SELECTOR = GMARKET_SOLDOUT_SELECTOR
     PRICE_STATUS_SELECTOR = GMARKET_PRICE_STATUS_SELECTOR
     SOLDOUT_KEYWORDS = GMARKET_SOLDOUT_KEYWORDS
+    _sleep_after_load = 0.6
+    _retry_on_timeout = 1
+    _network_idle_before_retry = True
+    _idle_ms = 600
 
     def webhook_url(self) -> str:
         return GMARKET_WEBHOOK or DEFAULT_WEBHOOK
@@ -677,31 +709,6 @@ class GmarketAdapter(BaseAdapter):
             pass
         return None
 
-    async def extract_fallback(self, page) -> int | None:
-        return await extract_price_fallback_generic(page)
-
-    async def extract(self, page, url: str):
-        tries, backoff = 0, 6
-        while True:
-            tries += 1
-            try:
-                await page.goto(url, wait_until="domcontentloaded", timeout=WEB_TIMEOUT)
-                await asyncio.sleep(0.6)
-                if await self.is_sold_out(page):
-                    return ExtractionResult("soldout")
-                p = await self.extract_precise(page)
-                if not valid_price_value(p):
-                    await wait_for_network_idle(page, idle_ms=600, timeout_ms=8000)
-                    p = await self.extract_precise(page)
-                if not valid_price_value(p):
-                    p = await self.extract_fallback(page)
-                return ExtractionResult("price", p)
-            except PWTimeout:
-                if tries >= 2:
-                    raise
-                await asyncio.sleep(backoff)
-                backoff *= 2
-
 
 # ---------------- 29CM ----------------
 class TwentyNineCMAdapter(BaseAdapter):
@@ -709,6 +716,8 @@ class TwentyNineCMAdapter(BaseAdapter):
     ALLOWED_PREFIXES = TWENTYNINE_PREFIXES
     EXACT_PRICE_SELECTOR = TWENTYNINE_PRICE_SELECTOR
     SOLDOUT_SELECTOR = TWENTYNINE_SOLDOUT_SELECTOR
+    _network_idle_before_retry = True
+    _idle_timeout_ms = 7000
 
     def webhook_url(self) -> str:
         return TWENTYNINE_WEBHOOK or DEFAULT_WEBHOOK
@@ -734,19 +743,6 @@ class TwentyNineCMAdapter(BaseAdapter):
         except Exception:
             return None
 
-    async def extract(self, page, url: str):
-        await page.goto(url, wait_until="domcontentloaded", timeout=WEB_TIMEOUT)
-        await asyncio.sleep(0.5)
-        if await self.is_sold_out(page):
-            return ExtractionResult("soldout")
-        p = await self.extract_precise(page)
-        if not valid_price_value(p):
-            await wait_for_network_idle(page, idle_ms=500, timeout_ms=7000)
-            p = await self.extract_precise(page)
-        if not valid_price_value(p):
-            p = await extract_price_fallback_generic(page)
-        return ExtractionResult("price", p)
-
 
 # ---------------- Auction (옥션) ----------------
 class AuctionAdapter(BaseAdapter):
@@ -754,6 +750,9 @@ class AuctionAdapter(BaseAdapter):
     ALLOWED_PREFIXES = AUCTION_PREFIXES
     EXACT_PRICE_SELECTOR = AUCTION_PRICE_SELECTOR
     SOLDOUT_SELECTOR = AUCTION_SOLDOUT_SELECTOR
+    _sleep_after_load = 0.8
+    _wrap_errors = True
+    _network_idle_before_retry = True
 
     def webhook_url(self) -> str:
         return AUCTION_WEBHOOK or DEFAULT_WEBHOOK
@@ -779,23 +778,6 @@ class AuctionAdapter(BaseAdapter):
         except Exception:
             return None
 
-    async def extract(self, page, url: str):
-        try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=WEB_TIMEOUT)
-            await asyncio.sleep(0.8)
-            if await self.is_sold_out(page):
-                return ExtractionResult("soldout")
-
-            p = await self.extract_precise(page)
-            if not valid_price_value(p):
-                await wait_for_network_idle(page, idle_ms=500, timeout_ms=8000)
-                p = await self.extract_precise(page)
-            if not valid_price_value(p):
-                p = await extract_price_fallback_generic(page)
-            return ExtractionResult("price", p)
-        except Exception:
-            return ExtractionResult("error")
-
 
 # ---------------- 11st (11번가) ----------------
 class ElevenStAdapter(BaseAdapter):
@@ -803,6 +785,9 @@ class ElevenStAdapter(BaseAdapter):
     ALLOWED_PREFIXES = ELEVENST_PREFIXES
     EXACT_PRICE_SELECTOR = ELEVENST_PRICE_SELECTOR
     SOLDOUT_SELECTOR = ELEVENST_SOLDOUT_SELECTOR
+    _sleep_after_load = 1.0
+    _wrap_errors = True
+    _network_idle_before_retry = True
 
     def webhook_url(self) -> str:
         return ELEVENST_WEBHOOK or DEFAULT_WEBHOOK
@@ -826,23 +811,6 @@ class ElevenStAdapter(BaseAdapter):
         except Exception:
             return None
 
-    async def extract(self, page, url: str):
-        try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=WEB_TIMEOUT)
-            await asyncio.sleep(1.0)
-            if await self.is_sold_out(page):
-                return ExtractionResult("soldout")
-
-            p = await self.extract_precise(page)
-            if not valid_price_value(p):
-                await wait_for_network_idle(page, idle_ms=500, timeout_ms=8000)
-                p = await self.extract_precise(page)
-            if not valid_price_value(p):
-                p = await extract_price_fallback_generic(page)
-            return ExtractionResult("price", p)
-        except Exception:
-            return ExtractionResult("error")
-
 
 # ---------------- Universal (catch-all) ----------------
 class UniversalAdapter(BaseAdapter):
@@ -865,6 +833,8 @@ class UniversalAdapter(BaseAdapter):
         ".layer_soldout",
         ".box__supply .text__state",
     ]
+    _sleep_after_load = 1.0
+    _wrap_errors = True
 
     def matches(self, url: str) -> bool:
         return True
@@ -898,17 +868,6 @@ class UniversalAdapter(BaseAdapter):
         except Exception:
             pass
         return False
-
-    async def extract(self, page, url: str):
-        try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=WEB_TIMEOUT)
-            await asyncio.sleep(1.0)
-            if await self.is_sold_out(page):
-                return ExtractionResult("soldout")
-            p = await extract_price_fallback_generic(page)
-            return ExtractionResult("price", p)
-        except Exception:
-            return ExtractionResult("error")
 
 
 # ---------------- 라우팅 ----------------
