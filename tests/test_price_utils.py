@@ -1,0 +1,206 @@
+"""Unit tests for pure functions in musinsa_price_watch.py."""
+
+import pytest
+
+from musinsa_price_watch import (
+    normalize_price,
+    looks_like_price_text,
+    valid_price_value,
+    _normalize_url,
+    is_blank_sheet_value,
+    is_soldout_sheet_value,
+    pick_adapter,
+    MusinsaAdapter,
+    OliveYoungAdapter,
+    GmarketAdapter,
+    TwentyNineCMAdapter,
+    AuctionAdapter,
+    ElevenStAdapter,
+    UniversalAdapter,
+)
+
+
+# ── normalize_price ──────────────────────────────────────────
+
+
+class TestNormalizePrice:
+    def test_basic(self):
+        assert normalize_price("65,000원") == 65000
+
+    def test_no_comma(self):
+        assert normalize_price("12000") == 12000
+
+    def test_with_surrounding_text(self):
+        assert normalize_price("가격: 9,900원 (할인)") == 9900
+
+    def test_empty_string(self):
+        assert normalize_price("") is None
+
+    def test_none_like(self):
+        assert normalize_price(None) is None  # type: ignore[arg-type]
+
+    def test_no_digits(self):
+        assert normalize_price("가격없음") is None
+
+    def test_large_price(self):
+        assert normalize_price("1,234,567원") == 1234567
+
+
+# ── looks_like_price_text ────────────────────────────────────
+
+
+class TestLooksLikePriceText:
+    def test_normal_price(self):
+        assert looks_like_price_text("65,000") is True
+
+    def test_exclude_coupon(self):
+        assert looks_like_price_text("쿠폰 500원") is False
+
+    def test_exclude_point(self):
+        assert looks_like_price_text("적립금 500") is False
+
+    def test_exclude_delivery(self):
+        assert looks_like_price_text("배송비 3,000원") is False
+
+    def test_exclude_review(self):
+        assert looks_like_price_text("리뷰 1,234건") is False
+
+    def test_exclude_percent(self):
+        assert looks_like_price_text("30%") is False
+
+    def test_empty(self):
+        assert looks_like_price_text("") is False
+
+    def test_none(self):
+        assert looks_like_price_text(None) is False  # type: ignore[arg-type]
+
+
+# ── valid_price_value ────────────────────────────────────────
+
+
+class TestValidPriceValue:
+    def test_above_min(self):
+        assert valid_price_value(5000) is True
+
+    def test_exactly_min(self):
+        assert valid_price_value(5000) is True
+
+    def test_below_min(self):
+        assert valid_price_value(4999) is False
+
+    def test_none(self):
+        assert valid_price_value(None) is False
+
+    def test_zero(self):
+        assert valid_price_value(0) is False
+
+    def test_large(self):
+        assert valid_price_value(999999) is True
+
+
+# ── _normalize_url ───────────────────────────────────────────
+
+
+class TestNormalizeUrl:
+    def test_strip_whitespace(self):
+        assert _normalize_url("  https://example.com  ") == "https://example.com"
+
+    def test_none_returns_empty(self):
+        assert _normalize_url(None) == ""  # type: ignore[arg-type]
+
+    def test_empty(self):
+        assert _normalize_url("") == ""
+
+    def test_normal_url(self):
+        assert (
+            _normalize_url("https://musinsa.com/products/123")
+            == "https://musinsa.com/products/123"
+        )
+
+
+# ── is_blank_sheet_value ─────────────────────────────────────
+
+
+class TestIsBlankSheetValue:
+    def test_none(self):
+        assert is_blank_sheet_value(None) is True
+
+    def test_empty_string(self):
+        assert is_blank_sheet_value("") is True
+
+    def test_whitespace(self):
+        assert is_blank_sheet_value("   ") is True
+
+    def test_value(self):
+        assert is_blank_sheet_value("65000") is False
+
+    def test_zero(self):
+        assert is_blank_sheet_value(0) is False
+
+
+# ── is_soldout_sheet_value ───────────────────────────────────
+
+
+class TestIsSoldoutSheetValue:
+    def test_soldout(self):
+        assert is_soldout_sheet_value("품절") is True
+
+    def test_temp_soldout(self):
+        assert is_soldout_sheet_value("일시품절") is True
+
+    def test_sold_out_english(self):
+        assert is_soldout_sheet_value("sold out") is True
+
+    def test_sale_end(self):
+        assert is_soldout_sheet_value("판매종료") is True
+
+    def test_numeric_price(self):
+        assert is_soldout_sheet_value("65000") is False
+
+    def test_empty(self):
+        assert is_soldout_sheet_value("") is False
+
+    def test_none(self):
+        assert is_soldout_sheet_value(None) is False
+
+    def test_case_insensitive(self):
+        assert is_soldout_sheet_value("Sold Out") is True
+
+
+# ── pick_adapter ─────────────────────────────────────────────
+
+
+class TestPickAdapter:
+    def test_musinsa(self):
+        ad = pick_adapter("https://www.musinsa.com/products/12345")
+        assert isinstance(ad, MusinsaAdapter)
+
+    def test_oliveyoung(self):
+        ad = pick_adapter(
+            "https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do?goodsNo=123"
+        )
+        assert isinstance(ad, OliveYoungAdapter)
+
+    def test_gmarket(self):
+        ad = pick_adapter("https://item.gmarket.co.kr/Item?goodscode=123")
+        assert isinstance(ad, GmarketAdapter)
+
+    def test_29cm(self):
+        ad = pick_adapter("https://www.29cm.co.kr/products/123")
+        assert isinstance(ad, TwentyNineCMAdapter)
+
+    def test_auction(self):
+        ad = pick_adapter("http://itempage3.auction.co.kr/DetailView?itemNo=123")
+        assert isinstance(ad, AuctionAdapter)
+
+    def test_11st(self):
+        ad = pick_adapter("https://www.11st.co.kr/products/123")
+        assert isinstance(ad, ElevenStAdapter)
+
+    def test_unknown_url_returns_universal(self):
+        ad = pick_adapter("https://www.amazon.com/dp/B123")
+        assert isinstance(ad, UniversalAdapter)
+
+    def test_empty_url_returns_universal(self):
+        ad = pick_adapter("")
+        assert isinstance(ad, UniversalAdapter)
