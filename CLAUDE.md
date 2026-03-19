@@ -9,16 +9,29 @@
 - **Scheduler**: APScheduler (asyncio)
 - **HTTP Client**: httpx (async)
 - **Google Sheets**: gspread + google-auth
+- **Config**: pydantic-settings (BaseSettings)
 - **Environment**: python-dotenv
 
 ## Project Structure
 ```
-musinsa_price_watch.py   # 메인 애플리케이션 (단일 파일)
+config.py                # 전역 설정: 상수 + Pydantic BaseSettings 싱글톤
+utils.py                 # 순수 유틸리티 함수 + httpx 클라이언트 + Discord 웹훅
+adapters.py              # 플랫폼별 어댑터 클래스 + ExtractionResult + 라우팅
+musinsa_price_watch.py   # Sheets I/O + 상태관리 + check_once 오케스트레이션
+coupang_manager.py       # 쿠팡 Open API 자동화 모듈
+main.py                  # 통합 진입점 (스케줄러 + 멀티레인)
 requirements.txt         # pip 의존성
 price_state.json         # 가격 상태 저장 (런타임 생성)
 safe/                    # Google Service Account 키 (git 미추적)
 .env                     # 환경 변수 (git 미추적)
 docs/SETUP.md            # 설치/설정 가이드
+```
+
+### 모듈 의존성 체인 (비순환)
+```
+config ← utils ← adapters ← musinsa_price_watch ← main
+                              coupang_manager ← main
+config ← coupang_manager
 ```
 
 ## Architecture
@@ -51,10 +64,11 @@ python musinsa_price_watch.py
 - async/await 패턴 사용 (asyncio 기반)
 - 타입 힌트 사용 (`int | None`, `list[str]`)
 - 새 쇼핑몰 추가 시 `BaseAdapter` 상속하여 어댑터 클래스 생성 (`/add-adapter` 커맨드 활용)
-- 셀렉터 상수는 파일 상단에 정의
-- 가격 추출 실패 시 `extract_price_fallback_generic()` 폴백 사용
-- `extract()` 반환값: `("price", int)`, `("soldout", None)`, `("error", None)` 중 하나
-- 새 어댑터는 ADAPTERS 리스트에서 UniversalAdapter 앞에 배치
+- 셀렉터 상수는 `config.py`에 정의
+- 환경변수는 `config.Settings`(Pydantic BaseSettings)로 중앙 관리 → `settings` 싱글톤 사용
+- 가격 추출 실패 시 `extract_price_fallback_generic()` 폴백 사용 (`utils.py`)
+- `extract()` 반환값: `ExtractionResult(kind, value)` — kind는 `"price"` | `"soldout"` | `"error"`
+- 새 어댑터는 `adapters.py`의 ADAPTERS 리스트에서 UniversalAdapter 앞에 배치
 
 ## Common Mistakes (반복 방지)
 - 셀렉터 수정 시 상수만 바꾸고 어댑터 내부 하드코딩된 셀렉터를 놓치는 경우 → 항상 `grep`으로 해당 셀렉터 전체 사용처 확인
