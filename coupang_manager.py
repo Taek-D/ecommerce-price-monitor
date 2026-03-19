@@ -13,6 +13,8 @@ from difflib import SequenceMatcher
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlencode, quote
 
+from config import KST, settings
+
 import httpx
 from dotenv import load_dotenv
 import gspread
@@ -39,8 +41,6 @@ _log_sms = logging.getLogger("musinsa_bot.coupang.sms")
 _log_sheet = logging.getLogger("musinsa_bot.coupang.sheet")
 _log_product = logging.getLogger("musinsa_bot.coupang.product")
 
-KST = timezone(timedelta(hours=9))
-
 # ──────────────────────────────────────────────
 # 환경변수
 # ──────────────────────────────────────────────
@@ -56,9 +56,7 @@ COUPANG_ORDER_WEBHOOK = os.getenv(
     "COUPANG_ORDER_WEBHOOK", ""
 ).strip()  # 주문알림 Discord 웹훅
 
-GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv(
-    "GOOGLE_SERVICE_ACCOUNT_JSON", "safe/service_account.json"
-).strip()
+GOOGLE_SERVICE_ACCOUNT_JSON = settings.google_service_account_json
 
 
 def _env_int(name: str, default: int) -> int:
@@ -69,7 +67,7 @@ def _env_int(name: str, default: int) -> int:
 
 
 # 쿠팡 상품관리 시트 설정 (기존 소싱목록과 별도 시트)
-COUPANG_SHEET_ID = os.getenv("SHEETS_SPREADSHEET_ID", "").strip()
+COUPANG_SHEET_ID = settings.sheets_spreadsheet_id
 COUPANG_PRODUCT_SHEET = os.getenv("COUPANG_PRODUCT_SHEET", "쿠팡상품관리").strip()
 COUPANG_ORDER_SHEET = os.getenv("COUPANG_ORDER_SHEET", "쿠팡주문관리").strip()
 COUPANG_PRODUCT_REFRESH_MINUTES = _env_int("COUPANG_PRODUCT_REFRESH_MINUTES", 30)
