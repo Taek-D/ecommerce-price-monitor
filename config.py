@@ -5,10 +5,12 @@ config.py
 """
 
 from datetime import timezone, timedelta
+from pathlib import Path
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_PROJECT_ROOT = Path(__file__).resolve().parent
 KST = timezone(timedelta(hours=9))
 
 # ---------------- 시트/컬럼 설정 ----------------
@@ -158,7 +160,7 @@ EXCLUDE_KEYWORDS = [
 
 # ---------------- Pydantic BaseSettings ----------------
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=_PROJECT_ROOT / ".env", extra="ignore")
 
     # Google Sheets (양 모듈 공유)
     google_service_account_json: str = "safe/service_account.json"
