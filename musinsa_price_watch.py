@@ -54,30 +54,6 @@ def _open_sheet():
     return sh.worksheet(settings.sheets_worksheet_name)
 
 
-def load_urls_from_sheet() -> list[str]:
-    ws = _open_sheet()
-    col_vals = ws.col_values(D_COL_INDEX)
-    urls = []
-    for idx, val in enumerate(col_vals, start=1):
-        if idx < URLS_START_ROW:
-            continue
-        v = _normalize_url(val)
-        if not v:
-            continue
-        urls.append(v)
-    return list(dict.fromkeys(urls))
-
-
-def _find_row_for_url_in_column(ws, url: str, col_index: int) -> int | None:
-    col_vals = ws.col_values(col_index)
-    for idx, val in enumerate(col_vals, start=1):
-        if idx < URLS_START_ROW:
-            continue
-        if _normalize_url(val) == url:
-            return idx
-    return None
-
-
 def build_sheet_row_index(ws):
     url_col = ws.col_values(D_COL_INDEX)
     price_col = ws.col_values(H_COL_INDEX)

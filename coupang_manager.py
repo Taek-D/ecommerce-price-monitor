@@ -8,15 +8,14 @@ coupang_manager.py
 - 판매가 변경:    구글 시트 감지 → 쿠팡 가격 API
 """
 
-import os, re, json, hmac, hashlib, asyncio
+import os, re, hmac, hashlib, asyncio
 from difflib import SequenceMatcher
 from datetime import datetime, timezone, timedelta
-from urllib.parse import urlencode, quote
+from urllib.parse import urlencode
 
 from config import KST, settings
 
 import httpx
-from dotenv import load_dotenv
 import gspread
 from gspread.utils import rowcol_to_a1
 from google.oauth2.service_account import Credentials
@@ -25,8 +24,6 @@ try:
     from rapidfuzz import fuzz as _rf_fuzz
 except Exception:
     _rf_fuzz = None
-
-load_dotenv()
 
 import logging
 
