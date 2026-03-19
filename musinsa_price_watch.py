@@ -4,10 +4,8 @@ from urllib.parse import urlparse
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 
-# Google Sheets
 import gspread
 from google.oauth2.service_account import Credentials
 from logging_config import setup_logging
@@ -26,36 +24,11 @@ from utils import (
     is_blank_sheet_value,
     is_soldout_sheet_value,
     post_webhook,
-    _get_http_client,
 )
-from adapters import (
-    pick_adapter,
-    ADAPTERS,
-    log_webhook_routing_once,
-    ExtractionResult,
-    MusinsaAdapter,
-    OliveYoungAdapter,
-    GmarketAdapter,
-    TwentyNineCMAdapter,
-    AuctionAdapter,
-    ElevenStAdapter,
-    UniversalAdapter,
-)
-
-# backward-compat re-exports used by utils functions moved here
-from utils import normalize_price, looks_like_price_text, valid_price_value  # noqa: F401
-from utils import wait_any_selector, wait_for_network_idle  # noqa: F401
-from utils import extract_price_fallback_generic  # noqa: F401
-from adapters import BaseAdapter  # noqa: F401
+from adapters import pick_adapter
 
 _log = logging.getLogger("musinsa_bot.price")
-_log_webhook = logging.getLogger("musinsa_bot.webhook")
 _log_sheet = logging.getLogger("musinsa_bot.sheet")
-
-# ---------------- 환경/웹훅 ----------------
-load_dotenv()
-
-DEFAULT_WEBHOOK = settings.discord_webhook_url
 
 state = {}
 URLS: list[str] = []
