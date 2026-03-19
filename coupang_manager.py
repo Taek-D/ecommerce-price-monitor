@@ -8,7 +8,11 @@ coupang_manager.py
 - 판매가 변경:    구글 시트 감지 → 쿠팡 가격 API
 """
 
-import os, re, hmac, hashlib, asyncio
+import asyncio
+import hashlib
+import hmac
+import os
+import re
 from difflib import SequenceMatcher
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlencode
@@ -3482,7 +3486,7 @@ async def update_settlement():
     output = []
     ts = _now_kst_str()
 
-    output.append([f"📊 쿠팡 정산 집계", "", "", "", f"마지막 갱신: {ts}"])
+    output.append(["📊 쿠팡 정산 집계", "", "", "", f"마지막 갱신: {ts}"])
     output.append([""])
 
     # 월별 집계
