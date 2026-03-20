@@ -49,3 +49,25 @@
 3. **"새 웹훅"** → 이름 설정 (예: `무신사`) → 만들기
 4. **"웹훅 URL 복사"** 클릭
 5. 4개 채널별로 반복 (무신사, 올리브영, 지마켓, 29CM)
+
+## ⚙️ 환경 변수 (.env)
+
+```
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...        # 가격알림 기본 채널 웹훅 URL
+GOOGLE_SERVICE_ACCOUNT_JSON=safe/service_account.json          # Google 서비스 계정 키 경로
+SHEETS_SPREADSHEET_ID=<스프레드시트 ID>                          # Google Sheets ID
+SHEETS_WORKSHEET_NAME=<워크시트 이름>                            # 모니터링 대상 시트 이름
+
+COUPANG_ACCESS_KEY=<쿠팡 Open API Access Key>
+COUPANG_SECRET_KEY=<쿠팡 Open API Secret Key>
+COUPANG_VENDOR_ID=<쿠팡 벤더 ID>
+COUPANG_ORDER_WEBHOOK=https://discord.com/api/webhooks/...      # 주문/배송 알림 채널 웹훅 URL
+```
+
+## 🚀 주요 기능
+
+- 가격 변동 감지 시 Discord 알림 전송
+- Google Sheets에 가격 기록
+- 쿠팡 주문 자동화 (결제완료 → 발주확인 → 상품준비중)
+- 쿠팡 배송 상태 시트 동기화
+- sync_delivery_status_to_sheet() 실행 후 상품준비중 주문 현황을 Discord embed로 자동 알림
