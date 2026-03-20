@@ -1357,6 +1357,54 @@ async def process_new_orders():
         _log_order.info("모든 주문이 이미 시트에 동기화되어 있음")
 
 
+async def _notify_pending_preparation(
+    rows: list[list[str]],
+    order_status_by_id: dict[str, str],
+) -> None:
+    """상품준비중 주문 목록을 Discord embed로 알림. 0건이면 전송 안 함."""
+    MAX_FIELDS = 24  # Discord embed field 한도(25) - 확인시각 field 1개 예약
+
+    pending: list[tuple[str, str]] = []  # [(order_id, product_name), ...]
+    for row in rows[ORDER_START_ROW - 1 :]:
+        if len(row) < COL_ORDER_STATUS:
+            continue
+        order_id = row[COL_ORDER_ID - 1].strip() if len(row) >= COL_ORDER_ID else ""
+        if not order_id:
+            continue
+        status = order_status_by_id.get(order_id, row[COL_ORDER_STATUS - 1].strip())
+        if status != "상품준비중":
+            continue
+        product_name = (
+            row[COL_ORDER_PRODUCT - 1].strip()
+            if len(row) >= COL_ORDER_PRODUCT
+            else "(상품명 없음)"
+        ) or "(상품명 없음)"
+        pending.append((order_id, product_name))
+
+    if not pending:
+        return
+
+    fields = []
+    display = pending[:MAX_FIELDS]
+    for oid, pname in display:
+        fields.append({"name": oid, "value": pname, "inline": False})
+
+    overflow = len(pending) - len(display)
+    if overflow > 0:
+        fields.append({"name": "...", "value": f"외 {overflow}건 더", "inline": False})
+
+    fields.append({"name": "확인시각", "value": _now_kst_str(), "inline": False})
+
+    embeds = [
+        {
+            "title": f"📦 상품준비중 주문 현황 ({len(pending)}건)",
+            "color": 16776960,
+            "fields": fields,
+        }
+    ]
+    await post_webhook(COUPANG_ORDER_WEBHOOK, "상품준비중 현황", embeds=embeds)
+
+
 async def sync_delivery_status_to_sheet(days: int = 60) -> None:
     """
     쿠팡 배송 진행상태를 시트에 반영한다.
@@ -1506,6 +1554,7 @@ async def sync_delivery_status_to_sheet(days: int = 60) -> None:
         f"시트미존재 {skipped_missing_row}건, 제외상태 {skipped_excluded}건, "
         f"삭제 {deleted_count}건, 확인실패 {delete_check_failed}건, 삭제실패 {delete_failed}건"
     )
+    await _notify_pending_preparation(rows, order_status_by_id)
 
 
 # ──────────────────────────────────────────────
