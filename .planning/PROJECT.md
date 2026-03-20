@@ -2,7 +2,7 @@
 
 ## What This Is
 
-이커머스 가격 모니터링 + 쿠팡 주문자동화 봇. 무신사/올리브영/지마켓/29CM/옥션/11번가 상품 가격을 5분 주기로 추적하고, 변동 시 Discord webhook으로 알림을 보냄. 쿠팡 Open API를 통한 주문처리/발송/배송상태 동기화/재고관리/정산집계를 자동화.
+이커머스 가격 모니터링 + 쿠팡 주문자동화 봇. 무신사/올리브영/지마켓/29CM/옥션/11번가 상품 가격을 5분 주기로 추적하고, 변동 시 Discord webhook으로 알림을 보냄. 쿠팡 Open API를 통한 주문처리/발송/배송상태 동기화/재고관리/정산집계를 자동화. 배송동기화 시 상품준비중 주문 현황도 Discord로 알림.
 
 ## Core Value
 
@@ -24,26 +24,27 @@
 - ✓ 쿠팡 재고 자동 품절 처리 — v0
 - ✓ 쿠팡 판매가 변경 자동화 — v0
 - ✓ 상품 발굴 파이프라인 (5개 소싱처) — v0
+- ✓ 상품준비중 주문 Discord 알림 (배송동기화 시) — v1.0
 
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-- [ ] 쿠팡 배송상태 변경 시 Discord 알림
+(None — planning next milestone)
 
 ### Out of Scope
 
 <!-- Explicit boundaries. Includes reasoning to prevent re-adding. -->
 
 - 올리브영 어댑터 — Cloudflare 봇 차단으로 비활성화 상태
+- 배송상태 변경 실시간 알림 — v1.0에서는 상품준비중 요약만 구현
 
 ## Context
 
 - 쿠팡주문관리 시트 G열(COL_ORDER_STATUS)에 배송상태가 기록됨
-- `sync_delivery_status_to_sheet()` 함수가 이미 상태 변경을 감지하여 시트 업데이트 중
-- 상태 종류: 상품준비중, 배송지시, 업체 직접 배송, 배송중, 배송완료
+- `sync_delivery_status_to_sheet()` 함수가 상태 변경 감지 + 시트 업데이트 + 상품준비중 Discord 알림
+- `_notify_pending_preparation()` 헬퍼가 상품준비중 주문 embed 생성 (0건 미전송, 25건+ truncation)
 - `COUPANG_ORDER_WEBHOOK` 환경변수로 주문 Discord 웹훅 URL 설정됨
-- 기존 주문 알림은 embed 형식으로 발송 중
 
 ## Constraints
 
@@ -58,7 +59,8 @@
 | Adapter Pattern | 쇼핑몰별 독립적 가격 추출 로직 | ✓ Good |
 | ExtractionResult dataclass | 타입 안전한 추출 결과 전달 | ✓ Good |
 | Pydantic BaseSettings | 환경변수 중앙 관리 | ✓ Good |
-| 기존 COUPANG_ORDER_WEBHOOK 재사용 | 별도 웹훅 불필요, 주문 관련 알림 통합 | — Pending |
+| COUPANG_ORDER_WEBHOOK 재사용 | 별도 웹훅 불필요, 주문 관련 알림 통합 | ✓ Good |
+| _notify_pending_preparation() 분리 | sync 함수 내부 복잡도 관리, 테스트 용이 | ✓ Good |
 
 ---
-*Last updated: 2026-03-20 after milestone v1.0 start*
+*Last updated: 2026-03-20 after v1.0 milestone*
