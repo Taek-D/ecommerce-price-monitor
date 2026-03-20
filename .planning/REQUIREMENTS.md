@@ -7,7 +7,7 @@
 
 ### 배송알림
 
-- [ ] **SHIP-01**: `sync_delivery_status_to_sheet()` 실행 후, 현재 "상품준비중" 상태인 주문 목록을 Discord embed로 알림 (주문ID, 상품명 포함)
+- [x] **SHIP-01**: `sync_delivery_status_to_sheet()` 실행 후, 현재 "상품준비중" 상태인 주문 목록을 Discord embed로 알림 (주문ID, 상품명 포함)
 
 ## Future Requirements
 
@@ -24,7 +24,7 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SHIP-01 | Phase 1 | Pending |
+| SHIP-01 | Phase 1 | Complete |
 
 **Coverage:**
 - v1.0 requirements: 1 total

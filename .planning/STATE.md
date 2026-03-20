@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Phase 1 context gathered
-last_updated: "2026-03-20T07:37:35.751Z"
+stopped_at: Completed 01-discord-01-PLAN.md
+last_updated: "2026-03-20T08:21:46.976Z"
 last_activity: 2026-03-20 — Roadmap created, milestone v1.0 defined
 progress:
   total_phases: 1
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  completed_phases: 1
+  total_plans: 1
+  completed_plans: 1
   percent: 0
 ---
 
@@ -50,6 +50,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 01-discord P01 | 6 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -60,6 +61,8 @@ Recent decisions affecting current work:
 
 - [Phase 1]: `COUPANG_ORDER_WEBHOOK` 재사용 — 별도 웹훅 불필요, 주문 관련 알림 통합
 - [Phase 1]: 상품준비중 주문이 없을 때 알림 미발송 (노이즈 방지)
+- [Phase 01-discord]: pytest-asyncio 설치 필요 — 기존 requirements.txt에 없었음, dev 의존성으로 추가
+- [Phase 01-discord]: _notify_pending_preparation()는 sync_delivery_status_to_sheet() 정의 바로 위에 배치 (논리적 근접성 유지)
 
 ### Pending Todos
 
@@ -71,6 +74,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-20T07:37:35.748Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-discord/01-CONTEXT.md
+Last session: 2026-03-20T08:21:46.974Z
+Stopped at: Completed 01-discord-01-PLAN.md
+Resume file: None

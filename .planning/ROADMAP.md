@@ -6,7 +6,7 @@ v1.0 delivers one focused capability: after `sync_delivery_status_to_sheet()` sy
 
 ## Phases
 
-- [ ] **Phase 1: 상품준비중 Discord 알림** - `sync_delivery_status_to_sheet()` 완료 후 상품준비중 주문 목록을 Discord embed로 알림
+- [x] **Phase 1: 상품준비중 Discord 알림** - `sync_delivery_status_to_sheet()` 완료 후 상품준비중 주문 목록을 Discord embed로 알림 (completed 2026-03-20)
 
 ## Phase Details
 
@@ -28,4 +28,4 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. 상품준비중 Discord 알림 | 0/1 | Not started | - |
+| 1. 상품준비중 Discord 알림 | 1/1 | Complete   | 2026-03-20 |
