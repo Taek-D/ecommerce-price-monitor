@@ -19,10 +19,13 @@ v1.0 delivers one focused capability: after `sync_delivery_status_to_sheet()` sy
   2. 알림 embed에 "상품준비중" 상태 주문의 주문ID와 상품명이 포함됨
   3. "상품준비중" 주문이 없을 때는 Discord 알림이 전송되지 않음
   4. `COUPANG_ORDER_WEBHOOK` 환경변수로 지정된 웹훅 채널로 알림이 전송됨
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 01-01-PLAN.md — _notify_pending_preparation() 헬퍼 구현 + sync_delivery_status_to_sheet() 끝에서 호출
 
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. 상품준비중 Discord 알림 | 0/? | Not started | - |
+| 1. 상품준비중 Discord 알림 | 0/1 | Not started | - |
