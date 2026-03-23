@@ -1,9 +1,11 @@
 """Unit tests for pure functions in coupang_manager.py."""
 
+import coupang_manager
 import pytest
 
 from coupang_manager import (
     normalize_carrier_code,
+    _build_price_change_embed,
     _format_won,
     _short_text,
     _to_positive_int,
@@ -388,3 +390,61 @@ class TestIsSoldoutStatus:
 
     def test_exhausted(self):
         assert _is_soldout_status("매진") is True
+
+
+class TestBuildPriceChangeEmbed:
+    def test_breaks_out_skip_reasons(self, monkeypatch):
+        monkeypatch.setattr(coupang_manager, "_now_kst_str", lambda: "2026-03-23 12:34:56")
+
+        embed = _build_price_change_embed(
+            {
+                "name": "VDL 로즈 PDRN 프렙 베이스",
+                "prev": 32150,
+                "new": 34880,
+                "skip_floor": 2,
+                "skip_unknown": 1,
+                "failed": 0,
+                "details": [
+                    {
+                        "vid": "1234567890",
+                        "product_name": "1개",
+                        "old_price": 32150,
+                        "new_price": 34880,
+                    }
+                ],
+            }
+        )
+
+        fields = {field["name"]: field["value"] for field in embed["fields"]}
+
+        assert fields["업데이트 옵션"] == "1개"
+        assert fields["가격유지"] == "2개"
+        assert fields["조회실패"] == "1개"
+        assert fields["API실패"] == "0개"
+        assert fields["처리 시각"] == "2026-03-23 12:34:56"
+        assert "보류/스킵" not in fields
+        assert "1234567890" in fields["vendorItemId / 옵션 / 판매가"]
+        assert "34,880" in fields["vendorItemId / 옵션 / 판매가"]
+
+    def test_shows_zero_counts_when_no_skips(self, monkeypatch):
+        monkeypatch.setattr(coupang_manager, "_now_kst_str", lambda: "2026-03-23 12:34:56")
+
+        embed = _build_price_change_embed(
+            {
+                "name": "테스트 상품",
+                "prev": 10000,
+                "new": 12000,
+                "skip_floor": 0,
+                "skip_unknown": 0,
+                "failed": 0,
+                "details": [],
+            }
+        )
+
+        fields = {field["name"]: field["value"] for field in embed["fields"]}
+
+        assert fields["업데이트 옵션"] == "0개"
+        assert fields["가격유지"] == "0개"
+        assert fields["조회실패"] == "0개"
+        assert fields["API실패"] == "0개"
+        assert fields["vendorItemId / 옵션 / 판매가"] == "-"

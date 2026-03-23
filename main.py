@@ -9,6 +9,7 @@ import asyncio
 import logging
 import os
 import sys
+from datetime import datetime
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -149,12 +150,41 @@ async def _run_with_lane_lock(
     *,
     wait_for_lock: bool = False,
 ) -> None:
+    requested_at = datetime.now().isoformat(timespec="seconds")
     if not wait_for_lock and lock.locked():
         _log.info(f"{job_name} skipped: {lane_name} lane busy")
         return
 
+    wait_started = datetime.now().isoformat(timespec="seconds")
+    wait_started_monotonic = asyncio.get_running_loop().time()
+    if wait_for_lock and lock.locked():
+        _log.info(
+            f"{job_name} waiting: {lane_name} lane busy "
+            f"job_name={job_name} lane_name={lane_name} "
+            f"requested_at={requested_at} wait_started={wait_started}"
+        )
+
     async with lock:
+        run_started = datetime.now().isoformat(timespec="seconds")
+        wait_elapsed = asyncio.get_running_loop().time() - wait_started_monotonic
+        if wait_for_lock:
+            _log.info(
+                f"{job_name} acquired lane after {wait_elapsed:.2f}s wait "
+                f"job_name={job_name} lane_name={lane_name} "
+                f"requested_at={requested_at} wait_started={wait_started} "
+                f"wait_elapsed={wait_elapsed:.2f} run_started={run_started}"
+            )
+        run_started_monotonic = asyncio.get_running_loop().time()
         await job_func()
+        if wait_for_lock:
+            run_elapsed = asyncio.get_running_loop().time() - run_started_monotonic
+            _log.info(
+                f"{job_name} finished in {run_elapsed:.2f}s "
+                f"job_name={job_name} lane_name={lane_name} "
+                f"requested_at={requested_at} wait_started={wait_started} "
+                f"wait_elapsed={wait_elapsed:.2f} run_started={run_started} "
+                f"run_elapsed={run_elapsed:.2f}"
+            )
 
 
 async def run_order_lane_job(
@@ -204,7 +234,10 @@ async def scheduled_sourcing_match_job() -> None:
 
 
 async def scheduled_sourcing_price_job() -> None:
-    await run_product_lane_job("sourcing_price_job", sourcing_price_job)
+    # Keep price sync from being dropped; other product-lane jobs still skip when busy.
+    await run_product_lane_job(
+        "sourcing_price_job", sourcing_price_job, wait_for_lock=True
+    )
 
 
 async def scheduled_stock_check_job() -> None:
@@ -295,7 +328,7 @@ async def main():
     if bot_mode == "full":
         sched.add_job(
             check_once,
-            trigger=IntervalTrigger(minutes=5, jitter=10),
+            trigger=IntervalTrigger(minutes=15, jitter=10),
             id="musinsa_check",
             name="무신사봇 가격 모니터링",
         )

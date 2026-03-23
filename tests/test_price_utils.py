@@ -249,6 +249,75 @@ class _FakePage:
         return _FakeLocator(self.locator_texts.get(selector, []))
 
 
+class TestElevenStAdapter:
+    def test_is_sold_out_when_unavailable_marker_in_body(self):
+        ad = ElevenStAdapter()
+        page = _FakePage(body_text="현재 판매중인 상품이 아닙니다.")
+
+        assert asyncio.run(ad.is_sold_out(page)) is True
+
+    def test_is_not_sold_out_for_refund_process_text(self):
+        ad = ElevenStAdapter()
+        page = _FakePage(body_text="반품절차 교환절차 안내")
+
+        assert asyncio.run(ad.is_sold_out(page)) is False
+
+    def test_is_sold_out_when_selector_visible(self):
+        ad = ElevenStAdapter()
+        page = _FakePage(visible_selectors={ad.SOLDOUT_SELECTOR})
+
+        assert asyncio.run(ad.is_sold_out(page)) is True
+
+    def test_do_extract_returns_price_when_precise_price_exists(self):
+        ad = ElevenStAdapter()
+        ad._sleep_after_load = 0
+        ad._network_idle_before_retry = False
+        page = _FakePage(locator_texts={ad.EXACT_PRICE_SELECTOR: ["12,345"]})
+
+        result = asyncio.run(ad._do_extract(page, "https://www.11st.co.kr/products/123"))
+
+        assert result == ExtractionResult("price", 12345)
+
+    def test_do_extract_returns_soldout_when_unavailable_marker_exists(self):
+        ad = ElevenStAdapter()
+        ad._sleep_after_load = 0
+        page = _FakePage(body_text="현재 판매중인 상품이 아닙니다.")
+
+        result = asyncio.run(ad._do_extract(page, "https://www.11st.co.kr/products/123"))
+
+        assert result == ExtractionResult("soldout")
+
+    def test_do_extract_returns_price_when_refund_process_text_exists(self):
+        ad = ElevenStAdapter()
+        ad._sleep_after_load = 0
+        ad._network_idle_before_retry = False
+        page = _FakePage(
+            body_text="반품절차 교환절차 안내",
+            locator_texts={ad.EXACT_PRICE_SELECTOR: ["24,900"]},
+        )
+
+        result = asyncio.run(ad._do_extract(page, "https://www.11st.co.kr/products/123"))
+
+        assert result == ExtractionResult("price", 24900)
+
+    def test_do_extract_returns_error_without_precise_price_or_fallback(
+        self, monkeypatch
+    ):
+        ad = ElevenStAdapter()
+        ad._sleep_after_load = 0
+        ad._network_idle_before_retry = False
+        page = _FakePage()
+
+        async def unexpected_fallback(_page):
+            raise AssertionError("fallback should not be called for 11st")
+
+        monkeypatch.setattr(ad, "_fallback", unexpected_fallback)
+
+        result = asyncio.run(ad._do_extract(page, "https://www.11st.co.kr/products/123"))
+
+        assert result == ExtractionResult("error")
+
+
 class TestBaseAdapterContract:
     def test_base_do_extract_returns_error_when_price_missing(self, monkeypatch):
         ad = UniversalAdapter()

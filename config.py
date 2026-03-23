@@ -73,6 +73,10 @@ ELEVENST_PRICE_SELECTOR = "#finalDscPrcArea > dd.price > strong > span.value"
 ELEVENST_SOLDOUT_SELECTOR = (
     ".btn_soldout, .sold_out, button:has-text('품절'), span:has-text('판매종료')"
 )
+ELEVENST_UNAVAILABLE_MARKERS = [
+    "현재 판매중인 상품이 아닙니다",
+    "판매중인 상품이 아닙니다",
+]
 
 # ---------------- 플랫폼 프리픽스 ----------------
 MUSINSA_PREFIXES = ["https://www.musinsa.com/products/"]

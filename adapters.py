@@ -43,6 +43,7 @@ from config import (
     ELEVENST_PREFIXES,
     ELEVENST_PRICE_SELECTOR,
     ELEVENST_SOLDOUT_SELECTOR,
+    ELEVENST_UNAVAILABLE_MARKERS,
     settings,
 )
 from utils import (
@@ -53,6 +54,7 @@ from utils import (
 )
 
 _log_webhook = logging.getLogger("musinsa_bot.webhook")
+_log_price = logging.getLogger("musinsa_bot.price")
 
 
 # ---------------- 추출 결과 ----------------
@@ -384,6 +386,7 @@ class ElevenStAdapter(BaseAdapter):
     ALLOWED_PREFIXES = ELEVENST_PREFIXES
     EXACT_PRICE_SELECTOR = ELEVENST_PRICE_SELECTOR
     SOLDOUT_SELECTOR = ELEVENST_SOLDOUT_SELECTOR
+    UNAVAILABLE_MARKERS = ELEVENST_UNAVAILABLE_MARKERS
     _sleep_after_load = 1.0
     _wrap_errors = True
     _network_idle_before_retry = True
@@ -391,13 +394,66 @@ class ElevenStAdapter(BaseAdapter):
     def webhook_url(self) -> str:
         return settings.elevenst_webhook or settings.discord_webhook_url
 
-    async def is_sold_out(self, page) -> bool:
+    async def _get_unavailable_marker(self, page) -> str | None:
         try:
             if await page.is_visible(self.SOLDOUT_SELECTOR):
-                return True
-            return False
+                return "selector"
         except Exception:
-            return False
+            pass
+
+        try:
+            body_text = await page.locator("body").text_content() or ""
+        except Exception:
+            body_text = ""
+
+        for marker in self.UNAVAILABLE_MARKERS:
+            if marker in body_text:
+                return f"text:{marker}"
+        return None
+
+    async def is_sold_out(self, page) -> bool:
+        return bool(await self._get_unavailable_marker(page))
+
+    async def _do_extract(self, page, url: str) -> ExtractionResult:
+        for attempt in range(1, self._retry_on_timeout + 2):
+            try:
+                await page.goto(url, wait_until="domcontentloaded", timeout=WEB_TIMEOUT)
+                await asyncio.sleep(self._get_sleep_after_load())
+
+                unavailable_marker = await self._get_unavailable_marker(page)
+                if unavailable_marker:
+                    _log_price.info(
+                        "11st unavailable marker matched -> soldout: "
+                        f"url={url} marker={unavailable_marker}"
+                    )
+                    return ExtractionResult("soldout")
+
+                p = await self.extract_precise(page)
+                if not valid_price_value(p) and self._network_idle_before_retry:
+                    await wait_for_network_idle(
+                        page, idle_ms=self._idle_ms, timeout_ms=self._idle_timeout_ms
+                    )
+                    unavailable_marker = await self._get_unavailable_marker(page)
+                    if unavailable_marker:
+                        _log_price.info(
+                            "11st unavailable marker matched after idle -> soldout: "
+                            f"url={url} marker={unavailable_marker}"
+                        )
+                        return ExtractionResult("soldout")
+                    p = await self.extract_precise(page)
+
+                if not valid_price_value(p):
+                    _log_price.warning(
+                        "11st precise price missing; fallback intentionally disabled: "
+                        f"url={url}"
+                    )
+                    return ExtractionResult("error")
+
+                return ExtractionResult("price", p)
+            except PWTimeout:
+                if attempt > self._retry_on_timeout:
+                    raise
+                await asyncio.sleep(self._retry_backoff * attempt)
 
     async def extract_precise(self, page) -> int | None:
         try:
@@ -409,6 +465,9 @@ class ElevenStAdapter(BaseAdapter):
             return p if valid_price_value(p) else None
         except Exception:
             return None
+
+    async def _fallback(self, page) -> int | None:
+        return None
 
 
 # ---------------- Universal (catch-all) ----------------

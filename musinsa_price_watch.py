@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import random
+from collections import defaultdict
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -39,6 +40,9 @@ _log_sheet = logging.getLogger("musinsa_bot.sheet")
 
 state = {}
 URLS: list[str] = []
+_last_url_reload_stats: dict | None = None
+
+_DUPLICATE_LOG_LIMIT = 5
 
 
 # ---------------- Google Sheets ----------------
@@ -86,6 +90,69 @@ def collect_sheet_cells(
     if write_time:
         cells.append(gspread.Cell(row, J_COL_INDEX, ts_iso))
     return cells
+
+
+def _build_url_reload_stats(col_vals: list[str]) -> tuple[list[str], dict]:
+    fresh: list[str] = []
+    rows_by_url: dict[str, list[int]] = defaultdict(list)
+    sheet_rows_considered = 0
+    blank_skipped = 0
+
+    for idx, val in enumerate(col_vals, start=1):
+        if idx < URLS_START_ROW:
+            continue
+        sheet_rows_considered += 1
+        normalized = _normalize_url(val)
+        if not normalized:
+            blank_skipped += 1
+            continue
+        fresh.append(normalized)
+        rows_by_url[normalized].append(idx)
+
+    unique_urls = list(dict.fromkeys(fresh))
+    duplicate_groups = {
+        url: rows for url, rows in rows_by_url.items() if len(rows) > 1
+    }
+    duplicate_examples = [
+        {"url": url, "rows": rows}
+        for url, rows in sorted(duplicate_groups.items(), key=lambda item: item[1][0])
+    ]
+
+    stats = {
+        "sheet_rows_considered": sheet_rows_considered,
+        "sheet_nonempty_urls": len(fresh),
+        "sheet_unique_urls": len(unique_urls),
+        "blank_skipped": blank_skipped,
+        "duplicate_extra_count": len(fresh) - len(unique_urls),
+        "duplicate_groups": len(duplicate_groups),
+        "duplicate_examples": duplicate_examples,
+    }
+    return unique_urls, stats
+
+
+def _log_url_reload_stats(stats: dict) -> None:
+    _log.info(
+        "URL reload summary: "
+        f"sheet_rows_considered={stats['sheet_rows_considered']} "
+        f"sheet_nonempty_urls={stats['sheet_nonempty_urls']} "
+        f"sheet_unique_urls={stats['sheet_unique_urls']} "
+        f"blank_skipped={stats['blank_skipped']} "
+        f"duplicate_extra_count={stats['duplicate_extra_count']} "
+        f"duplicate_groups={stats['duplicate_groups']}"
+    )
+
+    examples = stats.get("duplicate_examples", [])
+    if not examples:
+        return
+
+    for example in examples[:_DUPLICATE_LOG_LIMIT]:
+        _log.warning(
+            "Duplicate URL rows detected: "
+            f"rows={example['rows']} url={example['url']}"
+        )
+    remaining = len(examples) - _DUPLICATE_LOG_LIMIT
+    if remaining > 0:
+        _log.warning(f"Duplicate URL rows omitted from log: groups={remaining}")
 
 
 # ---------------- 상태/주기 작업 ----------------
@@ -204,23 +271,29 @@ async def process_one_url(
 
 
 async def check_once():
-    global URLS
+    global URLS, _last_url_reload_stats
     ws = None
+    url_reload_stats = None
     try:
         ws = _open_sheet()
         col_vals = ws.col_values(D_COL_INDEX)
-        fresh = []
-        for idx, val in enumerate(col_vals, start=1):
-            if idx < URLS_START_ROW:
-                continue
-            v = _normalize_url(val)
-            if v:
-                fresh.append(v)
-        fresh = list(dict.fromkeys(fresh))
+        fresh, url_reload_stats = _build_url_reload_stats(col_vals)
+        _last_url_reload_stats = url_reload_stats
+        _log_url_reload_stats(url_reload_stats)
         if fresh:
             URLS = fresh
     except Exception as e:
-        _log.warning(f"URL reload failed, using cached list: {e}")
+        last_stats_summary = ""
+        if _last_url_reload_stats:
+            last_stats_summary = (
+                " "
+                f"last_sheet_nonempty_urls={_last_url_reload_stats['sheet_nonempty_urls']} "
+                f"last_sheet_unique_urls={_last_url_reload_stats['sheet_unique_urls']}"
+            )
+        _log.warning(
+            "URL reload failed, using cached list: "
+            f"cached_count={len(URLS)} error={e}{last_stats_summary}"
+        )
 
     if not URLS:
         _log.warning("URL list is empty; skip")
@@ -302,6 +375,10 @@ async def check_once():
             if url in URLS:
                 URLS.remove(url)
                 removed_count += 1
+                _log.warning(
+                    "URL missing from current sheet index; removed from runtime list: "
+                    f"url={url} sheet_unique_urls={len(row_by_url)}"
+                )
             continue
 
         prev = state.get(url)
@@ -427,8 +504,14 @@ async def check_once():
 
     save_state()
     elapsed = asyncio.get_running_loop().time() - run_started
+    summary_stats = url_reload_stats or _last_url_reload_stats or {}
+    sheet_input_total = summary_stats.get("sheet_nonempty_urls", len(urls_snapshot))
+    duplicate_skipped = summary_stats.get("duplicate_extra_count", 0)
+    blank_skipped = summary_stats.get("blank_skipped", 0)
     _log.info(
-        f"Check summary: total={len(urls_snapshot)} success_price={success_price_count} "
+        f"Check summary: total={len(urls_snapshot)} checked_unique={len(urls_snapshot)} "
+        f"sheet_input_total={sheet_input_total} duplicate_skipped={duplicate_skipped} "
+        f"blank_skipped={blank_skipped} success_price={success_price_count} "
         f"success_soldout={success_soldout_count} changed={changed_count} "
         f"reconciled_rows={reconciled_count} removed={removed_count} "
         f"errors={error_count} concurrency={settings.max_concurrency} "
@@ -446,7 +529,7 @@ async def main():
 
     sched = AsyncIOScheduler()
     sched.add_job(
-        check_once, trigger=IntervalTrigger(minutes=5, jitter=10), max_instances=1
+        check_once, trigger=IntervalTrigger(minutes=15, jitter=10), max_instances=1
     )
     sched.start()
 

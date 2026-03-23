@@ -392,10 +392,10 @@ async def send_sms_bulk(phones: list[str], messages: list[str]) -> dict:
 # ──────────────────────────────────────────────
 # Discord 웹훅 (기존 musinsa-bot post_webhook 재사용)
 # ──────────────────────────────────────────────
-async def post_webhook(url: str, content: str, embeds=None):
+async def post_webhook(url: str, content: str, embeds=None) -> bool:
     if not url:
         _log_api.warning(f"URL 미설정: {content[:80]}")
-        return
+        return False
     client = _get_http_client()
     payload = {"content": content}
     if embeds:
@@ -403,8 +403,10 @@ async def post_webhook(url: str, content: str, embeds=None):
     try:
         r = await client.post(url, json=payload, timeout=20)
         r.raise_for_status()
+        return True
     except Exception as e:
         _log_api.error(f"Webhook 오류: {e}")
+        return False
 
 
 # ──────────────────────────────────────────────
@@ -425,6 +427,11 @@ def _open_coupang_sheet(sheet_name: str):
 
 def _now_kst_str() -> str:
     return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+
+
+_PENDING_PREPARATION_NOTIFY_INTERVAL = timedelta(minutes=30)
+_pending_preparation_active = False
+_last_pending_preparation_notify_at: datetime | None = None
 
 
 def _format_won(value: int | None) -> str:
@@ -455,11 +462,6 @@ def _price_change_detail_text(details: list[dict], limit: int = 8) -> str:
 
 def _build_price_change_embed(change: dict) -> dict:
     changed_count = len(change.get("details", []))
-    skipped_total = (
-        change.get("skip_floor", 0)
-        + change.get("skip_unknown", 0)
-        + change.get("failed", 0)
-    )
     fields = [
         {
             "name": "상품명",
@@ -473,7 +475,13 @@ def _build_price_change_embed(change: dict) -> dict:
             "inline": False,
         },
         {"name": "업데이트 옵션", "value": f"{changed_count}개", "inline": True},
-        {"name": "보류/스킵", "value": f"{skipped_total}개", "inline": True},
+        {"name": "가격유지", "value": f"{change.get('skip_floor', 0)}개", "inline": True},
+        {
+            "name": "조회실패",
+            "value": f"{change.get('skip_unknown', 0)}개",
+            "inline": True,
+        },
+        {"name": "API실패", "value": f"{change.get('failed', 0)}개", "inline": True},
         {"name": "처리 시각", "value": _now_kst_str(), "inline": True},
         {
             "name": "vendorItemId / 옵션 / 판매가",
@@ -1361,7 +1369,9 @@ async def _notify_pending_preparation(
     rows: list[list[str]],
     order_status_by_id: dict[str, str],
 ) -> None:
-    """상품준비중 주문 목록을 Discord embed로 알림. 0건이면 전송 안 함."""
+    """상품준비중 주문 목록을 Discord embed로 알림."""
+    global _pending_preparation_active, _last_pending_preparation_notify_at
+
     MAX_FIELDS = 24  # Discord embed field 한도(25) - 확인시각 field 1개 예약
 
     pending: list[tuple[str, str]] = []  # [(order_id, product_name), ...]
@@ -1371,7 +1381,10 @@ async def _notify_pending_preparation(
         order_id = row[COL_ORDER_ID - 1].strip() if len(row) >= COL_ORDER_ID else ""
         if not order_id:
             continue
-        status = order_status_by_id.get(order_id, row[COL_ORDER_STATUS - 1].strip())
+        # 현재 유효한 주문만 집계한다. 삭제된 주문은 stale rows 에 남아 있어도 제외한다.
+        status = order_status_by_id.get(order_id)
+        if status is None:
+            continue
         if status != "상품준비중":
             continue
         product_name = (
@@ -1382,6 +1395,24 @@ async def _notify_pending_preparation(
         pending.append((order_id, product_name))
 
     if not pending:
+        _pending_preparation_active = False
+        _last_pending_preparation_notify_at = None
+        return
+
+    now_kst = datetime.now(KST)
+    should_notify = (
+        not _pending_preparation_active
+        or _last_pending_preparation_notify_at is None
+    )
+    if (
+        not should_notify
+        and _last_pending_preparation_notify_at is not None
+        and now_kst - _last_pending_preparation_notify_at
+        >= _PENDING_PREPARATION_NOTIFY_INTERVAL
+    ):
+        should_notify = True
+
+    if not should_notify:
         return
 
     fields = []
@@ -1393,7 +1424,13 @@ async def _notify_pending_preparation(
     if overflow > 0:
         fields.append({"name": "...", "value": f"외 {overflow}건 더", "inline": False})
 
-    fields.append({"name": "확인시각", "value": _now_kst_str(), "inline": False})
+    fields.append(
+        {
+            "name": "확인시각",
+            "value": now_kst.strftime("%Y-%m-%d %H:%M:%S"),
+            "inline": False,
+        }
+    )
 
     embeds = [
         {
@@ -1402,7 +1439,10 @@ async def _notify_pending_preparation(
             "fields": fields,
         }
     ]
-    await post_webhook(COUPANG_ORDER_WEBHOOK, "상품준비중 현황", embeds=embeds)
+    sent = await post_webhook(COUPANG_ORDER_WEBHOOK, "상품준비중 현황", embeds=embeds)
+    if sent:
+        _pending_preparation_active = True
+        _last_pending_preparation_notify_at = now_kst
 
 
 async def sync_delivery_status_to_sheet(days: int = 60) -> None:
@@ -1542,6 +1582,7 @@ async def sync_delivery_status_to_sheet(days: int = 60) -> None:
         try:
             ws.delete_rows(row_idx)
             deleted_count += 1
+            order_status_by_id.pop(order_id, None)
         except Exception as e:
             delete_failed += 1
             _log_order.error(
