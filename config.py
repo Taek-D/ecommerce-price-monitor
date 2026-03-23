@@ -17,7 +17,7 @@ KST = timezone(timedelta(hours=9))
 D_COL_INDEX = 4  # URL 열
 H_COL_INDEX = 8  # 매입가격 열
 J_COL_INDEX = 10  # 업데이트 시각 열
-URLS_START_ROW = 4
+URLS_START_ROW = 3
 
 # ---------------- 동작 파라미터 ----------------
 STATE_FILE = "price_state.json"

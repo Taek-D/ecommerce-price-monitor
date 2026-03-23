@@ -115,6 +115,8 @@ class BaseAdapter:
                         idle_ms=self._idle_ms,
                         timeout_ms=self._post_extract_idle_timeout_ms,
                     )
+                if not valid_price_value(p):
+                    return ExtractionResult("error")
                 return ExtractionResult("price", p)
             except PWTimeout:
                 if attempt > self._retry_on_timeout:

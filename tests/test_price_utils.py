@@ -1,5 +1,7 @@
 """Unit tests for pure functions in utils / adapters modules."""
 
+import asyncio
+
 import pytest
 
 from utils import (
@@ -11,6 +13,7 @@ from utils import (
     is_soldout_sheet_value,
 )
 from adapters import (
+    ExtractionResult,
     pick_adapter,
     MusinsaAdapter,
     OliveYoungAdapter,
@@ -206,3 +209,81 @@ class TestPickAdapter:
     def test_empty_url_returns_universal(self):
         ad = pick_adapter("")
         assert isinstance(ad, UniversalAdapter)
+
+
+class _FakeLocator:
+    def __init__(self, texts=None):
+        self._texts = list(texts or [])
+
+    @property
+    def first(self):
+        return self
+
+    async def inner_text(self):
+        return self._texts[0] if self._texts else ""
+
+    async def text_content(self):
+        return self._texts[0] if self._texts else ""
+
+
+class _FakePage:
+    def __init__(self, body_text="", visible_selectors=None, locator_texts=None):
+        self.body_text = body_text
+        self.visible_selectors = set(visible_selectors or [])
+        self.locator_texts = dict(locator_texts or {})
+
+    async def goto(self, url, wait_until="domcontentloaded", timeout=None):
+        return None
+
+    async def wait_for_selector(self, selector, state="visible", timeout=None):
+        if selector in self.visible_selectors or self.locator_texts.get(selector):
+            return None
+        raise RuntimeError(f"selector not found: {selector}")
+
+    async def is_visible(self, selector):
+        return selector in self.visible_selectors
+
+    def locator(self, selector):
+        if selector == "body":
+            return _FakeLocator([self.body_text])
+        return _FakeLocator(self.locator_texts.get(selector, []))
+
+
+class TestBaseAdapterContract:
+    def test_base_do_extract_returns_error_when_price_missing(self, monkeypatch):
+        ad = UniversalAdapter()
+        ad._sleep_after_load = 0
+        ad._network_idle_before_retry = False
+        page = _FakePage()
+
+        async def fake_extract_precise(_page):
+            return None
+
+        async def fake_fallback(_page):
+            return None
+
+        monkeypatch.setattr(ad, "extract_precise", fake_extract_precise)
+        monkeypatch.setattr(ad, "_fallback", fake_fallback)
+
+        result = asyncio.run(ad._do_extract(page, "https://example.com/product"))
+
+        assert result == ExtractionResult("error")
+
+    def test_base_do_extract_returns_price_only_with_valid_value(self, monkeypatch):
+        ad = UniversalAdapter()
+        ad._sleep_after_load = 0
+        ad._network_idle_before_retry = False
+        page = _FakePage()
+
+        async def fake_extract_precise(_page):
+            return None
+
+        async def fake_fallback(_page):
+            return 7777
+
+        monkeypatch.setattr(ad, "extract_precise", fake_extract_precise)
+        monkeypatch.setattr(ad, "_fallback", fake_fallback)
+
+        result = asyncio.run(ad._do_extract(page, "https://example.com/product"))
+
+        assert result == ExtractionResult("price", 7777)

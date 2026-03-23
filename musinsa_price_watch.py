@@ -28,7 +28,9 @@ from utils import (
     _normalize_url,
     is_blank_sheet_value,
     is_soldout_sheet_value,
+    normalize_price,
     post_webhook,
+    valid_price_value,
 )
 from adapters import pick_adapter
 
@@ -158,7 +160,9 @@ async def process_one_url(
                         )
                         kind, value = _res.kind, _res.value
 
-            if kind != "error":
+            if kind == "price" and not valid_price_value(value):
+                last_error = f"extract returned invalid price: {value!r}"
+            elif kind != "error":
                 elapsed = loop.time() - started
                 _log.info(f"{ad.name} {url} -> {kind} ({elapsed:.2f}s)")
                 return {
@@ -271,7 +275,9 @@ async def check_once():
 
     removed_count = 0
     changed_count = 0
-    filled_blank_count = 0
+    success_price_count = 0
+    success_soldout_count = 0
+    reconciled_count = 0
     error_count = 0
     pending_cells: list[gspread.Cell] = []
 
@@ -303,26 +309,28 @@ async def check_once():
         changed = prev != curr
 
         existing_sheet_price = sheet_price_by_url.get(url, "")
+        existing_sheet_numeric = normalize_price(existing_sheet_price)
         blank_sheet_price = is_blank_sheet_value(existing_sheet_price)
         soldout_sheet_price = is_soldout_sheet_value(existing_sheet_price)
         write_price = False
-        write_time = changed
-        filled_blank = False
+        write_time = True
+        reconciled = False
         sheet_value = None
 
         if kind == "soldout":
-            if changed or blank_sheet_price or not soldout_sheet_price:
+            success_soldout_count += 1
+            if blank_sheet_price or not soldout_sheet_price:
                 write_price = True
                 sheet_value = "품절"
+                if not changed:
+                    reconciled = True
         else:
-            if changed:
+            success_price_count += 1
+            if existing_sheet_numeric != curr or blank_sheet_price or soldout_sheet_price:
                 write_price = True
                 sheet_value = curr
-            elif curr is not None and (blank_sheet_price or soldout_sheet_price):
-                write_price = True
-                write_time = False
-                filled_blank = True
-                sheet_value = curr
+                if not changed:
+                    reconciled = True
 
         if write_price or write_time:
             if settings.dry_run:
@@ -403,9 +411,13 @@ async def check_once():
         state[url] = curr
         if changed:
             changed_count += 1
-        if filled_blank:
-            filled_blank_count += 1
-            _log_sheet.info(f"Fill: {url} -> {curr}")
+        if reconciled:
+            reconciled_count += 1
+            _log_sheet.info(
+                "Reconciled sourcing row: "
+                f"row={row} url={url} sheet_price_before={existing_sheet_price!r} "
+                f"price_after={curr!r} kind={kind}"
+            )
 
     if pending_cells:
         try:
@@ -416,8 +428,9 @@ async def check_once():
     save_state()
     elapsed = asyncio.get_running_loop().time() - run_started
     _log.info(
-        f"Check summary: total={len(urls_snapshot)} changed={changed_count} "
-        f"filled_blank={filled_blank_count} removed={removed_count} "
+        f"Check summary: total={len(urls_snapshot)} success_price={success_price_count} "
+        f"success_soldout={success_soldout_count} changed={changed_count} "
+        f"reconciled_rows={reconciled_count} removed={removed_count} "
         f"errors={error_count} concurrency={settings.max_concurrency} "
         f"dry_run={settings.dry_run} elapsed={elapsed:.2f}s"
     )
