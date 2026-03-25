@@ -30,7 +30,9 @@
 
 <!-- Current scope. Building toward these. -->
 
-(None — planning next milestone)
+## Current Milestone: v1.1 소싱탭자동기록
+
+**Goal:** 쿠팡 주문 감지 시 소싱목록에서 vendorItemId로 소싱처를 찾아, 해당 소싱처 탭에 주문 정보를 자동 기록
 
 ### Out of Scope
 
@@ -45,6 +47,10 @@
 - `sync_delivery_status_to_sheet()` 함수가 상태 변경 감지 + 시트 업데이트 + 상품준비중 Discord 알림
 - `_notify_pending_preparation()` 헬퍼가 상품준비중 주문 embed 생성 (0건 미전송, 25건+ truncation)
 - `COUPANG_ORDER_WEBHOOK` 환경변수로 주문 Discord 웹훅 URL 설정됨
+- 소싱처별 별도 구글 시트 탭 존재: 무신사, 11번가, 지마켓, 옥션, 네이버, hmall, 올리브영, 복지몰, sk스토아, 사입
+- 소싱처 탭 열 구조 (Row 2 헤더): A=구매날짜, B=주문자명, C=수취인명, D=안심번호, E=배송지, F=메모, G=상품명, H=수량, I=구매처(URL), J=배송회사, L=판매가격, M=매입가격
+- 소싱목록 탭: B=상품명, D=구매링크(URL), H=매입가격, O=vendorItemId(쿠팡)
+- 쿠팡 주문 API `orderItems[0].vendorItemId`로 소싱목록 O열 매칭 가능
 
 ## Constraints
 
@@ -63,4 +69,4 @@
 | _notify_pending_preparation() 분리 | sync 함수 내부 복잡도 관리, 테스트 용이 | ✓ Good |
 
 ---
-*Last updated: 2026-03-20 after v1.0 milestone*
+*Last updated: 2026-03-25 after v1.1 milestone started*

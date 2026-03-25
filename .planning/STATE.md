@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
+milestone: v1.1
+milestone_name: 소싱탭자동기록
 status: planning
-stopped_at: Completed 01-discord-01-PLAN.md
-last_updated: "2026-03-20T13:56:24.897Z"
-last_activity: 2026-03-20 — Roadmap created, milestone v1.0 defined
+stopped_at: null
+last_updated: "2026-03-25"
+last_activity: 2026-03-25 — Milestone v1.1 started
 progress:
-  total_phases: 1
-  completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
   percent: 0
 ---
 
@@ -18,17 +18,17 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-20)
+See: .planning/PROJECT.md (updated 2026-03-25)
 
 **Core value:** 가격 변동과 주문 상태를 실시간으로 파악하여, 수동 모니터링 없이 즉각 대응
-**Current focus:** Phase 1 - 상품준비중 Discord 알림
+**Current focus:** Defining requirements for v1.1 소싱탭자동기록
 
 ## Current Position
 
-Phase: 1 of 1 (상품준비중 Discord 알림)
-Plan: 0 of ? in current phase
-Status: Ready to plan
-Last activity: 2026-03-20 — Roadmap created, milestone v1.0 defined
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-25 — Milestone v1.1 started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -45,12 +45,7 @@ Progress: [░░░░░░░░░░] 0%
 |-------|-------|-------|----------|
 | - | - | - | - |
 
-**Recent Trend:**
-- Last 5 plans: —
-- Trend: —
-
 *Updated after each plan completion*
-| Phase 01-discord P01 | 6 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -59,10 +54,10 @@ Progress: [░░░░░░░░░░] 0%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- [Phase 1]: `COUPANG_ORDER_WEBHOOK` 재사용 — 별도 웹훅 불필요, 주문 관련 알림 통합
-- [Phase 1]: 상품준비중 주문이 없을 때 알림 미발송 (노이즈 방지)
-- [Phase 01-discord]: pytest-asyncio 설치 필요 — 기존 requirements.txt에 없었음, dev 의존성으로 추가
-- [Phase 01-discord]: _notify_pending_preparation()는 sync_delivery_status_to_sheet() 정의 바로 위에 배치 (논리적 근접성 유지)
+- [v1.0 Phase 1]: `COUPANG_ORDER_WEBHOOK` 재사용 — 별도 웹훅 불필요, 주문 관련 알림 통합
+- [v1.0 Phase 1]: 상품준비중 주문이 없을 때 알림 미발송 (노이즈 방지)
+- [v1.0 Phase 01-discord]: pytest-asyncio 설치 필요 — 기존 requirements.txt에 없었음, dev 의존성으로 추가
+- [v1.0 Phase 01-discord]: _notify_pending_preparation()는 sync_delivery_status_to_sheet() 정의 바로 위에 배치
 
 ### Pending Todos
 
@@ -74,6 +69,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-20T08:21:46.974Z
-Stopped at: Completed 01-discord-01-PLAN.md
+Last session: 2026-03-25
+Stopped at: null
 Resume file: None
