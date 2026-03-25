@@ -1,180 +1,201 @@
 # Coding Conventions
 
-**Analysis Date:** 2026-03-20
+**Analysis Date:** 2026-03-25
 
 ## Naming Patterns
 
 **Files:**
-- Snake case: `config.py`, `utils.py`, `adapters.py`, `musinsa_price_watch.py`
-- Test files: `test_*.py` (e.g., `test_coupang_utils.py`, `test_price_utils.py`)
-- Backup/legacy: `musinsa_price_watch_백업본.py` (named descriptively with timestamp/notes)
+- Lowercase with underscores: `utils.py`, `adapters.py`, `musinsa_price_watch.py`
+- Modules grouped by function: price monitoring, Coupang integration, configuration
+- Test files: `test_*.py` (e.g., `test_price_utils.py`, `test_adapter_site_extractors.py`)
 
 **Functions:**
-- Snake case: `normalize_price()`, `build_sheet_row_index()`, `collect_sheet_cells()`, `_domain_key()`
-- Private functions: Leading underscore prefix for internal utilities (`_normalize_url()`, `_do_extract()`, `_fallback()`, `_selector_has_soldout_keyword()`)
-- Async functions: Follow same naming, no special prefix — type hint reveals async nature: `async def check_once()`, `async def process_one_url()`
+- Lowercase with underscores: `normalize_price()`, `looks_like_price_text()`, `extract_price_fallback_generic()`
+- Private/internal functions prefixed with single underscore: `_normalize_url()`, `_domain_key()`, `_build_log_context()`
+- Async functions use `async def`: `async def extract()`, `async def process_one_url()`
+- Adapter methods follow template pattern: `extract()`, `_do_extract()`, `extract_precise()`, `is_sold_out()`, `_fallback()`
 
 **Variables:**
-- Snake case: `state`, `urls_snapshot`, `sheet_price_by_url`, `global_sem`, `domain_sems`
-- Module-level constants: UPPER_CASE: `STATE_FILE`, `MIN_PRICE`, `WEB_TIMEOUT`, `URL_TOTAL_TIMEOUT`
-- CSS selectors as constants: UPPER_CASE descriptive names in `config.py` (e.g., `MUSINSA_EXACT_PRICE_SELECTOR`, `GMARKET_COUPON_XPATH`)
-- Prefix lists: UPPER_CASE (e.g., `MUSINSA_PREFIXES`, `OLIVE_PREFIXES`, `GMARKET_PREFIXES`)
+- Lowercase with underscores: `state`, `urls`, `ws`, `adapter`, `page`
+- Constants in UPPERCASE: `STATE_FILE`, `MIN_PRICE`, `WEB_TIMEOUT`, `URL_TOTAL_TIMEOUT`, `D_COL_INDEX`, `H_COL_INDEX`, `J_COL_INDEX`
+- Module-level loggers: `_log`, `_log_webhook`, `_log_price`, `_log_sheet` (private module loggers)
+- Selector constants: `MUSINSA_EXACT_PRICE_SELECTOR`, `OLIVE_PRICE_SELECTOR`, `GMARKET_COUPON_XPATH`
 
 **Types:**
-- Class names: PascalCase: `BaseAdapter`, `MusinsaAdapter`, `OliveYoungAdapter`, `ExtractionResult`, `Settings`
-- Dataclass: `ExtractionResult` — frozen, slots for immutability
-- Pydantic models: `Settings(BaseSettings)` — uses model_config and @model_validator
+- Use PEP 604 union syntax: `int | None`, `str | None`, `dict[str, str]`
+- Return type hints always present on public functions
+- Dataclass used for result containers: `@dataclass(frozen=True, slots=True) class ExtractionResult`
 
 ## Code Style
 
 **Formatting:**
-- Tool: Ruff (linter/formatter, v0.14.14 in requirements.txt)
-- No explicit format config found; relies on Ruff defaults
-- Line length: Not explicitly configured; observed ~80-100 char typical wrapping
-- Indentation: 4 spaces (standard Python)
+- No explicit formatter config detected; code style appears hand-maintained
+- Line length varies but tends toward reasonable limits
+- Consistent indentation (4 spaces)
+- Module docstrings present: `"""Module purpose\n[imports]\n"""` at file top
 
 **Linting:**
-- Tool: Ruff (primary linter)
-- Cache location: `.ruff_cache/`
-- No `.ruff.toml` or `[tool.ruff]` config in `pyproject.toml`; uses Ruff defaults
-- Focus: Code quality, type hints compliance
+- Type hints used throughout (Python 3.11+)
+- No linting config file detected (`pyproject.toml` has only pytest config)
+- Code follows PEP 8 conventions
 
-**Type Hints:**
-- Modern union syntax used: `int | None`, `list[str]`, `dict[str, int]` (Python 3.10+ style)
-- Function parameters typed: `async def process_one_url(url: str, context, global_sem: asyncio.Semaphore, domain_sems: dict[str, asyncio.Semaphore])`
-- Return types specified: `def build_sheet_row_index(ws) -> tuple[dict[str, int], dict[str, str]]`
-- Dataclass fields typed: `@dataclass(frozen=True, slots=True) class ExtractionResult: kind: str; value: int | None = None`
+**Async/Await:**
+- Consistent use of `async def` for all async functions
+- `await` used for all async calls (e.g., `await page.goto()`, `await loc.count()`)
+- Exception types caught: `TimeoutError as PWTimeout`, `Exception` (generic)
+- Semaphores used for concurrency control: `asyncio.Semaphore`, `asyncio.Lock`
 
 ## Import Organization
 
 **Order:**
-1. Standard library: `asyncio`, `json`, `logging`, `os`, `sys`, `re`, `random`, `datetime`
-2. Third-party: `httpx`, `playwright.async_api`, `apscheduler`, `gspread`, `google.oauth2`, `pydantic`, `pydantic_settings`
-3. Local relative: `from config import ...`, `from utils import ...`, `from adapters import ...`
+1. Standard library: `asyncio`, `json`, `logging`, `os`, `re`, `pathlib`
+2. Third-party: `playwright`, `httpx`, `pydantic`, `apscheduler`, `gspread`
+3. Local modules: `config`, `utils`, `adapters`
 
 **Path Aliases:**
-- No aliases configured; imports use full module paths
-- Example: `from config import settings, KST, STATE_FILE, ...`
-- Relative imports: Not used; absolute imports from project root
+- No path aliases detected; absolute imports used: `from config import settings`
+- Local imports relative to module: `from utils import normalize_price`
 
-**Barrel Files:**
-- Not used; modules export specific classes/functions individually
+**Example from `adapters.py`:**
+```python
+import asyncio
+import logging
+from dataclasses import dataclass
+from playwright.async_api import TimeoutError as PWTimeout
+from config import WEB_TIMEOUT, MUSINSA_PREFIXES
+from utils import normalize_price, valid_price_value
+```
 
 ## Error Handling
 
 **Patterns:**
-- Broad try/except: `try/except Exception` used liberally (no bare `except:` found in codebase)
-- Common pattern: `except Exception as e: log_error(e); continue` or `return default_value`
-- Playwright-specific: `except PWTimeout:` for timeout handling with custom retry logic
-- File I/O: `except FileExistsError:`, `except FileNotFoundError:` for specific lock file operations
-- Async context: `try/finally` with cleanup in `finally` block (e.g., page.close(), listener removal)
-- Validation: Pydantic model_validator for settings validation (e.g., `_resolve_webhook_aliases()`)
+- Generic `except Exception:` used throughout for broad error catching
+- Specific exception types caught when known: `except PWTimeout:`, `except ProcessLookupError:`, `except PermissionError:`
+- No bare `except:` statements (verified via code review)
+- Errors logged via logging module: `_log.error()`, `_log_webhook.error()`
+- Errors do not raise; instead return error indicators in results
 
-**Error Logging:**
-- Logger pattern: Module-level logger `_log = logging.getLogger("musinsa_bot.<module>")`
-- Severity used: `.info()` for normal flow, `.warning()` for fallbacks, `.error()` for failures
-- Detail level: Include context (e.g., elapsed time, URL, adapter name, retry attempt)
-- Example: `_log.error(f"{ad.name} error extracting {url}: {result.get('error')}")`
+**Example from `adapters.py`:**
+```python
+try:
+    await page.wait_for_selector(selector, state="visible", timeout=timeout_ms)
+except Exception:
+    pass
+```
+
+**Example from `utils.py`:**
+```python
+try:
+    return int(m.group(1).replace(",", ""))
+except Exception:
+    return None
+```
+
+**In musinsa_price_watch.py:**
+- File I/O wrapped: `try/except Exception` with fallback to empty state
+- Sheet operations wrapped: catch exceptions, log, continue
 
 ## Logging
 
-**Framework:** Python stdlib `logging` module with custom `setup_logging()` config
+**Framework:** Standard `logging` module with named loggers
 
-**Configuration:**
-- Location: `logging_config.py`
-- Root logger: `musinsa_bot` namespace
-- Handlers: Single StreamHandler to stdout with custom format
-- Format string: `"%(asctime)s [%(name)s] %(levelname)s %(message)s"`
-- Date format: `"%Y-%m-%d %H:%M:%S"` (KST-aware timestamps added separately)
+**Loggers by module:**
+- `musinsa_bot.price` — Price extraction and monitoring (`_log`)
+- `musinsa_bot.sheet` — Google Sheets I/O (`_log_sheet`)
+- `musinsa_bot.webhook` — Discord webhook sends (`_log_webhook`)
+- `musinsa_bot.main` — Main scheduler and instance lock (`_log`)
 
 **Patterns:**
-- Module loggers: `_log = logging.getLogger("musinsa_bot.price")`, `_log_sheet = logging.getLogger("musinsa_bot.sheet")`
-- Info level: Progress, successful extraction, state changes
-- Warning level: Fallbacks, missing config, URL reload failures
-- Error level: Extraction failures, sheet I/O errors, system errors
-- Debug level: DRY_RUN mode skips (logged but not shown by default at INFO level)
+- Info level for normal flow: `_log.info("URL reload summary: ...")`
+- Warning level for recoverable issues: `_log.warning(f"Already running (pid={existing_pid})")`
+- Error level for failures: `_log_webhook.error(f"Webhook send failed: {e}")`
+- Debug level for dry-run/low-priority: `_log_webhook.debug("DRY_RUN webhook skipped")`
 
-**Special loggers:**
-- `musinsa_bot.webhook`: Discord webhook operations
-- `musinsa_bot.price`: Price extraction logic
-- `musinsa_bot.sheet`: Google Sheets I/O
+**Structured logging:**
+- Key=value pairs appended to messages: `f"url={url} adapter={ad.name} kind={result.kind}"`
+- Context built with `_build_log_context(url, **fields)` in adapters
+
+**Example from `musinsa_price_watch.py`:**
+```python
+_log.info(
+    "URL reload summary: "
+    f"sheet_rows_considered={stats['sheet_rows_considered']} "
+    f"sheet_nonempty_urls={stats['sheet_nonempty_urls']} "
+)
+```
 
 ## Comments
 
 **When to Comment:**
-- Algorithm complexity (e.g., retry logic with backoff)
-- Non-obvious state transitions (e.g., `state[url] = None` means soldout, `url not in state` means first load)
-- Workarounds for platform quirks (e.g., Olive Young multiple DOM structures)
-- TODO/FIXME: Avoid in production code; use git issues instead
-- Section headers: Use comment dividers for logical grouping: `# ────────── Section Name ──────────`
+- Docstrings on all modules and public classes/functions
+- Inline comments for non-obvious logic: `# wait a bit for JS to finish`, `# anti-detection`
+- Section separators: `# ── function_name ────────────────────────────────────`
+- No JSDoc/doctest patterns observed
 
-**Code Comments:**
-- Inline comments rare; self-documenting names preferred
-- Example: `# 전체 경과시간이 URL_TOTAL_TIMEOUT을 넘으면 즉시 중단` (Korean comments acceptable in comments but not docstrings)
-- Multi-line docstrings: Module-level docstrings at top of file explain purpose and dependencies
+**Example from `utils.py`:**
+```python
+# ────────── 공유 httpx.AsyncClient (lazy init) ────────────
+_http_client: httpx.AsyncClient | None = None
+
+def _get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(timeout=20)
+    return _http_client
+```
 
 ## Function Design
 
 **Size:**
-- Most functions: 20-50 lines
-- Complex orchestration: `check_once()` ~220 lines (acceptable for critical business logic)
-- Adapter methods: 10-30 lines per adapter method
-- Utility functions: 5-15 lines (pure functions in `utils.py`)
+- Functions typically 5–30 lines
+- Helper functions extracted for reuse (e.g., price extraction helpers)
+- Long methods broken into `_do_extract()`, `_fallback()`, `_extract_site_fallback()` chains
 
 **Parameters:**
-- Maximum ~4 explicit params; async functions often take context/semaphore objects
-- Default parameters: Used for optional behavior (e.g., `write_price: bool = True`, `timeout_each=3000`)
-- Type hints mandatory for public functions
-- Variadic args: Not commonly used; prefer explicit parameters
+- Type hints on all parameters
+- Keyword-only parameters used for optional flags: `def extract_once(..., *, wait_for_lock: bool = False)`
+- Self parameter in methods, explicit context for adapters
 
 **Return Values:**
-- Single return type: `int | None`, `bool`, `dict[str, int]`, `ExtractionResult`
-- Optional returns: Use `int | None` pattern, not sentinel values
-- Multiple returns: Pack into dataclass (`ExtractionResult`) or tuple
-- Early return: Used extensively for guard clauses and error paths
+- Type hints always present
+- Union types for optional returns: `int | None`, `str | None`
+- Structured returns via dataclass: `ExtractionResult(kind, value, meta)`
+- Tuple returns for multi-value results: `tuple[int | None, str | None]`
+
+**Example from `adapters.py`:**
+```python
+async def _extract_price_from_selectors(
+    page, selectors: list[str], *, timeout_ms: int = 1500
+) -> int | None:
+    for selector in selectors:
+        try:
+            await page.wait_for_selector(selector, state="visible", timeout=timeout_ms)
+        except Exception:
+            pass
+        # ...
+    return None
+```
 
 ## Module Design
 
 **Exports:**
-- No explicit `__all__` defined; modules export all public symbols (non-underscore prefix)
-- Private symbols: Prefixed with `_` (e.g., `_get_http_client()`, `_domain_key()`, `_log_webhook`)
+- Public adapters explicitly imported: `from adapters import pick_adapter, GmarketAdapter, ExtractionResult`
+- Utility functions re-exported from `utils`: `from utils import normalize_price, post_webhook`
+- Config singleton exported: `from config import settings`
 
-**Circular Dependencies:**
-- Prevented by strict import order: `config` ← (no imports) ← `utils` ← `adapters` ← `musinsa_price_watch` ← `main`
-- `config.py` has zero internal imports (only stdlib + pydantic)
-- Dependencies documented in module docstrings: `"""Module name\nPurpose.\n意依: config, utils\n"""`
+**Barrel Files:**
+- No `__init__.py` barrel files; modules import directly from source
 
-**Lazy Initialization:**
-- Global HTTP client: `_http_client` singleton with check: `if _http_client is None or _http_client.is_closed`
-- Sheets connection: Not cached; opened fresh each check_once() cycle (handles stale connections)
+**Module Dependencies (non-cyclic):**
+```
+config ← utils ← adapters ← musinsa_price_watch ← main
+config ← coupang_manager ← main
+```
 
-**Module-Level State:**
-- Global variables: `state = {}`, `URLS: list[str] = []` (musinsa_price_watch.py)
-- Locks: `_ORDER_LANE_LOCK`, `_PRODUCT_LANE_LOCK` (main.py) — asyncio.Lock instances
-- Flag variables: `_WEBHOOK_ROUTE_WARNED`, `_INSTANCE_LOCK_HELD` (module-level booleans for one-time init)
-
-## Code Patterns
-
-**Adapter Pattern:**
-- `BaseAdapter` base class with template method `extract()` calling `_do_extract()`
-- Platform-specific adapters override `extract_precise()`, `is_sold_out()` methods
-- UniversalAdapter catches-all for unknown platforms: `matches(url)` always returns True
-- Adapter routing: `pick_adapter(url)` returns first matching adapter, fallback to UniversalAdapter
-
-**Semaphore Ordering:**
-- Domain semaphore nested inside global semaphore: `async with domain_sem: async with global_sem:`
-- Prevents deadlock by enforcing consistent lock hierarchy
-
-**State Management:**
-- JSON file persistence: `state = json.load()`; `state[url] = value`
-- Atomic writes: `json.dump() -> tmp -> os.replace()` pattern
-- Distinction: `state[url] = None` (soldout); `url not in state` (first load)
-
-**Async Orchestration:**
-- `asyncio.gather(*tasks, return_exceptions=True)` for parallel URL processing
-- `asyncio.wait_for(task, timeout=remaining)` for per-URL timeouts
-- Event loop time tracking: `loop = asyncio.get_running_loop(); started = loop.time()`
+**Initialization:**
+- Singletons created at module level: `settings = Settings()`, `state = {}`, `URLS: list[str] = []`
+- Lazy initialization for expensive resources: `_http_client` lazily created on first use
 
 ---
 
-*Convention analysis: 2026-03-20*
+*Convention analysis: 2026-03-25*

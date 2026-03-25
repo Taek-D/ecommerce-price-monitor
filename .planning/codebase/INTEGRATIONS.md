@@ -1,232 +1,174 @@
 # External Integrations
 
-**Analysis Date:** 2026-03-20
+**Analysis Date:** 2026-03-25
 
 ## APIs & External Services
 
-**E-Commerce Price Monitoring:**
-- Musinsa (`https://www.musinsa.com/products/`) - Fashion & lifestyle product prices
-  - SDK/Client: Playwright (headless browser)
-  - Auth: None (public product pages)
-  - Adapter: `MusinsaAdapter` in `adapters.py`
-  - Price selector: `span[class*="Price__CalculatedPrice"]`
+**Coupang OpenAPI:**
+- What: Order automation, product sync, shipping updates, stock management
+- SDK/Client: httpx (custom HMAC-SHA256 signed requests)
+- Auth: `COUPANG_ACCESS_KEY`, `COUPANG_SECRET_KEY` environment variables
+- Signature: HMAC-SHA256 signed method + path + query (function `_make_coupang_signature` in `coupang_manager.py`)
+- Endpoints:
+  - `GET /v2/providers/openapi/apis/api/v4/vendors/{vendorId}/orders` - Fetch orders
+  - `PUT /v2/providers/openapi/apis/api/v4/vendors/{vendorId}/orders/{orderId}/products/{orderItemId}/cancel` - Cancel items
+  - `POST /v2/providers/openapi/apis/api/v4/vendors/{vendorId}/orders/invoices` - Ship orders
+  - `GET /v2/providers/openapi/apis/api/v4/vendors/{vendorId}/products` - List products
+  - `PUT /v2/providers/openapi/apis/api/v4/vendors/{vendorId}/products/{vendorItemId}` - Update product price/stock
+  - `PUT /v2/providers/openapi/apis/api/v4/vendors/{vendorItemId}/status` - Update product status
 
-- OliveYoung (`https://www.oliveyoung.co.kr/`) - Beauty & cosmetics products
-  - SDK/Client: Playwright
-  - Auth: None
-  - Adapter: `OliveYoungAdapter` in `adapters.py`
-  - Status: Cloudflare anti-bot blocking (disabled via `CATEGORIES={}` in discovery_adapters.py)
+**MyMunja SMS Gateway:**
+- What: Send SMS notifications for order updates (배송알림)
+- SDK/Client: httpx POST requests (custom signature)
+- Auth: `MYMUNJA_ID`, `MYMUNJA_PASS`, `MYMUNJA_CALLBACK` environment variables
+- Callback Number: Pre-registered sending number
 
-- GMarket (`https://item.gmarket.co.kr/`) - General e-commerce
-  - SDK/Client: Playwright
-  - Auth: None
-  - Adapter: `GMarketAdapter` in `adapters.py`
-  - Price extraction: XPath `//*[@id='itemcase_basic']//span[contains(@class,'price_innerwrap-coupon')]//strong`
-
-- 29CM (`https://www.29cm.co.kr/`) - Fashion & lifestyle products
-  - SDK/Client: Playwright
-  - Auth: None
-  - Adapter: `TwentyNineAdapter` in `adapters.py`
-  - Price selector: `#pdp_product_price`
-
-- Auction (`https://itempage3.auction.co.kr/`) - General e-commerce
-  - SDK/Client: Playwright
-  - Auth: None
-  - Adapter: `AuctionAdapter` in `adapters.py`
-  - Price selector: `#frmMain > div.box__item-info > div.price_wrap > div:nth-child(2) > strong`
-
-- 11st (`https://www.11st.co.kr/products/`) - General e-commerce
-  - SDK/Client: Playwright
-  - Auth: None
-  - Adapter: `ElevenStAdapter` in `adapters.py`
-  - Price selector: `#finalDscPrcArea > dd.price > strong > span.value`
-
-**Coupang Open API:**
-- Service: Coupang Seller Platform
-  - Endpoint: `https://api-gateway.coupang.com/v2/`
-  - SDK/Client: httpx (async HTTP)
-  - Auth: HMAC-SHA256 signature (access key + secret key)
-  - Env vars: `COUPANG_ACCESS_KEY`, `COUPANG_SECRET_KEY`, `COUPANG_VENDOR_ID`
-  - Endpoints used:
-    - `/vendors/{vendorId}/products` - Fetch vendor product list (paginated)
-    - `/vendors/{vendorId}/products/{vendorItemId}/price-change` - Update product prices
-    - `/vendors/{vendorId}/orders` - Fetch orders by status/date range
-    - `/vendors/{vendorId}/orders/{orderId}/items/{orderItemId}/shipment` - Mark items shipped
-  - Timestamp format: ISO 8601 with KST timezone (`YYYY-MM-DDTHH:MM:SS+09:00`)
-  - Carrier codes supported: CJGLS, HYUNDAI, HANJIN, EPOST, LOGEN, KDEXP, HOMEPICK
-
-**SMS Gateway:**
-- Service: MyMunja SMS
-  - Endpoint: MyMunja API (vendor SMS gateway)
-  - SDK/Client: httpx (async HTTP)
-  - Auth: ID + Password
-  - Env vars: `MYMUNJA_ID`, `MYMUNJA_PASS`, `MYMUNJA_CALLBACK` (pre-registered send number)
-  - Purpose: Order notification SMS to customers (optional, used in `coupang_manager.py`)
+**Discord Webhooks:**
+- What: Price alerts, order notifications, sourcing updates
+- SDK/Client: httpx POST with JSON payload
+- Env vars:
+  - `DISCORD_WEBHOOK_URL` - Default webhook (fallback for all platforms)
+  - `MUSINSA_WEBHOOK` - Musinsa-specific
+  - `OLIVE_WEBHOOK` / `OLIVEYOUNG_WEBHOOK` - OliveYoung-specific
+  - `GMARKET_WEBHOOK` - Gmarket-specific
+  - `TWENTYNINE_WEBHOOK` / `29CM_WEBHOOK` - 29CM-specific
+  - `AUCTION_WEBHOOK` - Auction-specific
+  - `ELEVENST_WEBHOOK` / `ELEVENSTREET_WEBHOOK` - 11st-specific
+  - `COUPANG_ORDER_WEBHOOK` - Coupang order notifications
+- Endpoint: Discord POST to webhook URL with `content` + optional `embeds`
+- Implementation: `utils.post_webhook()` and `coupang_manager.post_webhook()`
 
 ## Data Storage
 
-**Databases:**
-- None (no database server required)
+**Google Sheets:**
+- Primary data store for product URLs, prices, Coupang product management, and orders
+- Spreadsheet ID: `SHEETS_SPREADSHEET_ID` environment variable
+- OAuth2 Service Account: `GOOGLE_SERVICE_ACCOUNT_JSON` (path in `.env`)
+- Scopes: `https://www.googleapis.com/auth/spreadsheets`
+- Client: gspread library + google-auth-oauthlib
+- Worksheets:
+  - `소싱목록` (Sourcing List) - Main worksheet for price tracking (columns D=URL, H=purchase price, J=last update)
+  - `쿠팡상품관리` - Coupang product management (vendor item IDs, prices, stock)
+  - `쿠팡주문관리` - Coupang order tracking (order IDs, items, shipping status, invoice numbers)
+- Implementation: `musinsa_price_watch.py` (load/update functions), `coupang_manager.py` (batch update cells)
+
+**Local JSON State Files:**
+- `price_state.json` - Runtime price cache (URL → price mapping, persisted with atomic writes)
+- `discovery_state.json` - Product discovery cache (sourcing pipeline state)
 
 **File Storage:**
-- Google Sheets (primary data store)
-  - Client: gspread 6.2.1
-  - Spreadsheet ID: `SHEETS_SPREADSHEET_ID` env var
-  - Worksheets:
-    - `SHEETS_WORKSHEET_NAME` (default: "소싱목록") - Price watch list with columns D (URL), H (매입가격), J (업데이트 시각)
-    - `COUPANG_PRODUCT_SHEET` (default: "쿠팡상품관리") - Coupang product inventory sync
-    - `COUPANG_ORDER_SHEET` (default: "쿠팡주문관리") - Order automation tracking
-  - Connection: Service account JSON file (`GOOGLE_SERVICE_ACCOUNT_JSON` env var, path: `safe/service_account.json`)
-  - Auth scope: `https://www.googleapis.com/auth/spreadsheets`
-  - Write optimization: Batch `update_cells()` for multiple cell updates
+- `safe/service_account.json` - Google Service Account key (not committed, git-ignored)
 
-**Local File Storage:**
-- `price_state.json` - Runtime price state (JSON key-value store)
-  - Purpose: Track price changes between runs
-  - Atomic write: tmp file + `os.replace()` pattern
-  - Auto-generated if missing
+## Caching
 
-- `discovery_state.json` - Product discovery pipeline state
-  - Purpose: Track discovered products to avoid duplicates
-  - Generated during product sourcing mode
+**None** - State managed via JSON files (price_state.json) and in-memory dicts
 
 ## Authentication & Identity
 
-**Auth Provider:**
-- Google OAuth2 Service Account
-  - Implementation: google-auth-oauthlib
-  - Key file: `safe/service_account.json` (git-ignored)
-  - Scopes: `https://www.googleapis.com/auth/spreadsheets`
-  - Used by: `musinsa_price_watch.py`, `coupang_manager.py`, helper scripts
+**Google Sheets:**
+- Method: Service Account (OAuth2 with JWT)
+- Key file: `safe/service_account.json`
+- Credentials: `Credentials.from_service_account_file()` from google-auth library
+- Scope: Spreadsheets API read/write
 
-- Coupang API Signature Authentication
-  - Implementation: HMAC-SHA256 signature in `coupang_manager.py`
-  - Algorithm: `hmac.new(secret_key, message, hashlib.sha256).hexdigest()`
-  - Message format: `{method}\n{path}\n{timestamp}\n{access_key}`
+**Coupang OpenAPI:**
+- Method: HMAC-SHA256 request signing
+- Keys: `COUPANG_ACCESS_KEY`, `COUPANG_SECRET_KEY`
+- Signature header: `CEA algorithm=HmacSHA256, access-key=..., signed-date=..., signature=...`
+- Implementation: `_make_coupang_signature()` in `coupang_manager.py` line 202
+
+**MyMunja SMS:**
+- Method: ID + password (basic credentials)
+- Implementation: `MYMUNJA_ID`, `MYMUNJA_PASS` passed in request body
+
+## Ecommerce Platform Scrapers
+
+**Scraped Platforms (via Playwright):**
+- **Musinsa** (`MusinsaAdapter`) - URL pattern: `https://www.musinsa.com/products/`
+- **OliveYoung** (`OliveYoungAdapter`) - URL patterns: `oliveyoung.co.kr` or `m.oliveyoung.co.kr`
+- **Gmarket** (`GmarketAdapter`) - URL patterns: `item.gmarket.co.kr`, `item2.gmarket.co.kr`, `mitem.gmarket.co.kr`
+- **29CM** (`TwentynineAdapter`) - URL patterns: `29cm.co.kr` or `m.29cm.co.kr`
+- **Auction** (`AuctionAdapter`) - URL patterns: `itempage3.auction.co.kr`, `mobile.auction.co.kr`
+- **11st** (`ElevenStAdapter`) - URL patterns: `11st.co.kr` or `m.11st.co.kr`
+- **Smartstore** (`SmartstoreAdapter`) - URL pattern: `smartstore.naver.com`
+- **Enuri** (`EnuriAdapter`) - URL pattern: `enuri.com`
+- **Universal** (`UniversalAdapter`) - Catch-all for any URL (generic DOM selectors)
+
+**Scraper Architecture:**
+- All inherit from `BaseAdapter` in `adapters.py`
+- Each adapter implements `matches(url)`, `extract()`, and optional `extract_precise()` and `is_sold_out()`
+- Playwright page lifecycle: `browser.new_page()` → `goto(url, waitUntil='networkidle')` → CSS/XPath selector extraction → `close()`
+- Dynamic content: Waits for `networkidle`, then evaluates JS if needed
+- Timeout: `WEB_TIMEOUT = 45000` ms (45s per URL)
 
 ## Monitoring & Observability
 
 **Error Tracking:**
-- None (no external error tracking service)
+- None (no Sentry, Rollbar, etc.)
+- Errors logged to stdout via `logging` module
 
 **Logs:**
-- Local filesystem logging via `logging_config.py`
-- Log levels: DEBUG, INFO, WARNING, ERROR
-- Logger hierarchy:
-  - `musinsa_bot.main`
-  - `musinsa_bot.price`
-  - `musinsa_bot.sheet`
-  - `musinsa_bot.coupang.api`
-  - `musinsa_bot.coupang.order`
-  - `musinsa_bot.coupang.shipping`
-  - `musinsa_bot.coupang.sync`
-  - `musinsa_bot.coupang.sourcing`
-  - `musinsa_bot.coupang.stock`
-  - `musinsa_bot.coupang.settlement`
-  - `musinsa_bot.coupang.sms`
-  - `musinsa_bot.coupang.sheet`
-  - `musinsa_bot.coupang.product`
-  - `musinsa_bot.webhook`
+- Method: Python `logging` module configured in `logging_config.py`
+- Loggers: `musinsa_bot.price`, `musinsa_bot.webhook`, `musinsa_bot.coupang.*`, `musinsa_bot.sheet`, etc.
+- Output: `StreamHandler` to stdout with timestamp format `YYYY-MM-DD HH:MM:SS [logger] LEVEL message`
+
+**Diagnostics:**
+- Page diagnostic capture (optional): Enabled via `DIAG_CAPTURE_ENABLED` environment variable
+- Captured data: HTML, text content, and screenshots for failed extractions
+- Stored in `.runtime/diagnostics/` directory
+- Configurable: `DIAG_CAPTURE_DOMAINS`, `DIAG_CAPTURE_MAX_PER_RUN`, `DIAG_CAPTURE_TEXT_LIMIT`
+- Implementation: `diagnostics.py` module with `capture_page_diagnostic()` function
 
 ## CI/CD & Deployment
 
 **Hosting:**
-- Self-hosted (Windows or Linux with Python 3.11+)
-- No cloud platform integration (AWS, Azure, etc.)
+- Self-hosted (runs as persistent async Python process on Windows or Linux)
+- Entry point: `python main.py`
 
 **CI Pipeline:**
-- None (no automated CI/CD configured)
-- Manual testing via pytest: `pytest` command
+- None detected (no GitHub Actions, Jenkins, etc.)
 
-**Scheduling:**
-- APScheduler (in-process) - No external scheduler (Airflow, GitHub Actions, etc.)
-- Runs continuously; schedules jobs:
-  - Price watch: 5-minute intervals (from `main.py`)
-  - Product discovery: 30-minute intervals (configurable)
-  - Order sync: Continuous polling (configurable)
+**Process Management:**
+- Single-instance locking via `LOCK_FILE = ".main.lock"` to prevent concurrent runs
+- Lock file contains PID; stale locks are detected and removed
+- Implementation: `main.py` functions `acquire_single_instance_lock()` and `release_single_instance_lock()`
 
 ## Environment Configuration
 
-**Required env vars (critical):**
-- `GOOGLE_SERVICE_ACCOUNT_JSON` - Path to Google service account key (e.g., `safe/service_account.json`)
-- `SHEETS_SPREADSHEET_ID` - Google Sheets ID (empty by default; must be set)
-- `COUPANG_ACCESS_KEY` - Coupang vendor API access key
-- `COUPANG_SECRET_KEY` - Coupang vendor API secret key
+**Required env vars:**
+- `COUPANG_ACCESS_KEY` - Coupang OpenAPI access key
+- `COUPANG_SECRET_KEY` - Coupang OpenAPI secret key
 - `COUPANG_VENDOR_ID` - Coupang vendor ID
-- `DISCORD_WEBHOOK_URL` or `DEFAULT_WEBHOOK` - Primary Discord webhook for price alerts
+- `GOOGLE_SERVICE_ACCOUNT_JSON` - Path to Google Service Account JSON (default: `safe/service_account.json`)
+- `SHEETS_SPREADSHEET_ID` - Google Sheets spreadsheet ID
+- `SHEETS_WORKSHEET_NAME` - Worksheet name (default: `소싱목록`)
+- `DISCORD_WEBHOOK_URL` or `DEFAULT_WEBHOOK` - Default Discord webhook for all platforms
+- `MYMUNJA_ID` - MyMunja SMS account ID
+- `MYMUNJA_PASS` - MyMunja SMS password
+- `MYMUNJA_CALLBACK` - MyMunja pre-registered callback number
 
-**Optional env vars (feature-specific):**
-```
-MUSINSA_WEBHOOK              # Musinsa-only price alerts
-OLIVE_WEBHOOK / OLIVEYOUNG_WEBHOOK
-GMARKET_WEBHOOK
-TWENTYNINE_WEBHOOK / 29CM_WEBHOOK
-AUCTION_WEBHOOK
-ELEVENST_WEBHOOK / ELEVENSTREET_WEBHOOK
-COUPANG_ORDER_WEBHOOK       # Order automation alerts
-MYMUNJA_ID / MYMUNJA_PASS   # SMS gateway credentials
-MYMUNJA_CALLBACK            # Pre-registered SMS sender number
-COUPANG_PRODUCT_SHEET       # Sheet name for product inventory
-COUPANG_ORDER_SHEET         # Sheet name for order tracking
-COUPANG_PRODUCT_REFRESH_MINUTES  # Refresh interval (default: 30)
-BOT_MODE                    # "full" or "sourcing_only"
-MAX_CONCURRENCY             # Max concurrent requests (default: 5)
-PER_DOMAIN_CONCURRENCY      # Per-domain limit (default: 2)
-DRY_RUN                     # Skip webhook sends (testing mode)
-```
+**Optional env vars:**
+- `BOT_MODE` - `"full"` (default, all jobs) or `"sourcing_only"` (product sourcing only)
+- `COUPANG_PRODUCT_SHEET` - Worksheet name for Coupang products (default: `쿠팡상품관리`)
+- `COUPANG_ORDER_SHEET` - Worksheet name for Coupang orders (default: `쿠팡주문관리`)
+- `COUPANG_PRODUCT_REFRESH_MINUTES` - Product sync interval (default: 30 minutes)
+- Platform-specific webhooks: `MUSINSA_WEBHOOK`, `OLIVE_WEBHOOK`, `GMARKET_WEBHOOK`, `29CM_WEBHOOK`, `AUCTION_WEBHOOK`, `ELEVENST_WEBHOOK`
+- Diagnostics: `DIAG_CAPTURE_ENABLED`, `DIAG_CAPTURE_DOMAINS`, `DIAG_CAPTURE_DIR`, `DIAG_CAPTURE_MAX_PER_RUN`, `DIAG_CAPTURE_TEXT_LIMIT`
+- Dry run: `DRY_RUN=true` (skips webhook sends and API calls)
 
 **Secrets location:**
-- `.env` file (git-ignored) - Development
-- Environment variables - Production
-- Service account key: `safe/service_account.json` (git-ignored, must be placed manually)
+- `.env` file (git-ignored) in project root
+- `safe/service_account.json` (git-ignored) for Google credentials
 
 ## Webhooks & Callbacks
 
 **Incoming:**
-- None (bot sends notifications only)
+- Discord webhook URLs - No incoming webhooks, only outgoing
 
 **Outgoing:**
-- Discord Webhooks (6+ channels possible, platform-specific)
-  - Endpoint: `https://discord.com/api/webhooks/{webhook_id}/{webhook_token}`
-  - Payload format: `{"content": "message", "embeds": [...]}`
-  - Used by: `post_webhook()` in `utils.py` (line 30-47)
-  - Env vars: `DISCORD_WEBHOOK_URL`, `MUSINSA_WEBHOOK`, `OLIVE_WEBHOOK`, etc.
-  - Rate limit: Discord API rate limiting (429 responses)
-
-- Coupang Webhooks (optional, if Coupang sends events)
-  - May be configured via Coupang seller dashboard
-  - No explicit webhook handler in codebase (polling-based order sync instead)
-
-## Data Flow
-
-**Price Check Flow:**
-1. Load URL list from Google Sheets (column D)
-2. Fetch each URL with Playwright (timeout: 90s total, 45s per page)
-3. Detect platform via URL pattern → pick adapter
-4. Extract price via adapter selector or UniversalAdapter fallback
-5. Compare against cached state (`price_state.json`)
-6. If price changed: update Sheets (column H), send Discord webhook
-7. Save new state atomically
-
-**Order Automation Flow (Coupang):**
-1. Poll Coupang API for orders with status "payment confirmed"
-2. Update Sheets with order details (vendor item ID, qty, customer info)
-3. Send SMS notification to customer (optional, via MyMunja)
-4. Automatically set order status to "product ready" in Coupang API
-5. Listen for sheet updates (tracking #, carrier code)
-6. Mark item as shipped in Coupang API
-7. Log settlement data to Sheets
-
-**Product Discovery Flow:**
-1. Crawl each source platform (Musinsa, GMarket, etc.) for product listings
-2. Extract name, price, link using discovery adapters
-3. Deduplicate products
-4. Search Coupang for matching products (fuzzy name match)
-5. Calculate margin (sourcing price vs Coupang price)
-6. Score products (margin, popularity, etc.)
-7. Log to Google Sheets (discovery spreadsheet)
-8. Send Discord summary alerts
+- Discord webhooks - Price alerts, order notifications, product updates, shipping confirmations
+- MyMunja SMS - Order shipment notifications to customers
 
 ---
 
-*Integration audit: 2026-03-20*
+*Integration audit: 2026-03-25*

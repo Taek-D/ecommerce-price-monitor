@@ -1,277 +1,344 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-03-20
+**Analysis Date:** 2026-03-25
 
 ## Test Framework
 
 **Runner:**
-- pytest (v8.0.0+)
-- Plugin: pytest-mock (v3.15.1)
-- Config: `pyproject.toml` with `[tool.pytest.ini_options]`
+- pytest with asyncio support
+- Config: `pyproject.toml` contains pytest configuration
+- `asyncio_mode = "auto"` enables automatic async test handling
 
 **Assertion Library:**
-- pytest built-in assertions (assert statements)
-- No external assertion library (requests/responses handled via basic assertions)
+- Standard `assert` statements (no external assertion library)
 
 **Run Commands:**
 ```bash
 pytest tests/                    # Run all tests
-pytest tests/ -v                 # Verbose output with test names
-pytest tests/ --collect-only     # List all collected tests without running
-pytest tests/test_coupang_utils.py::TestNormalizeCarrierCode::test_korean_cj  # Run specific test
-pytest -k "test_normalize"       # Run tests matching pattern
+pytest tests/test_price_utils.py # Run specific test file
+pytest tests/ -v                 # Verbose output
+pytest tests/ --asyncio-mode=auto  # Explicit async mode
+```
+
+**Test Files Location:**
+```
+tests/
+├── conftest.py                      # Shared fixtures
+├── test_price_utils.py              # Pure function tests
+├── test_adapter_site_extractors.py  # Adapter extraction tests
+├── test_musinsa_price_watch.py      # Integration tests
+├── test_main_lane_lock.py           # Lock/concurrency tests
+├── test_adapter_diagnostics.py      # Diagnostic capture tests
+├── test_notify_pending_preparation.py
+└── test_coupang_utils.py
 ```
 
 ## Test File Organization
 
 **Location:**
-- Separate directory: `/e/musinsa-bot/tests/`
-- Not co-located with source code
-- Cleanly isolated from production files
+- Co-located in `tests/` directory parallel to source
+- `tests/conftest.py` for shared fixtures (currently empty except docstring)
 
 **Naming:**
-- Convention: `test_<module_name>.py`
-- Examples: `test_coupang_utils.py`, `test_price_utils.py`
-- Test discovery: pytest discovers `test_*.py` files
+- `test_*.py` files (pytest discovery pattern)
+- Class-based tests: `class Test[Module][Feature]`
+- Method-based tests: `def test_[behavior]`
 
 **Structure:**
 ```
 tests/
-├── __init__.py              # Empty, marks as package
-├── conftest.py              # Shared fixtures and config
-├── test_coupang_utils.py    # Unit tests for coupang_manager.py functions
-└── test_price_utils.py      # Unit tests for utils.py + adapters.py
+└── test_price_utils.py
+    ├── TestNormalizePrice
+    ├── TestLooksLikePriceText
+    ├── TestValidPriceValue
+    ├── TestNormalizeUrl
+    ├── TestIsBlankSheetValue
+    ├── TestIsSoldoutSheetValue
+    ├── TestPickAdapter
+    └── TestElevenStAdapter
 ```
 
 ## Test Structure
 
 **Suite Organization:**
-- Class-based grouping: Test classes per function family
-- Example from `test_coupang_utils.py`:
 ```python
-class TestNormalizeCarrierCode:
-    def test_korean_cj(self):
-        assert normalize_carrier_code("CJ대한통운") == "CJGLS"
-    def test_korean_hanjin(self):
-        assert normalize_carrier_code("한진택배") == "HANJIN"
-    # ... more test methods
+# From test_price_utils.py
+class TestNormalizePrice:
+    def test_basic(self):
+        assert normalize_price("65,000원") == 65000
+
+    def test_no_comma(self):
+        assert normalize_price("12000") == 12000
+
+    def test_with_surrounding_text(self):
+        assert normalize_price("가격: 9,900원 (할인)") == 9900
 ```
 
-**Test Naming:**
-- Pattern: `test_<scenario_description>`
-- Descriptive names: `test_korean_cj`, `test_exceeds_limit`, `test_dedup`, `test_short_ids_filtered`
-- One assertion per test (generally)
-- Focus: Edge cases, boundaries, error conditions
-
-**Patterns Observed:**
-
-1. **Null/Empty Handling:**
-   - `test_none()` — for None input
-   - `test_empty()` — for empty string/list
-   - `test_empty_dict()` — for empty dict
-
-2. **Type Conversion:**
-   - `test_string_number()` — conversion from string to int
-   - `test_bool_true()` / `test_bool_false()` — boolean rejection
-   - `test_comma_separated()` — comma-delimited string parsing
-
-3. **Boundary/Threshold Testing:**
-   - `test_exactly_min()` — value at boundary
-   - `test_below_min()` — value below boundary
-   - `test_above_min()` — value above boundary
-   - `test_exact_limit()` — text at exact character limit
-
-4. **Fallback/Priority:**
-   - `test_priority_order()` — which value wins when multiple exist
-   - `test_fallback_product_name()` — secondary option when primary missing
-   - `test_shipping_count_priority()` — semaphore selection order
-
-5. **Deduplication/Normalization:**
-   - `test_dedup()` — duplicate removal
-   - `test_lowercase_and_strip()` — text normalization
-   - `test_special_chars_removed()` — char filtering
-
-6. **Adapter Selection:**
-   - `test_musinsa()`, `test_oliveyoung()`, etc. — adapter routing by URL
-   - `test_unknown_url_returns_universal()` — fallback to UniversalAdapter
+**Patterns:**
+- One test class per function/component
+- Test method names describe the behavior: `test_basic`, `test_no_comma`, `test_empty_string`
+- No explicit setup/teardown; fixtures passed via function parameters
+- Fixtures created inline via test helper classes (see mocking section below)
 
 ## Mocking
 
-**Framework:** pytest-mock plugin (pytest-mock >= 3.15.1)
+**Framework:** Manual mock classes (no external mocking library detected)
 
 **Patterns:**
-- No extensive mocking in current tests
-- Focus: Pure function testing without external dependencies
-- Async mocking: Not implemented (no async tests present)
+
+### Fake Page Object (for Playwright testing):
+```python
+# From test_adapter_site_extractors.py
+class _FakePage:
+    def __init__(
+        self,
+        *,
+        body_text="",
+        visible_selectors=None,
+        locator_texts=None,
+        locator_attrs=None,
+    ):
+        self.body_text = body_text
+        self.visible_selectors = set(visible_selectors or [])
+        self.locator_texts = dict(locator_texts or {})
+        self.locator_attrs = dict(locator_attrs or {})
+
+    async def goto(self, url, wait_until="domcontentloaded", timeout=None):
+        return None
+
+    async def wait_for_selector(self, selector, state="visible", timeout=None):
+        if (
+            selector in self.visible_selectors
+            or self.locator_texts.get(selector)
+            or self.locator_attrs.get(selector)
+        ):
+            return None
+        raise PWTimeout(f"selector not found: {selector}")
+
+    def locator(self, selector):
+        if selector == "body":
+            return _FakeLocator([self.body_text])
+        return _FakeLocator(
+            texts=self.locator_texts.get(selector, []),
+            attrs=self.locator_attrs.get(selector, {}),
+        )
+```
+
+### Fake Locator Object:
+```python
+class _FakeLocator:
+    def __init__(self, texts=None, attrs=None):
+        self._texts = list(texts or [])
+        self._attrs = dict(attrs or {})
+
+    @property
+    def first(self):
+        return self
+
+    async def inner_text(self):
+        return self._texts[0] if self._texts else ""
+
+    async def all_text_contents(self):
+        return list(self._texts)
+
+    async def count(self):
+        return len(self._texts) or (1 if self._attrs else 0)
+
+    async def get_attribute(self, name):
+        return self._attrs.get(name)
+```
+
+### Fake Worksheet and Google Sheets:
+```python
+# From test_musinsa_price_watch.py
+class _FakeWorksheet:
+    def __init__(self, rows):
+        self._rows = rows
+        self.updated_cells = []
+
+    def col_values(self, col_index):
+        values = []
+        for row in self._rows:
+            if len(row) >= col_index:
+                values.append(row[col_index - 1])
+            else:
+                values.append("")
+        return values
+
+    def update_cells(self, cells):
+        self.updated_cells.append(
+            [(cell.row, cell.col, cell.value) for cell in cells]
+        )
+```
+
+### Monkeypatch Usage:
+```python
+def _set_common_mocks(monkeypatch, ws, result_by_url):
+    monkeypatch.setattr(mpw, "_open_sheet", lambda: ws)
+    monkeypatch.setattr(mpw, "async_playwright", lambda: _FakePlaywrightManager())
+    monkeypatch.setattr(mpw, "save_state", lambda: None)
+    monkeypatch.setattr(mpw, "post_webhook", AsyncMock())
+    monkeypatch.setattr(mpw, "datetime", _FrozenDateTime)
+```
 
 **What to Mock:**
-- External HTTP requests (would use httpx/responses or pytest-httpx if added)
-- Google Sheets I/O (would mock gspread client)
-- Playwright browser (would mock async_playwright if testing adapters directly)
+- Playwright page objects → Use `_FakePage` with manually configured selectors and text
+- Google Sheets worksheet → Use `_FakeWorksheet` with pre-loaded rows
+- External API calls → Use `AsyncMock()` from `unittest.mock`
+- Time-dependent code → Subclass `datetime` to return frozen time
 
 **What NOT to Mock:**
-- Pure utility functions (test with real inputs)
-- Adapter routing (test with real URL strings)
-- Local state (JSON read/write can be tested with temp files)
+- Pure functions like `normalize_price()`, `looks_like_price_text()` → Test directly
+- Adapter logic flow → Use fake page, test actual extraction logic
+- Result dataclasses → Create instances directly, assert equality
 
 ## Fixtures and Factories
 
 **Test Data:**
-- Inline literals: Most tests use hardcoded string/int values
-- Pattern in `test_coupang_utils.py`:
 ```python
-def test_vendor_item_name(self):
-    assert _order_item_name({"vendorItemName": "상품A"}) == "상품A"
+# From test_musinsa_price_watch.py
+def _sheet_rows(url, price="10,000", ts="2026-03-01 00:00:00"):
+    return [
+        ["meta"],
+        ["헤더", "", "", "구매링크", "", "", "", "매입가격", "", "갱신시각"],
+        ["1", "상품", "", url, "", "", "", price, "", ts],
+    ]
 ```
 
-- No factory functions or pytest fixtures for data generation
+**Frozen Time Fixture:**
+```python
+class _FrozenDateTime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return cls(2026, 3, 23, 12, 34, 56, tzinfo=tz)
+```
 
 **Location:**
-- Module-level: No shared fixtures defined
-- conftest.py: Minimal — only docstring, no actual fixtures configured
-- Test classes: All data inline within test methods
+- Test data factories defined in test file as helper classes (prefixed with `_`)
+- No separate fixtures directory
+- `conftest.py` exists but is minimal (only docstring currently)
+
+## Async Testing
+
+**Pattern:**
+```python
+def test_do_extract_returns_price_when_precise_price_exists(self):
+    ad = ElevenStAdapter()
+    ad._sleep_after_load = 0
+    ad._network_idle_before_retry = False
+    page = _FakePage(locator_texts={ad.EXACT_PRICE_SELECTOR: ["12,345"]})
+
+    result = asyncio.run(ad._do_extract(page, "https://www.11st.co.kr/products/123"))
+
+    assert result == ExtractionResult("price", 12345)
+```
+
+- Use `asyncio.run()` to execute async functions in test context
+- Pytest `asyncio_mode = "auto"` eliminates need for `@pytest.mark.asyncio`
+- Mock async functions with `AsyncMock()` from `unittest.mock`
+
+## Error Testing
+
+**Pattern:**
+```python
+def test_do_extract_returns_error_without_precise_price_or_fallback(
+    self, monkeypatch
+):
+    ad = ElevenStAdapter()
+    ad._sleep_after_load = 0
+    ad._network_idle_before_retry = False
+    page = _FakePage()
+
+    async def unexpected_fallback(_page):
+        raise AssertionError("fallback should not be called for 11st")
+
+    monkeypatch.setattr(ad, "_fallback", unexpected_fallback)
+
+    result = asyncio.run(ad._do_extract(page, "https://www.11st.co.kr/products/123"))
+
+    assert result == ExtractionResult("error")
+```
+
+- Use `monkeypatch` fixture to replace functions and assert side effects
+- For exception testing, create mock that raises expected exception
+- For state verification, capture calls/state in fake objects
 
 ## Coverage
 
-**Requirements:**
-- Not enforced (no coverage targets in config, no pytest-cov in requirements.txt)
-- Observed coverage: ~136 collected tests across two modules
-
-**Test Count by Module:**
-- `test_coupang_utils.py`: ~110 tests (14 test classes covering 14 functions)
-- `test_price_utils.py`: ~26 tests (7 test classes covering 7 functions + 1 adapter routing class)
+**Requirements:** No coverage target enforced (no coverage configuration in `pyproject.toml`)
 
 **View Coverage:**
-- Coverage tool not installed; would require: `pip install pytest-cov`
-- Command (if installed): `pytest tests/ --cov=<module> --cov-report=term-missing`
+```bash
+pytest --cov=. tests/
+pytest --cov=. tests/ --cov-report=html
+```
 
 ## Test Types
 
 **Unit Tests:**
-- **Scope:** Pure functions in `utils.py`, `adapters.py`, `coupang_manager.py`
-- **Approach:** Direct function calls with fixed inputs, assertion on outputs
-- **No external calls:** All tests run offline (no network, no DB, no sheets)
-- **Examples:**
-  - `test_normalize_price()`: Math validation (regex + int conversion)
-  - `test_looks_like_price_text()`: Keyword filtering logic
-  - `test_pick_adapter()`: Adapter routing selection
-  - `test_normalize_carrier_code()`: Carrier code mapping
+- **Scope:** Individual functions and methods
+- **Location:** `tests/test_price_utils.py`, `tests/test_adapter_site_extractors.py`
+- **Approach:** Direct function call with known inputs, assert output
+- **Example:**
+  ```python
+  class TestNormalizePrice:
+      def test_basic(self):
+          assert normalize_price("65,000원") == 65000
+  ```
 
 **Integration Tests:**
-- **Status:** Not present in codebase
-- **What's missing:** Sheet I/O, Playwright page interaction, Discord webhook posting
-- **Gap:** `musinsa_price_watch.py`, `coupang_manager.py` job functions not tested
+- **Scope:** Multi-component workflows (e.g., adapter + sheets + webhook)
+- **Location:** `tests/test_musinsa_price_watch.py`
+- **Approach:** Mock external services (sheets, playwright), test orchestration logic
+- **Example:**
+  ```python
+  def test_check_once_updates_timestamp_for_unchanged_success(monkeypatch):
+      # Setup: fake worksheet, fake result
+      # Call: asyncio.run(mpw.check_once())
+      # Assert: worksheet updated, state preserved
+  ```
 
 **E2E Tests:**
-- **Status:** Not used
-- **Would test:** Full scheduler lifecycle, multi-job orchestration
+- **Framework:** Not used (no headless browser e2e tests detected)
+- **Note:** Manual testing via main scheduler
 
 ## Common Patterns
 
-**Assertion Style:**
+**Monkeypatch for Module-Level Mocking:**
 ```python
-# Single assert per test
-assert normalize_price("65,000원") == 65000
-
-# Compound for related assertions
-score = _fuzzy_name_score("hello world", "hello worl")
-assert score > 80
-
-# Boundary check
-result = _short_text(text, 60)
-assert len(result) <= 60
-assert result.endswith("…")
+def _set_common_mocks(monkeypatch, ws, result_by_url):
+    monkeypatch.setattr(mpw, "_open_sheet", lambda: ws)
+    monkeypatch.setattr(mpw, "async_playwright", lambda: _FakePlaywrightManager())
+    monkeypatch.setattr(mpw, "post_webhook", AsyncMock())
+    monkeypatch.setattr(mpw, "datetime", _FrozenDateTime)
 ```
 
-**None Handling:**
+**Caplog for Log Assertion:**
 ```python
-def test_none(self):
-    assert _function_name(None) is None  # or specific return value
+def test_structured_data_key_miss_logs_goodscode(self, caplog):
+    ad = GmarketAdapter()
+    page = _FakePage(locator_texts={"script[type='application/ld+json']": ['{"foo":"bar"}']})
+    long_url = "https://item.gmarket.co.kr/Item?goodscode=3559411802"
 
-# With type ignore for type checker
-assert _normalize_vendor_item_id(None) is None  # type: ignore[arg-type]
+    caplog.set_level("INFO", logger="musinsa_bot.price")
+    price, attempted = asyncio.run(ad._extract_structured_price(page, long_url))
+
+    assert "failure_stage=script_key_miss" in caplog.text
+    assert "goodscode=3559411802" in caplog.text
 ```
 
-**Empty Input:**
+**Instance Assertion on Adapter Routing:**
 ```python
-def test_empty_string(self):
-    assert _parse_vendor_item_ids("") == []
+class TestPickAdapter:
+    def test_musinsa(self):
+        ad = pick_adapter("https://www.musinsa.com/products/12345")
+        assert isinstance(ad, MusinsaAdapter)
 
-def test_empty_dict(self):
-    assert _order_item_qty({}) == 1
+    def test_unknown_url_returns_universal(self):
+        ad = pick_adapter("https://www.amazon.com/dp/B123")
+        assert isinstance(ad, UniversalAdapter)
 ```
-
-**String Normalization:**
-```python
-def test_lowercase_and_strip(self):
-    result = _normalize_product_name("  Hello World  ")
-    assert result == "hello world"
-```
-
-## Test Configuration
-
-**Pytest Config:** (`pyproject.toml`)
-```toml
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-```
-
-**Plugins:**
-- `pytest-mock`: Mocking support (installed)
-- `pytest-anyio`: Async support available but not configured
-
-**No Additional Config:**
-- No markers defined
-- No asyncio mode configured
-- No timeout settings
-- No coverage thresholds
-
-## Missing Test Coverage
-
-**Gaps:**
-1. **Async Functions:**
-   - `check_once()` — main scheduling cycle
-   - `process_one_url()` — parallel URL processing
-   - `post_webhook()` — Discord posting
-   - `extract()`, `is_sold_out()`, `extract_precise()` — adapter methods
-   - All Coupang job functions (order, sync, shipping, settlement, etc.)
-
-2. **I/O Operations:**
-   - Google Sheets read/write (`build_sheet_row_index()`, `collect_sheet_cells()`, `ws.update_cells()`)
-   - JSON state persistence (`load_state()`, `save_state()`)
-   - File locking (`acquire_single_instance_lock()`, `release_single_instance_lock()`)
-
-3. **Integration Flows:**
-   - End-to-end price check cycle with state updates
-   - Multi-URL concurrent processing with semaphores
-   - Scheduler job execution and timing
-
-4. **Error Paths:**
-   - Network timeout handling in adapters
-   - Sheet access failures with fallbacks
-   - Malformed JSON recovery
-
-**Risk:** Large untested surface area in critical job functions (`coupang_manager.py` jobs account for ~140KB of the codebase).
-
-## Test Execution
-
-**Run All Tests:**
-```bash
-cd /e/musinsa-bot
-python -m pytest tests/
-```
-
-**Expected Output:**
-- 136 tests collected
-- All pass (as of 2026-03-20)
-- Execution time: <1 second (no async, no I/O)
-
-**Watch Mode:**
-- Not configured in project
-- Would require: pytest-watch plugin
-- Command (if installed): `ptw tests/`
 
 ---
 
-*Testing analysis: 2026-03-20*
+*Testing analysis: 2026-03-25*

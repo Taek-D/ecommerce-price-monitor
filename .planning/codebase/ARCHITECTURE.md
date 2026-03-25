@@ -1,226 +1,230 @@
 # Architecture
 
-**Analysis Date:** 2026-03-20
+**Analysis Date:** 2026-03-25
 
 ## Pattern Overview
 
-**Overall:** Multi-lane scheduler with layered adapter pattern
+**Overall:** Event-driven, async-first bot with two independent processing lanes (Order + Product) and adapter pattern for platform-specific price extraction.
 
 **Key Characteristics:**
-- Async/await event-driven architecture using APScheduler
-- Adapter pattern for platform-agnostic price extraction
-- Two concurrent processing lanes (order lane & product lane) with lock-based serialization
-- State machine model for price change detection (price → soldout → price transitions)
-- Template method pattern in base adapter for common extraction flow
+- Async/await throughout (asyncio + APScheduler)
+- Adapter pattern for multi-platform price extraction with hierarchical fallback strategy
+- Two-lane locking system to prevent concurrent sheet access conflicts (Order lane vs Product lane)
+- Semaphore-based concurrency control with per-domain rate limiting
+- Template method pattern in BaseAdapter for standardized extraction workflow
 
 ## Layers
 
-**Entry Point Layer:**
-- Purpose: Single-instance process management and job scheduling
-- Location: `main.py`
-- Contains: Process locking, scheduler registration, lane-specific job wrappers, two-lane parallel startup
-- Depends on: All other modules
-- Used by: System process manager
-
 **Configuration Layer:**
-- Purpose: Centralized settings, constants, and environment variable management
+- Purpose: Centralized settings and platform-specific CSS selectors/XPath expressions
 - Location: `config.py`
-- Contains: Pydantic BaseSettings singleton, CSS selectors, API keys, webhook URLs, column indices
-- Depends on: pydantic-settings, python-dotenv
-- Used by: All other modules (dependency root)
+- Contains: Pydantic BaseSettings singleton, CSS selectors for 8 ecommerce platforms, constants (timeouts, price thresholds)
+- Depends on: None (root of dependency chain)
+- Used by: All other modules
 
-**Price Monitoring Layer:**
-- Purpose: Extract product prices from ecommerce sites and detect changes
-- Location: `musinsa_price_watch.py`
-- Contains: Price state machine, URL orchestration, Google Sheets I/O, change detection logic, webhook dispatch
-- Depends on: config, utils, adapters
-- Used by: main.py (scheduled job)
-
-**Adapter Layer:**
-- Purpose: Platform-specific and fallback price extraction logic
-- Location: `adapters.py`
-- Contains: BaseAdapter template, 6 platform adapters (Musinsa, OliveYoung, Gmarket, 29CM, Auction, 11st), UniversalAdapter
-- Depends on: config, utils
-- Used by: musinsa_price_watch.py, coupang_manager.py
-
-**Utilities Layer:**
-- Purpose: Shared pure functions for price normalization, URL validation, webhook dispatch, Playwright helpers
+**Utility Layer:**
+- Purpose: Shared primitives (price normalization, Discord webhooks, HTTP client, Playwright helpers)
 - Location: `utils.py`
-- Contains: Price parsing, sheet validation, Discord webhook posting, network idle detection, fallback extraction
+- Contains: Price regex parsing, webhook posting, async HTTP client management, network idle detection
 - Depends on: config
-- Used by: All upper layers
+- Used by: adapters, musinsa_price_watch, coupang_manager
 
-**Coupang Automation Layer:**
-- Purpose: Coupang Open API integration for order processing, inventory sync, shipping automation, settlement reporting
-- Location: `coupang_manager.py`
-- Contains: 8 async job functions (order/sync/shipping/stock/settlement/sourcing), API request signing, Google Sheets batch operations, SMS integration
+**Adapter Layer (Price Extraction):**
+- Purpose: Platform-specific price extraction with fallback pipeline
+- Location: `adapters.py`
+- Contains: `BaseAdapter` abstract base class + 9 concrete adapters (Musinsa, OliveYoung, Gmarket, 29CM, Auction, 11st, Enuri, Smartstore, UniversalAdapter), `ExtractionResult` dataclass
 - Depends on: config, utils
-- Used by: main.py (multiple scheduled jobs)
+- Used by: musinsa_price_watch, diagnostics
 
-**Logging Layer:**
-- Purpose: Structured logging configuration
-- Location: `logging_config.py`
-- Contains: Logger factory with namespace-based hierarchy (musinsa_bot.*, musinsa_bot.coupang.*)
-- Depends on: Python logging module
-- Used by: All modules
+**Price Watch Layer (Monitoring):**
+- Purpose: URL sourcing, state management, change detection, sheet synchronization
+- Location: `musinsa_price_watch.py`
+- Contains: Google Sheets integration, URL loading, state persistence (JSON), change detection, webhook notifications
+- Depends on: config, utils, adapters
+- Used by: main
+
+**Coupang Automation Layer (Order Processing):**
+- Purpose: Coupang Open API integration for order, shipping, stock, settlement automation
+- Location: `coupang_manager.py`
+- Contains: Multiple async job functions (coupang_order_job, shipping_job, settlement_job, sourcing_price_job, sourcing_match_job, stock_check_job), HMAC signature generation, Google Sheets batch updates
+- Depends on: config, utils
+- Used by: main
+
+**Diagnostics Layer:**
+- Purpose: Optional capture of failed page states for debugging
+- Location: `diagnostics.py`
+- Contains: Page diagnostic capture, selector/script probing, budget-limited captures
+- Depends on: config
+- Used by: adapters
+
+**Entry Point / Scheduler:**
+- Purpose: Single-instance lock enforcement, job scheduling, lane locking, mode switching
+- Location: `main.py`
+- Contains: APScheduler setup, two asyncio.Lock objects (_ORDER_LANE_LOCK, _PRODUCT_LANE_LOCK), per-mode job registration, startup initialization
+- Depends on: config, musinsa_price_watch, coupang_manager, adapters
+- Used by: None (entry point)
 
 ## Data Flow
 
-**Price Monitoring Flow:**
+**Price Monitoring Flow (check_once):**
 
-1. **Load Phase** — `main()` calls `load_state()` → parse `price_state.json` into memory dict
-2. **URL Discovery** — `check_once()` opens Google Sheets → reads column D (URLs) → deduplicates → caches in `URLS` global
-3. **Extraction Phase** — Launch Playwright browser context → create semaphore-controlled task pool
-   - Global semaphore limits total concurrent pages: `max_concurrency` (default 5)
-   - Per-domain semaphore limits parallel requests to each site: `per_domain_concurrency` (default 2)
-4. **Per-URL Processing** — `process_one_url()` for each URL:
-   - Select adapter via `pick_adapter(url)` (prefix match → UniversalAdapter)
-   - Create new page within semaphores
-   - Call `adapter.extract(page, url)` → returns `ExtractionResult(kind, value)`
-   - Retry on timeout up to `url_retry_count` attempts with exponential backoff
-   - Per-URL timeout enforced: `URL_TOTAL_TIMEOUT` (90 seconds)
-5. **Change Detection** — Compare extracted price/status against `state[url]`:
-   - Null → soldout indicator
-   - Soldout → price indicates re-stock
-   - Price change triggers notification
-6. **Sheet Update** — Batch collect changed cells → single `ws.update_cells()` call
-7. **State Persistence** — Atomic write: `price_state.json.tmp` → rename to `price_state.json`
-8. **Webhook Dispatch** — Post Discord embeds with change summary (price delta, re-stock, etc.)
+1. Load URLs from Google Sheets (D column)
+2. Build state lookup from config (config price state.json, current sheet values)
+3. For each URL in parallel (with per-domain rate limiting):
+   - Acquire domain semaphore + global semaphore
+   - Select adapter via `pick_adapter(url)` — routes by URL prefix, falls back to UniversalAdapter
+   - Launch Playwright page in context
+   - Adapter extracts price via 4-stage pipeline:
+     a. `is_sold_out()` — check for soldout indicators
+     b. `extract_precise()` — platform-specific selector
+     c. `_extract_site_fallback()` — site-specific CSS/XPath fallbacks
+     d. `_extract_structured_price()` — JSON-LD/meta tags
+     e. `_fallback()` — generic price scan across page
+   - Return ExtractionResult(kind, value, meta) — kind is "price" | "soldout" | "error"
+4. Detect changes: compare current price to state[url]
+5. For each changed URL: post Discord webhook + batch update Google Sheets (H column price, J column timestamp)
+6. Save state to price_state.json (atomic write via .tmp + os.replace)
 
-**Coupang Order Processing Flow:**
+**Order Processing Flow (coupang_order_job):**
 
-1. **Order Detection** — `coupang_order_job()` reads "쿠팡주문관리" sheet
-2. **Order Item Lookup** — Call Coupang API `/vendors/{vendorId}/orders`
-3. **Status Update** — Transition order state: 결제완료 → 발주확인 → 상품준비중
-4. **SMS Dispatch** — Extract recipient phone, call 마이문자 API
-5. **Sheet Record** — Write orderItemId, SMS timestamp to sheet
+1. Query Coupang API for orders with status "DELIVERY_START" (5-day window)
+2. For each order:
+   - Extract order details (OrderId, items, prices, recipient phone)
+   - Validate price against sourcing min_price guardrail
+   - Append to Google Sheets (Coupang주문관리 tab)
+   - Send SMS via MyMunja API (privacy notice only)
+   - Call Coupang "Confirm Order" API to set to "상품준비중"
+   - Post webhook to Discord with order summary
 
-**Coupang Inventory Sync Flow:**
+**Shipping Processing Flow (shipping_job):**
 
-1. **Product Fetch** — Call Coupang `/vendors/{vendorId}/products`
-2. **Sheet Write** — Batch update "쿠팡상품관리" with vendorItemId, name, price, stock, status
-3. **Price Sync** — Compare sourcing sheet minimum price → call Coupang price update API if changed
+1. Poll Google Sheets (Coupang주문관리 tab) for K column (송장번호 = tracking number) updates
+2. For each row with new tracking number:
+   - Extract shipping data (trackingNumber, carrierCode, orderItemId)
+   - Call Coupang "Ship Product" API to set status to "배송중"
+   - Update L column (택배사코드) if normalized
+   - Log shipment
+
+**Sourcing Price Sync Flow (sourcing_price_job):**
+
+1. Load all sourcing URLs from Google Sheets (different tab: 소싱목록)
+2. For each URL: extract price (same adapter pipeline as check_once)
+3. Compare to sheet current prices
+4. Batch update changed rows
+5. Maintain min_price guardrail for Coupang price validation
 
 **State Management:**
 
-- **Local Runtime State** — `price_state.json` (dict of url → price|None)
-  - Null value means "last known status was soldout"
-  - Absence from dict means "never seen before"
-  - Distinction critical for re-stock detection
-- **Google Sheets State** — Persistent record of price history
-  - Column H (index 8): current price or "품절" text
-  - Column J (index 10): timestamp of last change
-  - Used as fallback if local state corrupted
-- **Lane Locks** — `_ORDER_LANE_LOCK` and `_PRODUCT_LANE_LOCK` prevent concurrent sheet mutations
-  - Order lane: coupang_order_job → shipping_job → settlement_job → sourcing_order_match_job (strict order)
-  - Product lane: coupang_sync_job → sourcing_match_job → sourcing_price_job → stock_check_job (strict order)
+- In-memory: `state = {url: current_price or None}` (None means soldout detected)
+- Persisted: `price_state.json` (JSON file, atomic writes via tmp + os.replace)
+- Sheet state: Google Sheets values cached at runtime (no polling, sheet is source of truth for URLs)
+- Concurrency: Two lanes (_ORDER_LANE_LOCK, _PRODUCT_LANE_LOCK) ensure no concurrent sheet writes
 
 ## Key Abstractions
 
 **BaseAdapter:**
-- Purpose: Template for platform-specific extraction
-- Examples: `MusinsaAdapter`, `OliveYoungAdapter`, `GmarketAdapter`, `TwentyNineCMAdapter`, `AuctionAdapter`, `ElevenStAdapter`, `UniversalAdapter` in `adapters.py`
-- Pattern:
-  - `matches(url)` — check if URL belongs to this platform
-  - `extract(page, url)` — template method that wraps error handling
-  - `_do_extract(page, url)` — retry loop with timeout handling
-  - `extract_precise(page)` — subclass override: platform-specific selector-based extraction
-  - `is_sold_out(page)` — subclass override: soldout detection logic
-  - `_fallback(page)` → `extract_price_fallback_generic()` — fallback extraction using broad selectors
+- Purpose: Defines extraction template method for all platforms
+- Examples: `MusinsaAdapter`, `GmarketAdapter`, `UniversalAdapter` in `adapters.py`
+- Pattern: Template method with 5 override points (is_sold_out, extract_precise, _extract_site_fallback, _extract_structured_price, _fallback)
+- Retry logic: Built-in timeout retry (configurable _retry_on_timeout, _retry_backoff)
+- Diagnostics: Selective page capture on errors/non-precise fallbacks
 
 **ExtractionResult:**
-- Purpose: Immutable result tuple for extraction operations
-- Structure: `dataclass(frozen=True)` with fields: `kind` ("price"|"soldout"|"error") and `value` (int|None)
-- Used by: All adapters and consumers of extraction results
+- Purpose: Immutable frozen dataclass for extraction outcomes
+- Location: `adapters.py` line 100-104
+- Structure: `kind` (price|soldout|error), `value` (int|None), `meta` (diagnostics dict)
+- Used by: All adapters, check_once change detection
 
-**Settings:**
-- Purpose: Pydantic BaseSettings singleton for centralized configuration
-- Features: Env var loading, validation, alias resolution (e.g., `29CM_WEBHOOK` → `twentynine_cm_webhook`)
-- Location: `config.Settings` instance (`config.settings`)
+**Settings (Pydantic BaseSettings):**
+- Purpose: Centralized env var + .env file loading
+- Location: `config.py` line 233-284
+- Auto-loads from .env, supports webhook URL aliases (default_webhook → discord_webhook_url)
+- Singleton: `settings` instance at module level
 
-**Lane Lock Pattern:**
-- Purpose: Prevent concurrent sheet mutations across related jobs
-- Implementation: Two asyncio.Lock instances (`_ORDER_LANE_LOCK`, `_PRODUCT_LANE_LOCK`)
-- Usage: Each job wrapped via `_run_with_lane_lock()` → waits for lock or skips if busy
+**ExtractionPipeline (implicit in _do_extract):**
+- Purpose: 4-stage fallback sequence ensures robust price extraction even when selectors change
+- Stages: precise_dom → site_fallback → structured_data → fallback_generic
+- Stage trace logged in ExtractionResult.meta for debugging
 
 ## Entry Points
 
-**main.py `main()`:**
-- Location: `main.py` lines 256–377
-- Triggers: System process (via asyncio.run)
+**main():**
+- Location: `main.py` line 303-417
+- Triggers: Direct CLI invocation `python main.py`
 - Responsibilities:
-  - Acquire single-instance lock (prevent duplicate processes)
-  - Resolve BOT_MODE (full|sourcing_only)
-  - Load price state
-  - Run initial lane jobs (startup phase)
-  - Register scheduled jobs with APScheduler
-  - Block on event loop until Ctrl+C
+  - Single-instance lock enforcement (file-based lock via .main.lock)
+  - Load price state (if full mode)
+  - Run startup jobs (initial check_once, initial coupang lanes)
+  - Register scheduled jobs (APScheduler with interval triggers + jitter)
+  - Block forever on event loop
 
-**musinsa_price_watch.py `check_once()`:**
-- Location: `musinsa_price_watch.py` lines 202–423
-- Triggers: 5-minute scheduled job
-- Responsibilities:
-  - Load URLs from Google Sheets
-  - Launch Playwright browser + semaphore pool
-  - Coordinate extraction across all URLs
-  - Detect price/status changes
-  - Dispatch webhooks
-  - Batch update Google Sheets
-  - Persist state to JSON
+**check_once():**
+- Location: `musinsa_price_watch.py`
+- Triggers: Scheduled every 15 min (full mode) or via startup
+- Responsibilities: Load URLs, run price extraction loop, detect changes, update sheets, post webhooks
 
-**coupang_manager.py Job Functions:**
-- `coupang_order_job()` — Fetch orders, update sheet, send SMS
-- `coupang_sync_job()` — Fetch products, update sheet
-- `sourcing_price_job()` — Sync sourcing prices to Coupang
-- `shipping_job()` — Detect tracking numbers, update Coupang shipping status
-- `stock_check_job()` — Monitor Coupang stock, halt sales if 0
-- `settlement_job()` — Aggregate order data, update settlement sheet
-- `sourcing_match_job()` — Fuzzy-match sourcing products to Coupang products
-- `sourcing_order_match_job()` — Match incoming orders to sourcing sources
+**coupang_order_job():**
+- Location: `coupang_manager.py`
+- Triggers: Scheduled every 5 min (full mode)
+- Responsibilities: Query Coupang orders API, validate prices, append to sheet, send SMS, confirm orders, post webhooks
+
+**sourcing_price_job():**
+- Location: `coupang_manager.py`
+- Triggers: Scheduled every 5 min with max_instances=2 (allows 2 concurrent runs), wait_for_lock=True (always waits for product lane)
+- Responsibilities: Extract prices for sourcing URLs, update sheet, maintain min_price guardrail
 
 ## Error Handling
 
-**Strategy:** Graceful degradation with structured logging and webhook fallback
+**Strategy:** Graceful degradation with detailed logging; errors logged but don't crash scheduler
 
 **Patterns:**
 
-1. **Try-Except-Finally in Page Operations** — Ensure page closure even on error (lines 178–182, musinsa_price_watch.py)
-2. **Retry Loop with Backoff** — URL extraction retries up to `url_retry_count` with exponential backoff (lines 133–188, musinsa_price_watch.py)
-3. **Timeout Enforcement** — Per-URL timeout (`URL_TOTAL_TIMEOUT`) enforced via `asyncio.wait_for()` (lines 142, 149, 157)
-4. **Exception Masking in Adapters** — Adapters with `_wrap_errors=True` (Auction, 11st) return error result instead of raising
-5. **Webhook Fallback** — If site-specific webhook not configured, use default webhook (e.g., line 143, adapters.py)
-6. **Dry-Run Mode** — Skip sheet/webhook operations if `dry_run=True` for testing
-7. **Stale Lock Cleanup** — Check if PID in lock file is alive; clean up stale lock file (lines 81–92, main.py)
+- **Adapter extraction errors:** Wrapped as ExtractionResult(kind="error"), logged to musinsa_bot.price logger with stage_trace
+- **Playwright timeouts:** Retry with exponential backoff (_retry_backoff = 6.0 * attempt), max _retry_on_timeout attempts
+- **Sheet API errors:** Logged, webhook skipped if Discord URL missing, dry_run mode suppresses all writes
+- **Coupang API errors:** Logged per request (_log_api_error), graceful continue to next order
+- **Semaphore timeout:** None (Python asyncio.Lock.acquire() is cancellation-aware but never times out)
 
-**Critical Errors that Halt Processing:**
-- No SHEETS_SPREADSHEET_ID configured → raises RuntimeError, catches and saves state
-- Google Sheets API failure → logs error, saves state, skips webhook
-- Playwright browser launch failure → lets exception propagate, scheduler catches
+**Logging:** Hierarchical by subsystem
+- musinsa_bot.main — scheduler/lock operations
+- musinsa_bot.price — adapter extraction stages
+- musinsa_bot.sheet — sheet I/O
+- musinsa_bot.webhook — Discord notifications
+- musinsa_bot.coupang.api — Coupang API calls
+- musinsa_bot.coupang.order — order processing
+- musinsa_bot.coupang.shipping — shipping updates
 
 ## Cross-Cutting Concerns
 
 **Logging:**
-- Namespace hierarchy: `musinsa_bot` (root) → `musinsa_bot.price`, `musinsa_bot.coupang.*`, `musinsa_bot.webhook`, `musinsa_bot.sheet`
-- Formatted with timestamp, logger name, level, message
-- Setup: `setup_logging()` in `logging_config.py`, called early in `main()` and `check_once()`
+- Implemented via `logging_config.py` (setup_logging function)
+- Hierarchical loggers under "musinsa_bot" root
+- StreamHandler to stdout with ISO format timestamps
 
 **Validation:**
-- Price: Must be int ≥ `MIN_PRICE` (5000 won) to count as valid (fn: `valid_price_value()`, utils.py)
-- URL: Normalized by stripping whitespace (fn: `_normalize_url()`, utils.py)
-- Sheet values: Distinct functions for blank vs. soldout detection (utils.py)
+- Price validation: `valid_price_value(v)` — checks v >= MIN_PRICE (5000)
+- URL normalization: `_normalize_url(u)` — simple strip()
+- Soldout detection: Keyword matching in sheet ("품절", "매진", etc.) or DOM selectors
+- Vendor item ID validation: `_normalize_vendor_item_id()` — strips, rejects empty
 
 **Authentication:**
-- Google Sheets: Service account JSON (path: `settings.google_service_account_json`)
-- Coupang API: HMAC-SHA256 signature with timestamp (coupang_manager.py)
-- Discord: Webhook URLs stored in config (environment variables)
-- SMS: ID/password credentials for 마이문자 API
+- Google Sheets: Service account JSON via gspread + google-auth (path from config.google_service_account_json)
+- Coupang API: HMAC-SHA256 signature (config.COUPANG_SECRET_KEY) on every request
+- Discord webhooks: URL-based (config.discord_webhook_url and platform-specific aliases)
+- MyMunja SMS: Basic HTTP params (ID, password, callback number)
 
-**Concurrency Control:**
-- Global asyncio Semaphore for page creation (`max_concurrency`)
-- Per-domain asyncio Semaphore for request throttling (`per_domain_concurrency`)
-- Lane locks for sheet access serialization
-- APScheduler job defaults: `coalesce=True`, `max_instances=1` (prevent overlapping runs)
+**Rate Limiting:**
+- Per-domain semaphores (Semaphore(settings.per_domain_concurrency))
+- Global semaphore (Semaphore(settings.max_concurrency))
+- Order: domain_sem → global_sem (acquire domain first)
+- APScheduler job defaults: max_instances=1 (default), max_instances=2 (sourcing_price_job only)
+
+**Concurrency Control (Lane Locking):**
+- Two lanes: _ORDER_LANE_LOCK (coupang order/shipping/settlement), _PRODUCT_LANE_LOCK (product sync/sourcing)
+- Default behavior: skip job if lock held (wait_for_lock=False)
+- Exception: sourcing_price_job waits (wait_for_lock=True) to ensure price updates not dropped
+- Logged: wait_started, acquired after X seconds, run_elapsed if waited
 
 ---
 
-*Architecture analysis: 2026-03-20*
+*Architecture analysis: 2026-03-25*
