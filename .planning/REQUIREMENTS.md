@@ -42,17 +42,17 @@ Deferred to future release.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SMAP-01 | — | Pending |
-| SMAP-02 | — | Pending |
-| SREC-01 | — | Pending |
-| SREC-02 | — | Pending |
-| EALT-01 | — | Pending |
-| EALT-02 | — | Pending |
+| SMAP-01 | Phase 2 | Pending |
+| SMAP-02 | Phase 2 | Pending |
+| SREC-01 | Phase 2 | Pending |
+| SREC-02 | Phase 2 | Pending |
+| EALT-01 | Phase 2 | Pending |
+| EALT-02 | Phase 2 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 6 total
-- Mapped to phases: 0
-- Unmapped: 6
+- Mapped to phases: 6
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-25*
