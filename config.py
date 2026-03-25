@@ -30,7 +30,7 @@ MUSINSA_EXACT_PRICE_SELECTOR = 'span[class*="Price__CalculatedPrice"]'
 MUSINSA_SOLDOUT_SELECTOR = 'div[class*="Purchase__Container"] button span'
 
 # ---------------- 올리브영 ----------------
-OLIVE_PRICE_SELECTOR = "#Contents > div.prd_detail_box.renew > div.right_area > div > div.price > span.price-2"
+OLIVE_PRICE_SELECTOR = "#main > div.page_product-details-wrapper___t38G > div > div.page_right-section__Plw5V > div > div.GoodsDetailInfo_goods-info__NvhCW > div.GoodsDetailInfo_price-area__RE0Gc.GoodsDetailInfo_margin-top__41aCw > div > div > span > span:nth-child(1)"
 OLIVE_SOLDOUT_PRIMARY = "#Contents > div.prd_detail_box.renew > div.right_area > div > div.prd_btn_area.new-style.type1 > button.btnSoldout.recoPopBtn.temprecobell"
 OLIVE_SOLDOUT_FALLBACKS = ".btnSoldout, button[disabled], .soldout, .btnL.stSoldOut"
 OLIVE_SOLDOUT_NEW_PRIMARY = "#main > div.page_product-details-wrapper___t38G > div > div.page_right-section__Plw5V > div > div.PurchaseBottom_purchase-bottom__C_GnK > div.PurchaseBottom_purchase-bottom-contents__ztB1w > div.PurchaseBottom_btn-area__mJJ9z.PurchaseBottom_padding-top__GCRfX > button.PurchaseBottom_btn-square__oefbI.btn-soldout.css-1rhuta5 > span"
@@ -40,14 +40,58 @@ OLIVE_SOLDOUT_NEW_FALLBACKS = (
     "#main div[class*='PurchaseBottom'] button[class*='btn-soldout'] span, "
     "#main button[disabled] span"
 )
+OLIVE_PRICE_FALLBACK_SELECTORS = [
+    "#main [class*='ProductPrice'] strong",
+    "#main [class*='ProductPrice'] span",
+    "#main [class*='Price'] strong",
+    "#main [class*='Price'] span",
+    "#main [class*='price'] strong",
+    "#main [class*='price'] span",
+    "#main [class*='sale'] span",
+    "#Contents div.price strong",
+    "#Contents div.price span.price-2",
+    "#Contents div.price span",
+    "#Contents [class*='price'] span",
+]
+OLIVE_META_PRICE_SELECTORS = [
+    "meta[property='product:price:amount']",
+    "meta[itemprop='price']",
+]
 
 # ---------------- 지마켓 (XPath) ----------------
 GMARKET_COUPON_XPATH = "xpath=//*[@id='itemcase_basic']//span[contains(@class,'price_innerwrap-coupon')]//strong"
 GMARKET_NORMAL_XPATH = "xpath=//*[@id='itemcase_basic']//div[contains(@class,'box__price')]//strong[contains(@class,'price_real')]"
+GMARKET_COUPON_PRICE_SELECTORS = [
+    GMARKET_COUPON_XPATH,
+    "#itemcase_basic .price_innerwrap.price_innerwrap-coupon strong.price_real",
+    "#itemcase_basic .price_innerwrap.price_innerwrap-coupon .price_real",
+    "#itemcase_basic .box__price.price .price_innerwrap.price_innerwrap-coupon strong.price_real",
+]
+GMARKET_NORMAL_PRICE_SELECTORS = [
+    GMARKET_NORMAL_XPATH,
+    "#itemcase_basic .box__price.price > .price_innerwrap strong.price_real",
+    "#itemcase_basic .box__price.price .price_innerwrap strong.price_real",
+    "#itemcase_basic .box__price .price_real",
+]
 GMARKET_SOLDOUT_SELECTOR = ".btn_soldout, .soldout, button[disabled], .box__supply .text__state, .layer_soldout, [aria-disabled='true']"
 GMARKET_PRICE_STATUS_SELECTOR = (
     "#itemcase_basic > div > div.box__price.price > span > strong"
 )
+GMARKET_PRICE_FALLBACK_SELECTORS = [
+    "#itemcase_basic .price_innerwrap.price_innerwrap-coupon strong.price_real",
+    "#itemcase_basic .price_innerwrap.price_innerwrap-coupon .price_real",
+    "#itemcase_basic .box__price.price .price_innerwrap.price_innerwrap-coupon strong.price_real",
+    "#itemcase_basic .box__price.price > .price_innerwrap strong.price_real",
+    "#itemcase_basic .box__price .price_real",
+    "#itemcase_basic .box__price strong[class*='price']",
+    "#itemcase_basic .box__price span[class*='price']",
+    "#itemcase_basic .box__price > div:nth-child(2) strong",
+    "#itemcase_basic .box__price > div:nth-child(2)",
+    "#itemcase_basic .box__price > div:last-child strong",
+    "#itemcase_basic .box__price > div:last-child",
+    "#itemcase_basic .box__price strong",
+    "#itemcase_basic .box__price",
+]
 GMARKET_SOLDOUT_KEYWORDS = [
     "품절",
     "일시품절",
@@ -79,6 +123,20 @@ ELEVENST_UNAVAILABLE_MARKERS = [
 ]
 
 # ---------------- 플랫폼 프리픽스 ----------------
+ENURI_PRICE_SELECTOR = (
+    "#prod_minprice > div > div > div.prodminprice__price > "
+    "div.prodminprice__tx--price > strong"
+)
+SMARTSTORE_PRICE_SELECTOR = "[data-shp-area-id='purchase'] strong[class*='price']"
+SMARTSTORE_PRICE_FALLBACK_SELECTORS = [
+    "[data-shp-area-id='purchase'] span[class*='price']",
+    "#content strong[class*='price']",
+    "#content span[class*='price']",
+]
+SMARTSTORE_META_PRICE_SELECTORS = [
+    "meta[property='product:price:amount']",
+    "meta[itemprop='price']",
+]
 MUSINSA_PREFIXES = ["https://www.musinsa.com/products/"]
 OLIVE_PREFIXES = [
     "https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do",
@@ -102,6 +160,14 @@ ELEVENST_PREFIXES = [
     "https://www.11st.co.kr/products/",
     "https://m.11st.co.kr/products/",
     "http://www.11st.co.kr/products/",
+]
+ENURI_PREFIXES = [
+    "https://www.enuri.com/",
+    "http://www.enuri.com/",
+    "https://m.enuri.com/",
+]
+SMARTSTORE_PREFIXES = [
+    "https://smartstore.naver.com/",
 ]
 
 # ---------------- 가격 추출용 셀렉터/키워드 ----------------
@@ -177,7 +243,13 @@ class Settings(BaseSettings):
     per_domain_concurrency: int = Field(2, ge=1)
     url_retry_count: int = Field(2, ge=1)
     retry_backoff_base_seconds: float = Field(0.6, ge=0.0)
+    queue_wait_log_threshold_seconds: float = Field(5.0, ge=0.0)
     dry_run: bool = False
+    diag_capture_enabled: bool = False
+    diag_capture_domains: str = "gmarket,oliveyoung"
+    diag_capture_dir: str = ".runtime/diagnostics"
+    diag_capture_max_per_run: int = Field(5, ge=0)
+    diag_capture_text_limit: int = Field(8000, ge=1000)
 
     # Webhooks
     discord_webhook_url: str = ""
@@ -191,6 +263,20 @@ class Settings(BaseSettings):
     auction_webhook: str = ""
     elevenst_webhook: str = ""
     elevenstreet_webhook: str = ""
+
+    # Coupang Open API
+    coupang_access_key: str = ""
+    coupang_secret_key: str = ""
+    coupang_vendor_id: str = ""
+    coupang_order_webhook: str = ""
+    coupang_product_sheet: str = "쿠팡상품관리"
+    coupang_order_sheet: str = "쿠팡주문관리"
+    coupang_product_refresh_minutes: int = Field(30, ge=1)
+
+    # MyMunja SMS
+    mymunja_id: str = ""
+    mymunja_pass: str = ""
+    mymunja_callback: str = ""
 
     # Bot mode (main.py)
     bot_mode: str = "full"

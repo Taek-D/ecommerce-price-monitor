@@ -18,6 +18,7 @@ from datetime import datetime, timezone, timedelta
 from urllib.parse import urlencode
 
 from config import KST, settings
+from utils import post_webhook
 
 import httpx
 import gspread
@@ -42,25 +43,34 @@ _log_sms = logging.getLogger("musinsa_bot.coupang.sms")
 _log_sheet = logging.getLogger("musinsa_bot.coupang.sheet")
 _log_product = logging.getLogger("musinsa_bot.coupang.product")
 
-# ──────────────────────────────────────────────
-# 환경변수
-# ──────────────────────────────────────────────
-COUPANG_ACCESS_KEY = os.getenv("COUPANG_ACCESS_KEY", "").strip()
-COUPANG_SECRET_KEY = os.getenv("COUPANG_SECRET_KEY", "").strip()
-COUPANG_VENDOR_ID = os.getenv("COUPANG_VENDOR_ID", "").strip()
 
-MYMUNJA_ID = os.getenv("MYMUNJA_ID", "").strip()
-MYMUNJA_PASS = os.getenv("MYMUNJA_PASS", "").strip()
-MYMUNJA_CALLBACK = os.getenv("MYMUNJA_CALLBACK", "").strip()  # 사전등록 발신번호
+def _mask_identifier(value: str) -> str:
+    text = (value or "").strip()
+    if not text:
+        return "❌ 미설정"
+    if len(text) <= 4:
+        return "*" * len(text)
+    return f"{text[:2]}{'*' * (len(text) - 4)}{text[-2:]}"
 
-COUPANG_ORDER_WEBHOOK = os.getenv(
-    "COUPANG_ORDER_WEBHOOK", ""
-).strip()  # 주문알림 Discord 웹훅
+
+# ──────────────────────────────────────────────
+# 환경변수 (config.Settings에서 중앙 관리)
+# ──────────────────────────────────────────────
+COUPANG_ACCESS_KEY = settings.coupang_access_key
+COUPANG_SECRET_KEY = settings.coupang_secret_key
+COUPANG_VENDOR_ID = settings.coupang_vendor_id
+
+MYMUNJA_ID = settings.mymunja_id
+MYMUNJA_PASS = settings.mymunja_pass
+MYMUNJA_CALLBACK = settings.mymunja_callback
+
+COUPANG_ORDER_WEBHOOK = settings.coupang_order_webhook
 
 GOOGLE_SERVICE_ACCOUNT_JSON = settings.google_service_account_json
 
 
 def _env_int(name: str, default: int) -> int:
+    """환경변수에서 int 값을 읽되, Settings에 없는 세부 튜닝 파라미터용."""
     try:
         return int((os.getenv(name, str(default)) or "").strip())
     except Exception:
@@ -69,9 +79,9 @@ def _env_int(name: str, default: int) -> int:
 
 # 쿠팡 상품관리 시트 설정 (기존 소싱목록과 별도 시트)
 COUPANG_SHEET_ID = settings.sheets_spreadsheet_id
-COUPANG_PRODUCT_SHEET = os.getenv("COUPANG_PRODUCT_SHEET", "쿠팡상품관리").strip()
-COUPANG_ORDER_SHEET = os.getenv("COUPANG_ORDER_SHEET", "쿠팡주문관리").strip()
-COUPANG_PRODUCT_REFRESH_MINUTES = _env_int("COUPANG_PRODUCT_REFRESH_MINUTES", 30)
+COUPANG_PRODUCT_SHEET = settings.coupang_product_sheet
+COUPANG_ORDER_SHEET = settings.coupang_order_sheet
+COUPANG_PRODUCT_REFRESH_MINUTES = settings.coupang_product_refresh_minutes
 
 # 쿠팡 상품관리 시트 컬럼 인덱스 (1부터 시작)
 # A:vendorItemId  B:상품명  C:판매가  D:재고  E:판매상태  F:마지막업데이트
@@ -389,24 +399,7 @@ async def send_sms_bulk(phones: list[str], messages: list[str]) -> dict:
         return {"code": "ERROR", "msg": str(e)}
 
 
-# ──────────────────────────────────────────────
-# Discord 웹훅 (기존 musinsa-bot post_webhook 재사용)
-# ──────────────────────────────────────────────
-async def post_webhook(url: str, content: str, embeds=None) -> bool:
-    if not url:
-        _log_api.warning(f"URL 미설정: {content[:80]}")
-        return False
-    client = _get_http_client()
-    payload = {"content": content}
-    if embeds:
-        payload["embeds"] = embeds
-    try:
-        r = await client.post(url, json=payload, timeout=20)
-        r.raise_for_status()
-        return True
-    except Exception as e:
-        _log_api.error(f"Webhook 오류: {e}")
-        return False
+# Discord 웹훅: utils.post_webhook 사용 (import 상단 참조)
 
 
 # ──────────────────────────────────────────────
@@ -475,7 +468,11 @@ def _build_price_change_embed(change: dict) -> dict:
             "inline": False,
         },
         {"name": "업데이트 옵션", "value": f"{changed_count}개", "inline": True},
-        {"name": "가격유지", "value": f"{change.get('skip_floor', 0)}개", "inline": True},
+        {
+            "name": "가격유지",
+            "value": f"{change.get('skip_floor', 0)}개",
+            "inline": True,
+        },
         {
             "name": "조회실패",
             "value": f"{change.get('skip_unknown', 0)}개",
@@ -1401,8 +1398,7 @@ async def _notify_pending_preparation(
 
     now_kst = datetime.now(KST)
     should_notify = (
-        not _pending_preparation_active
-        or _last_pending_preparation_notify_at is None
+        not _pending_preparation_active or _last_pending_preparation_notify_at is None
     )
     if (
         not should_notify
@@ -3799,9 +3795,9 @@ if __name__ == "__main__":
 
     async def _test():
         _log_api.info("=== 쿠팡 매니저 테스트 ===")
-        _log_api.info(f"VENDOR_ID: {COUPANG_VENDOR_ID or '❌ 미설정'}")
+        _log_api.info(f"VENDOR_ID: {_mask_identifier(COUPANG_VENDOR_ID)}")
         _log_api.info(f"ACCESS_KEY: {'✅' if COUPANG_ACCESS_KEY else '❌ 미설정'}")
-        _log_api.info(f"MYMUNJA_ID: {MYMUNJA_ID or '❌ 미설정'}")
+        _log_api.info(f"MYMUNJA_ID: {_mask_identifier(MYMUNJA_ID)}")
 
         test_phone = os.getenv("COUPANG_TEST_PHONE", "").strip()
         if test_phone:

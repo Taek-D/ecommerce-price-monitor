@@ -1,6 +1,6 @@
 """
 utils.py
-순수 유틸리티 함수 + 공유 httpx 클라이언트 + Discord 웹훅.
+필수 유틸리티 함수 + 공유 httpx 클라이언트 + Discord 웹훅.
 의존: config
 """
 
@@ -14,6 +14,15 @@ from playwright.async_api import TimeoutError as PWTimeout
 from config import EXCLUDE_KEYWORDS, MIN_PRICE, PRICE_SECTION_SELECTORS, settings
 
 _log_webhook = logging.getLogger("musinsa_bot.webhook")
+_GENERIC_PRICE_SCAN_SELECTORS = [
+    "[class*='price']",
+    "[class*='Price']",
+    "[class*='cost']",
+    "strong",
+    "b",
+    "em",
+    "span",
+]
 
 # ---------------- 공유 httpx.AsyncClient (lazy init) ----------------
 _http_client: httpx.AsyncClient | None = None
@@ -27,15 +36,25 @@ def _get_http_client() -> httpx.AsyncClient:
 
 
 # ---------------- Discord 웹훅 ----------------
-async def post_webhook(url: str, content: str, embeds=None):
+_ALLOWED_WEBHOOK_HOSTS = {"discord.com", "discordapp.com"}
+
+
+async def post_webhook(url: str, content: str, embeds=None) -> bool:
     if settings.dry_run:
         preview = (content or "").replace("\n", " ")[:120]
         _log_webhook.debug(f"DRY_RUN webhook skipped: {preview}")
-        return
+        return False
 
     if not url:
         _log_webhook.warning(f"Webhook URL not configured: {content[:80]}")
-        return
+        return False
+
+    from urllib.parse import urlparse
+
+    if urlparse(url).hostname not in _ALLOWED_WEBHOOK_HOSTS:
+        _log_webhook.error(f"Blocked webhook to untrusted host: {url[:60]}")
+        return False
+
     client = _get_http_client()
     payload = {"content": content}
     if embeds:
@@ -43,8 +62,10 @@ async def post_webhook(url: str, content: str, embeds=None):
     try:
         r = await client.post(url, json=payload)
         r.raise_for_status()
+        return True
     except Exception as e:
         _log_webhook.error(f"Webhook send failed: {e}")
+        return False
 
 
 # ---------------- 가격 유틸 ----------------
@@ -106,7 +127,7 @@ async def wait_any_selector(page, selectors: list[str], timeout_each=3000) -> bo
         try:
             await page.wait_for_selector(sel, state="visible", timeout=timeout_each)
             return True
-        except PWTimeout:
+        except Exception:
             continue
     return False
 
@@ -146,40 +167,43 @@ async def wait_for_network_idle(page, idle_ms=500, timeout_ms=10000):
 
 # ---------------- 범용 가격 추출 ----------------
 async def extract_price_fallback_generic(page) -> int | None:
-    candidates: list[int] = []
-    # 1. 일반적인 가격 섹션 시도
+    price, _ = await extract_price_fallback_generic_details(page)
+    return price
+
+
+async def extract_price_fallback_generic_details(
+    page,
+) -> tuple[int | None, str | None]:
+    candidates: list[tuple[int, str]] = []
+
     if await wait_any_selector(page, PRICE_SECTION_SELECTORS, timeout_each=2000):
         for sel in PRICE_SECTION_SELECTORS:
             loc = page.locator(sel)
             if await loc.count() == 0:
                 continue
             texts = await loc.all_text_contents()
-            for t in texts:
-                if not looks_like_price_text(t):
+            for text in texts:
+                if not looks_like_price_text(text):
                     continue
-                p = normalize_price(t)
-                if valid_price_value(p):
-                    candidates.append(p)
-    # 2. 광범위한 태그 시도
+                price = normalize_price(text)
+                if valid_price_value(price):
+                    candidates.append((price, f"price_section:{sel}"))
+
     if not candidates:
-        for sel in [
-            "[class*='price']",
-            "[class*='Price']",
-            "[class*='cost']",
-            "strong",
-            "b",
-            "em",
-            "span",
-        ]:
+        for sel in _GENERIC_PRICE_SCAN_SELECTORS:
             try:
                 texts = await page.locator(sel).all_text_contents()
-                for t in texts:
-                    if not looks_like_price_text(t):
+                for text in texts:
+                    if not looks_like_price_text(text):
                         continue
-                    p = normalize_price(t)
-                    if valid_price_value(p):
-                        candidates.append(p)
+                    price = normalize_price(text)
+                    if valid_price_value(price):
+                        candidates.append((price, f"broad_scan:{sel}"))
             except Exception:
                 continue
 
-    return min(candidates) if candidates else None
+    if not candidates:
+        return None, None
+
+    price, bucket = min(candidates, key=lambda item: item[0])
+    return price, bucket

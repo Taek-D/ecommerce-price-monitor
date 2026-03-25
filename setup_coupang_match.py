@@ -427,9 +427,10 @@ async def main():
 
 if __name__ == "__main__":
     try:
-        import rapidfuzz
+        import rapidfuzz  # noqa: F401
     except ImportError:
-        print("rapidfuzz 설치 중...")
-        os.system("pip install rapidfuzz")
+        import sys
+
+        sys.exit("rapidfuzz 미설치. 먼저 실행: pip install -r requirements.txt")
 
     asyncio.run(main())
