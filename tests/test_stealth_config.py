@@ -23,10 +23,11 @@ def test_stealth_chrome_args_contains_automation_controlled():
 
 
 def test_stealth_user_agent_is_realistic_chrome():
-    """Test 2: STEALTH_USER_AGENT is a realistic Chrome 124+ user-agent string"""
+    """Test 2: STEALTH_USER_AGENT is a realistic Chrome user-agent string"""
     from config import STEALTH_USER_AGENT
+    import re
 
-    assert "Chrome/124" in STEALTH_USER_AGENT or "Chrome/12" in STEALTH_USER_AGENT
+    assert re.search(r"Chrome/\d+\.\d+\.\d+\.\d+", STEALTH_USER_AGENT)
     assert "Mozilla/5.0" in STEALTH_USER_AGENT
     assert "Windows NT" in STEALTH_USER_AGENT
 

@@ -9,7 +9,7 @@ import logging
 import random
 import re
 from dataclasses import dataclass, field
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlencode, urlparse, urlunparse
 
 from playwright.async_api import TimeoutError as PWTimeout
 
@@ -395,6 +395,10 @@ class BaseAdapter:
                 return ExtractionResult("error")
             raise
 
+    def _navigation_url(self, url: str) -> str:
+        """Return the URL to pass to page.goto(). Override to strip tracking params."""
+        return url
+
     async def _after_goto(self, page, url: str) -> None:
         """Hook for post-navigation processing. Override in subclasses."""
         pass
@@ -404,7 +408,11 @@ class BaseAdapter:
         for attempt in range(1, self._retry_on_timeout + 2):
             stage_trace: list[str] = []
             try:
-                await page.goto(url, wait_until="domcontentloaded", timeout=WEB_TIMEOUT)
+                await page.goto(
+                    self._navigation_url(url),
+                    wait_until="domcontentloaded",
+                    timeout=WEB_TIMEOUT,
+                )
                 await self._after_goto(page, url)
                 await asyncio.sleep(self._get_sleep_after_load())
                 if await self.is_sold_out(page, stage_trace):
@@ -756,6 +764,45 @@ class GmarketAdapter(BaseAdapter):
         except Exception:
             return False
 
+    _TRACKING_PARAMS = frozenset(
+        {
+            "spm",
+            "utparam-url",
+            "utparam_url",
+            "pvid",
+            "pvid_sys",
+            "scm",
+            "from",
+            "search_session_id",
+            "x_object_id",
+            "x_object_type",
+            "x_sku_id",
+            "pageIndex",
+            "pagePos",
+            "pageSize",
+            "listno",
+            "sort",
+            "searchScenario",
+            "query",
+            "origin_price",
+            "promotion_price",
+            "coupon_price",
+            "ab_buckets",
+            "trafficType",
+            "sub_scene",
+            "scene",
+        }
+    )
+
+    def _navigation_url(self, url: str) -> str:
+        parsed = urlparse(url)
+        qs = parse_qs(parsed.query, keep_blank_values=True)
+        cleaned = {k: v for k, v in qs.items() if k not in self._TRACKING_PARAMS}
+        if not cleaned:
+            return url
+        new_query = urlencode(cleaned, doseq=True)
+        return urlunparse(parsed._replace(query=new_query))
+
     async def _after_goto(self, page, url: str) -> None:
         if not await self._wait_for_cloudflare_challenge(page):
             _log_price.warning(
@@ -1005,7 +1052,11 @@ class ElevenStAdapter(BaseAdapter):
     async def _do_extract(self, page, url: str) -> ExtractionResult:
         for attempt in range(1, self._retry_on_timeout + 2):
             try:
-                await page.goto(url, wait_until="domcontentloaded", timeout=WEB_TIMEOUT)
+                await page.goto(
+                    self._navigation_url(url),
+                    wait_until="domcontentloaded",
+                    timeout=WEB_TIMEOUT,
+                )
                 await asyncio.sleep(self._get_sleep_after_load())
 
                 unavailable_marker = await self._get_unavailable_marker(page)

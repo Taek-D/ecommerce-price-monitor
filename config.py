@@ -29,9 +29,10 @@ URL_TOTAL_TIMEOUT = 90
 STEALTH_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/124.0.0.0 Safari/537.36"
+    "Chrome/131.0.0.0 Safari/537.36"
 )
 STEALTH_CHROME_ARGS = [
+    "--headless=new",
     "--no-sandbox",
     "--disable-blink-features=AutomationControlled",
     "--disable-features=AutomationControlled",
@@ -41,7 +42,10 @@ STEALTH_INIT_SCRIPT = """
 Object.defineProperty(navigator, 'webdriver', { get: () => false });
 Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
 Object.defineProperty(navigator, 'languages', { get: () => ['ko-KR', 'ko', 'en-US', 'en'] });
-window.chrome = { runtime: {} };
+window.chrome = { runtime: {}, app: { isInstalled: false }, csi: function(){}, loadTimes: function(){} };
+Object.defineProperty(navigator, 'connection', { get: () => ({ effectiveType: '4g', rtt: 50, downlink: 10, saveData: false }) });
+Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 0 });
+Object.defineProperty(Notification, 'permission', { get: () => 'default' });
 """
 CLOUDFLARE_CHALLENGE_WAIT_MS = 15000
 
