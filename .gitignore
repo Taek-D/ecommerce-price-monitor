@@ -1,5 +1,6 @@
 safe/
 price_state.json
+discovery_state.json
 .env
 
 # Python cache
@@ -17,6 +18,7 @@ docs/.pdca-status.json
 docs/.pdca-snapshots/
 .claude/settings.local.json
 .main.lock
+.runtime/
 
 # Backup files
 *백업본*

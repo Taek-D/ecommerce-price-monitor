@@ -53,6 +53,22 @@ def _mask_identifier(value: str) -> str:
     return f"{text[:2]}{'*' * (len(text) - 4)}{text[-2:]}"
 
 
+def _mask_name(name: str) -> str:
+    """이름 마스킹: 김철수 → 김*수, 홍길동 → 홍*동, AB → A*"""
+    if not name or len(name) <= 1:
+        return name or ""
+    if len(name) == 2:
+        return name[0] + "*"
+    return name[0] + "*" * (len(name) - 2) + name[-1]
+
+
+def _mask_phone(phone: str) -> str:
+    """전화번호 마스킹: 01012345678 → 010****5678"""
+    if not phone or len(phone) < 7:
+        return "***"
+    return phone[:3] + "****" + phone[-4:]
+
+
 # ──────────────────────────────────────────────
 # 환경변수 (config.Settings에서 중앙 관리)
 # ──────────────────────────────────────────────
@@ -350,7 +366,9 @@ async def send_sms(phone: str, message: str, msg_type: str = "sms") -> dict:
         cols = parts[2] if len(parts) > 2 else "0"
 
         if code == "0000":
-            _log_sms.info(f"OK send success -> {phone_clean} | remain: {cols}")
+            _log_sms.info(
+                f"OK send success -> {_mask_phone(phone_clean)} | remain: {cols}"
+            )
         else:
             _log_sms.error(f"FAIL send failed -> code={code} msg={msg}")
 
@@ -1347,7 +1365,11 @@ async def process_new_orders():
                         "fields": [
                             {"name": "주문 ID", "value": order_id, "inline": True},
                             {"name": "상품", "value": product_name, "inline": True},
-                            {"name": "구매자", "value": buyer_name, "inline": True},
+                            {
+                                "name": "구매자",
+                                "value": _mask_name(buyer_name),
+                                "inline": True,
+                            },
                             {
                                 "name": "vendorItemId",
                                 "value": vendor_item_id,
@@ -1444,7 +1466,7 @@ async def process_new_orders():
 
             if needs_status_retry:
                 _log_order.info(
-                    f"[결제완료-재시도] {order_id} | {product_name} x{qty} | {buyer_name}"
+                    f"[결제완료-재시도] {order_id} | {product_name} x{qty} | {_mask_name(buyer_name)}"
                 )
                 confirmed = await confirm_order(order_id, shipment_box_id)
                 if confirmed:
@@ -1473,7 +1495,9 @@ async def process_new_orders():
             await asyncio.sleep(0.3)
             continue
 
-        _log_order.info(f"[결제완료] {order_id} | {product_name} x{qty} | {buyer_name}")
+        _log_order.info(
+            f"[결제완료] {order_id} | {product_name} x{qty} | {_mask_name(buyer_name)}"
+        )
 
         # 1. 발주확인 처리 (→ 상품준비중으로 자동 전환)
         confirmed = await confirm_order(order_id, shipment_box_id)
@@ -1521,7 +1545,7 @@ async def process_new_orders():
                     {"name": "주문 ID", "value": order_id, "inline": True},
                     {"name": "상품", "value": product_name, "inline": True},
                     {"name": "수량", "value": f"{qty}개", "inline": True},
-                    {"name": "구매자", "value": buyer_name, "inline": True},
+                    {"name": "구매자", "value": _mask_name(buyer_name), "inline": True},
                     {
                         "name": "발주확인",
                         "value": "✅" if confirmed else "❌",
@@ -3553,7 +3577,11 @@ async def process_shipping():
                     "fields": [
                         {"name": "주문 ID", "value": order_id, "inline": True},
                         {"name": "상품", "value": product_name, "inline": True},
-                        {"name": "구매자", "value": buyer_name, "inline": True},
+                        {
+                            "name": "구매자",
+                            "value": _mask_name(buyer_name),
+                            "inline": True,
+                        },
                         {"name": "택배사", "value": carrier_code, "inline": True},
                         {"name": "송장번호", "value": invoice, "inline": True},
                         {"name": "처리시각", "value": ts, "inline": True},
