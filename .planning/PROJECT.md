@@ -25,14 +25,15 @@
 - ✓ 쿠팡 판매가 변경 자동화 — v0
 - ✓ 상품 발굴 파이프라인 (5개 소싱처) — v0
 - ✓ 상품준비중 주문 Discord 알림 (배송동기화 시) — v1.0
+- ✓ 소싱탭 자동기록 (vendorItemId→소싱처 탭 행 추가) — v1.1
 
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-## Current Milestone: v1.1 소싱탭자동기록
+## Current Milestone: v1.2 지마켓안티봇
 
-**Goal:** 쿠팡 주문 감지 시 소싱목록에서 vendorItemId로 소싱처를 찾아, 해당 소싱처 탭에 주문 정보를 자동 기록
+**Goal:** 지마켓 Cloudflare 봇 차단을 우회하여 가격 추출을 정상화
 
 ### Out of Scope
 
@@ -69,4 +70,4 @@
 | _notify_pending_preparation() 분리 | sync 함수 내부 복잡도 관리, 테스트 용이 | ✓ Good |
 
 ---
-*Last updated: 2026-03-25 after v1.1 milestone started*
+*Last updated: 2026-03-26 after v1.2 milestone started*
