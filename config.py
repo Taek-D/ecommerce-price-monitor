@@ -50,7 +50,7 @@ CLOUDFLARE_CHALLENGE_WAIT_MS = 15000
 
 # ---------------- 무신사 ----------------
 MUSINSA_EXACT_PRICE_SELECTOR = 'span[class*="Price__CalculatedPrice"]'
-MUSINSA_SOLDOUT_SELECTOR = 'div[class*="Purchase__Container"] button span'
+MUSINSA_SOLDOUT_SELECTOR = 'div[class*="Purchase__Container"] button > div > span'
 
 # ---------------- 올리브영 ----------------
 OLIVE_PRICE_SELECTOR = "#main > div.page_product-details-wrapper___t38G > div > div.page_right-section__Plw5V > div > div.GoodsDetailInfo_goods-info__NvhCW > div.GoodsDetailInfo_price-area__RE0Gc.GoodsDetailInfo_margin-top__41aCw > div > div > span > span:nth-child(1)"

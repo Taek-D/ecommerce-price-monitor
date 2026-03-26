@@ -576,8 +576,13 @@ class MusinsaAdapter(BaseAdapter):
             await page.wait_for_selector(
                 self.SOLDOUT_SELECTOR, state="visible", timeout=2000
             )
-            txt = await page.locator(self.SOLDOUT_SELECTOR).inner_text()
-            return bool(txt and "품절" in txt)
+            loc = page.locator(self.SOLDOUT_SELECTOR)
+            count = await loc.count()
+            for i in range(count):
+                txt = await loc.nth(i).inner_text()
+                if txt and "품절" in txt:
+                    return True
+            return False
         except Exception:
             return False
 
