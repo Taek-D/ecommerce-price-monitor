@@ -748,6 +748,135 @@ def _load_sourcing_info_by_vid() -> dict[str, dict]:
     return info_by_vid
 
 
+async def _record_order_to_sourcing_tab(
+    sh,
+    sourcing_info_by_vid: dict[str, dict],
+    *,
+    order_id: str,
+    vendor_item_id: str,
+    buyer_name: str,
+    product_name: str,
+    qty: int,
+    paid_total: int | None,
+) -> None:
+    """주문 정보를 소싱처 탭에 자동 기록한다.
+
+    vendorItemId로 소싱목록을 조회하여 구매처 URL과 매입가격을 가져오고,
+    URL 도메인에 대응하는 소싱처 탭에 행을 추가한다.
+
+    실패 시 Discord 경고 알림을 발송하며, 어떤 경우에도 예외를 발생시키지 않는다.
+    """
+    # a. vendorItemId 조회
+    info = sourcing_info_by_vid.get(vendor_item_id)
+    if info is None:
+        _log_sourcing.warning(
+            f"소싱탭 기록 스킵: vendorItemId 매핑 없음 | orderId={order_id} vid={vendor_item_id}"
+        )
+        embeds = [
+            {
+                "title": "소싱탭 기록 실패",
+                "color": 15158332,
+                "fields": [
+                    {"name": "주문ID", "value": order_id, "inline": True},
+                    {"name": "vendorItemId", "value": vendor_item_id, "inline": True},
+                    {"name": "상품명", "value": product_name, "inline": True},
+                    {
+                        "name": "사유",
+                        "value": "소싱목록에 vendorItemId 매핑 없음",
+                        "inline": False,
+                    },
+                ],
+            }
+        ]
+        await post_webhook(COUPANG_ORDER_WEBHOOK, "소싱탭 기록 실패", embeds=embeds)
+        return
+
+    # b. URL과 매입가격 추출
+    url = info.get("url", "")
+    buy_price = info.get("buy_price")
+
+    # c. 도메인 → 소싱처 탭 이름 매핑
+    tab_name = _resolve_sourcing_tab_name(url)
+    if tab_name is None:
+        _log_sourcing.warning(
+            f"소싱탭 기록 스킵: 도메인 매핑 없음 | orderId={order_id} url={url}"
+        )
+        embeds = [
+            {
+                "title": "소싱탭 기록 실패",
+                "color": 15158332,
+                "fields": [
+                    {"name": "주문ID", "value": order_id, "inline": True},
+                    {"name": "vendorItemId", "value": vendor_item_id, "inline": True},
+                    {"name": "구매링크", "value": url or "(없음)", "inline": True},
+                    {
+                        "name": "사유",
+                        "value": "URL 도메인에 대응하는 소싱처 탭 없음",
+                        "inline": False,
+                    },
+                ],
+            }
+        ]
+        await post_webhook(COUPANG_ORDER_WEBHOOK, "소싱탭 기록 실패", embeds=embeds)
+        return
+
+    # d. 소싱처 탭 열기
+    try:
+        ws = sh.worksheet(tab_name)
+    except gspread.exceptions.WorksheetNotFound:
+        _log_sourcing.warning(
+            f"소싱탭 기록 스킵: 탭 없음 | orderId={order_id} tab={tab_name}"
+        )
+        embeds = [
+            {
+                "title": "소싱탭 기록 실패",
+                "color": 15158332,
+                "fields": [
+                    {"name": "주문ID", "value": order_id, "inline": True},
+                    {"name": "소싱처탭", "value": tab_name, "inline": True},
+                    {
+                        "name": "사유",
+                        "value": "스프레드시트에 탭 없음",
+                        "inline": False,
+                    },
+                ],
+            }
+        ]
+        await post_webhook(COUPANG_ORDER_WEBHOOK, "소싱탭 기록 실패", embeds=embeds)
+        return
+
+    # e. 행 데이터 구성 (A~M, 13 columns)
+    row = [
+        "",  # A: 구매날짜 (빈칸)
+        buyer_name,  # B: 주문자명
+        "",  # C: 수취인명
+        "",  # D: 안심번호
+        "",  # E: 배송지
+        "",  # F: 메모
+        product_name,  # G: 상품명
+        str(qty),  # H: 수량
+        url,  # I: 구매처 URL
+        "",  # J: 배송회사
+        "",  # K: (빈칸)
+        str(paid_total) if paid_total else "",  # L: 판매가격
+        str(buy_price) if buy_price else "",  # M: 매입가격
+    ]
+
+    # f. 행 추가
+    try:
+        ws.append_row(row, value_input_option="USER_ENTERED")
+    except Exception as e:
+        _log_sourcing.error(
+            f"소싱탭 행 추가 실패: orderId={order_id} tab={tab_name} error={e}"
+        )
+        return
+
+    # g. 성공 로그
+    _log_sourcing.info(
+        f"소싱탭 기록 완료: {tab_name} | orderId={order_id} | {product_name}"
+    )
+
+
 def _check_order_price_guard(order: dict, min_price_by_vid: dict[str, int]) -> dict:
     """
     정책:
@@ -1124,6 +1253,16 @@ async def process_new_orders():
             "소싱 최소판매금액 매핑이 비어있음 — 매핑 누락 경고 후 주문 진행"
         )
 
+    # 소싱탭 자동기록용 시트 + 소싱 정보 로드
+    try:
+        gc_sourcing = gspread.authorize(_google_creds())
+        sh_sourcing = gc_sourcing.open_by_key(COUPANG_SHEET_ID)
+    except Exception as e:
+        _log_order.warning(f"소싱 시트 열기 실패 — 소싱탭 기록 비활성: {e}")
+        sh_sourcing = None
+
+    sourcing_info_by_vid = _load_sourcing_info_by_vid() if sh_sourcing else {}
+
     new_count = 0
     updated_count = 0
 
@@ -1356,6 +1495,24 @@ async def process_new_orders():
         processed_ids.add(order_id)
         new_count += 1
 
+        # 4. 소싱탭 자동기록
+        if sh_sourcing and sourcing_info_by_vid is not None:
+            try:
+                await _record_order_to_sourcing_tab(
+                    sh_sourcing,
+                    sourcing_info_by_vid,
+                    order_id=order_id,
+                    vendor_item_id=vendor_item_id,
+                    buyer_name=buyer_name,
+                    product_name=product_name,
+                    qty=qty,
+                    paid_total=paid_total,
+                )
+            except Exception as e:
+                _log_order.warning(
+                    f"소싱탭 기록 오류 (무시): orderId={order_id} error={e}"
+                )
+
         embeds = [
             {
                 "title": "🛍️ 신규 주문 접수",
@@ -1431,6 +1588,31 @@ async def process_new_orders():
         await append_order_to_sheet(ws, order, sms_sent=sms_sent, status="상품준비중")
         processed_ids.add(order_id)
         new_count += 1
+
+        # 소싱탭 자동기록 (INSTRUCT 신규)
+        if sh_sourcing and sourcing_info_by_vid is not None:
+            guard_inst = _check_order_price_guard(order, min_price_by_vid)
+            vendor_item_id_inst = guard_inst["vendor_item_id"] or "N/A"
+            paid_total_inst = guard_inst["paid_total"]
+            qty_inst = guard_inst["qty"]
+            product_name_inst = guard_inst["product_name"]
+            buyer_name_inst = receiver.get("name", "고객")
+            try:
+                await _record_order_to_sourcing_tab(
+                    sh_sourcing,
+                    sourcing_info_by_vid,
+                    order_id=order_id,
+                    vendor_item_id=vendor_item_id_inst,
+                    buyer_name=buyer_name_inst,
+                    product_name=product_name_inst,
+                    qty=qty_inst,
+                    paid_total=paid_total_inst,
+                )
+            except Exception as e:
+                _log_order.warning(
+                    f"소싱탭 기록 오류 (무시): orderId={order_id} error={e}"
+                )
+
         await asyncio.sleep(0.3)
 
     _flush_sheet_cell_updates(ws, pending_cell_updates)
