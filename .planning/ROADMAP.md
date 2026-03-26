@@ -4,7 +4,7 @@
 
 - ✅ **v1.0 배송알림** — Phase 1 (shipped 2026-03-20)
 - ✅ **v1.1 소싱탭자동기록** — Phase 2 (shipped 2026-03-26)
-- 🚧 **v1.2 지마켓안티봇** — Phase 3 (in progress)
+- ✅ **v1.2 지마켓안티봇** — Phase 3 (shipped 2026-03-26)
 
 ## Phases
 
@@ -22,7 +22,7 @@
 
 </details>
 
-- [ ] **Phase 3: 지마켓 안티봇 우회 + 가격 추출 정상화** - Playwright stealth 적용으로 Cloudflare 봇 차단 우회 및 지마켓 가격 모니터링 복구
+- [x] **Phase 3: 지마켓 안티봇 우회 + 가격 추출 정상화** - Playwright stealth 적용으로 Cloudflare 봇 차단 우회 및 지마켓 가격 모니터링 복구
 
 ## Phase Details
 
@@ -36,11 +36,11 @@
   2. 지마켓 상품의 가격이 기존 셀렉터로 정상 추출되어 Discord 알림과 시트 기록이 동작한다
   3. Cloudflare challenge가 간헐적으로 뜰 때 타임아웃 내 재시도하여 복구된다
   4. 무신사, 11번가, 29CM, 옥션 등 다른 쇼핑몰 어댑터가 stealth 적용 후에도 기존과 동일하게 동작한다
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans executed
 
 Plans:
-- [ ] 03-01-PLAN.md — Stealth 브라우저 설정 + Cloudflare challenge 대기/재시도 로직
-- [ ] 03-02-PLAN.md — 전체 어댑터 회귀 테스트 + 실제 지마켓 페이지 검증
+- [x] 03-01-PLAN.md — Stealth 브라우저 설정 + Cloudflare challenge 대기/재시도 로직
+- [x] 03-02-PLAN.md — 전체 어댑터 회귀 테스트 + 실제 지마켓 페이지 검증
 
 ## Progress
 
@@ -51,4 +51,4 @@ Phases execute in numeric order: 1 -> 2 -> 3
 |-------|-----------|----------------|--------|-----------|
 | 1. 상품준비중 Discord 알림 | v1.0 | 1/1 | Complete | 2026-03-20 |
 | 2. 소싱탭 자동기록 | v1.1 | 2/2 | Complete | 2026-03-26 |
-| 3. 지마켓 안티봇 우회 + 가격 추출 정상화 | 1/2 | In Progress|  | - |
+| 3. 지마켓 안티봇 우회 + 가격 추출 정상화 | v1.2 | 2/2 | Complete | 2026-03-26 |
