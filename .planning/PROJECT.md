@@ -26,14 +26,12 @@
 - ✓ 상품 발굴 파이프라인 (5개 소싱처) — v0
 - ✓ 상품준비중 주문 Discord 알림 (배송동기화 시) — v1.0
 - ✓ 소싱탭 자동기록 (vendorItemId→소싱처 탭 행 추가) — v1.1
+- ✓ 지마켓 Cloudflare 안티봇 우회 (stealth 브라우저 + challenge 대기) — v1.2
+- ✓ 전체 어댑터 stealth 호환성 회귀 테스트 — v1.2
 
 ### Active
 
 <!-- Current scope. Building toward these. -->
-
-## Current Milestone: v1.2 지마켓안티봇
-
-**Goal:** 지마켓 Cloudflare 봇 차단을 우회하여 가격 추출을 정상화
 
 ### Out of Scope
 
@@ -68,6 +66,9 @@
 | Pydantic BaseSettings | 환경변수 중앙 관리 | ✓ Good |
 | COUPANG_ORDER_WEBHOOK 재사용 | 별도 웹훅 불필요, 주문 관련 알림 통합 | ✓ Good |
 | _notify_pending_preparation() 분리 | sync 함수 내부 복잡도 관리, 테스트 용이 | ✓ Good |
+| _after_goto 훅 패턴 | BaseAdapter 템플릿 메서드에 post-navigation 확장점 추가 | ✓ Good |
+| Stealth 브라우저 설정 상수화 | config.py에 STEALTH_* 상수 집중 관리 | ✓ Good |
+| CF challenge 15초 대기 + 3회 재시도 | #itemcase_basic 셀렉터로 challenge 통과 감지 | ✓ Good |
 
 ---
-*Last updated: 2026-03-26 after v1.2 milestone started*
+*Last updated: 2026-03-26 after v1.2 milestone complete*
