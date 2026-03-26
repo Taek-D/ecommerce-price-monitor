@@ -32,7 +32,6 @@ STEALTH_USER_AGENT = (
     "Chrome/131.0.0.0 Safari/537.36"
 )
 STEALTH_CHROME_ARGS = [
-    "--headless=new",
     "--no-sandbox",
     "--disable-blink-features=AutomationControlled",
     "--disable-features=AutomationControlled",

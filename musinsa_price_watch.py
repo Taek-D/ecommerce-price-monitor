@@ -383,7 +383,7 @@ async def check_once():
 
     async with async_playwright() as pw:
         reset_diagnostic_capture_budget()
-        browser = await pw.chromium.launch(headless=False, args=STEALTH_CHROME_ARGS)
+        browser = await pw.chromium.launch(headless=True, args=STEALTH_CHROME_ARGS)
         context = await browser.new_context(
             user_agent=STEALTH_USER_AGENT,
             timezone_id="Asia/Seoul",

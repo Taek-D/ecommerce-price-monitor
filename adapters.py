@@ -400,6 +400,10 @@ class BaseAdapter:
         """Return the URL to pass to page.goto(). Override to strip tracking params."""
         return url
 
+    async def _prepare_page(self, page, url: str) -> None:
+        """Hook before page.goto(). Override to clear cookies, etc."""
+        pass
+
     async def _after_goto(self, page, url: str) -> None:
         """Hook for post-navigation processing. Override in subclasses."""
         pass
@@ -409,6 +413,7 @@ class BaseAdapter:
         for attempt in range(1, self._retry_on_timeout + 2):
             stage_trace: list[str] = []
             try:
+                await self._prepare_page(page, url)
                 await page.goto(
                     self._navigation_url(url),
                     wait_until="domcontentloaded",
@@ -804,6 +809,11 @@ class GmarketAdapter(BaseAdapter):
             return url
         new_query = urlencode(cleaned, doseq=True)
         return urlunparse(parsed._replace(query=new_query))
+
+    async def _prepare_page(self, page, url: str) -> None:
+        ctx = getattr(page, "context", None)
+        if ctx:
+            await ctx.clear_cookies(domain=".gmarket.co.kr")
 
     async def _after_goto(self, page, url: str) -> None:
         if not await self._wait_for_cloudflare_challenge(page):
