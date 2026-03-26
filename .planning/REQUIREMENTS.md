@@ -9,14 +9,14 @@ Requirements for milestone v1.2 지마켓안티봇. Each maps to roadmap phases.
 
 ### 안티봇 우회
 
-- [ ] **ABOT-01**: Playwright 브라우저에 stealth 설정을 적용하여 headless 탐지를 회피한다 (user-agent, webdriver 플래그 등)
-- [ ] **ABOT-02**: 지마켓 상품 페이지에서 Cloudflare challenge를 통과하고 실제 콘텐츠(`#itemcase_basic`)가 로드된다
+- [x] **ABOT-01**: Playwright 브라우저에 stealth 설정을 적용하여 headless 탐지를 회피한다 (user-agent, webdriver 플래그 등)
+- [x] **ABOT-02**: 지마켓 상품 페이지에서 Cloudflare challenge를 통과하고 실제 콘텐츠(`#itemcase_basic`)가 로드된다
 - [ ] **ABOT-03**: stealth 설정이 다른 쇼핑몰 어댑터의 기존 동작을 깨뜨리지 않는다
 
 ### 지마켓 가격 추출 정상화
 
 - [ ] **GFIX-01**: Cloudflare 통과 후 기존 지마켓 셀렉터로 가격이 정상 추출된다
-- [ ] **GFIX-02**: Cloudflare challenge 대기 시간을 고려한 타임아웃/재시도 로직이 적용된다
+- [x] **GFIX-02**: Cloudflare challenge 대기 시간을 고려한 타임아웃/재시도 로직이 적용된다
 
 ## v1.1 Requirements (Completed)
 
@@ -66,11 +66,11 @@ Deferred to future release.
 | SREC-02 | Phase 2 | Complete |
 | EALT-01 | Phase 2 | Complete |
 | EALT-02 | Phase 2 | Complete |
-| ABOT-01 | Phase 3 | Pending |
-| ABOT-02 | Phase 3 | Pending |
+| ABOT-01 | Phase 3 | Complete |
+| ABOT-02 | Phase 3 | Complete |
 | ABOT-03 | Phase 3 | Pending |
 | GFIX-01 | Phase 3 | Pending |
-| GFIX-02 | Phase 3 | Pending |
+| GFIX-02 | Phase 3 | Complete |
 
 **Coverage:**
 - v1.2 requirements: 5 total

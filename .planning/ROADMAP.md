@@ -36,7 +36,7 @@
   2. 지마켓 상품의 가격이 기존 셀렉터로 정상 추출되어 Discord 알림과 시트 기록이 동작한다
   3. Cloudflare challenge가 간헐적으로 뜰 때 타임아웃 내 재시도하여 복구된다
   4. 무신사, 11번가, 29CM, 옥션 등 다른 쇼핑몰 어댑터가 stealth 적용 후에도 기존과 동일하게 동작한다
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] 03-01-PLAN.md — Stealth 브라우저 설정 + Cloudflare challenge 대기/재시도 로직
@@ -51,4 +51,4 @@ Phases execute in numeric order: 1 -> 2 -> 3
 |-------|-----------|----------------|--------|-----------|
 | 1. 상품준비중 Discord 알림 | v1.0 | 1/1 | Complete | 2026-03-20 |
 | 2. 소싱탭 자동기록 | v1.1 | 2/2 | Complete | 2026-03-26 |
-| 3. 지마켓 안티봇 우회 + 가격 추출 정상화 | v1.2 | 0/2 | Not started | - |
+| 3. 지마켓 안티봇 우회 + 가격 추출 정상화 | 1/2 | In Progress|  | - |
