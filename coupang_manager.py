@@ -15,7 +15,7 @@ import os
 import re
 from difflib import SequenceMatcher
 from datetime import datetime, timezone, timedelta
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from config import KST, settings
 from utils import post_webhook
@@ -668,6 +668,84 @@ def _load_sourcing_min_price_by_vid() -> dict[str, int]:
                 min_price_by_vid[vid] = min_price
 
     return min_price_by_vid
+
+
+def _resolve_sourcing_tab_name(url: str | None) -> str | None:
+    """URL에서 도메인을 추출하여 소싱처 탭 이름을 반환한다.
+
+    DOMAIN_TO_SOURCING_TAB 딕셔너리의 키(도메인 접미사)와 매칭.
+    알 수 없는 도메인이면 None을 반환한다.
+    """
+    from config import DOMAIN_TO_SOURCING_TAB
+
+    if not url or not isinstance(url, str):
+        return None
+
+    try:
+        hostname = urlparse(url.strip()).hostname
+    except Exception:
+        return None
+
+    if not hostname:
+        return None
+
+    for domain_suffix, tab_name in DOMAIN_TO_SOURCING_TAB.items():
+        if hostname == domain_suffix or hostname.endswith("." + domain_suffix):
+            return tab_name
+
+    return None
+
+
+def _load_sourcing_info_by_vid() -> dict[str, dict]:
+    """소싱목록 O열(vendorItemId) -> {url, buy_price, product_name} 인덱스 생성.
+
+    D열(구매링크), H열(매입가격), B열(상품명)을 vendorItemId 기준으로 조회할 수 있도록
+    딕셔너리를 구성한다. 같은 vid가 여러 행에 있으면 첫 번째 행의 데이터를 유지한다.
+    """
+    try:
+        ws = _open_coupang_sheet(SOURCING_SHEET)
+        rows = ws.get_all_values()
+    except Exception as e:
+        _log_order.error(f"소싱목록 조회 실패 (sourcing info): {e}")
+        return {}
+
+    info_by_vid: dict[str, dict] = {}
+    for row in rows[SOURCING_DATA_START - 1 :]:
+        if not row or len(row) < SOURCING_COL_VID:
+            continue
+
+        vid_cell = (row[SOURCING_COL_VID - 1] or "").strip()
+        if not vid_cell:
+            continue
+
+        url = (
+            (row[SOURCING_COL_URL - 1] or "").strip()
+            if len(row) >= SOURCING_COL_URL
+            else ""
+        )
+        buy_price_cell = (
+            (row[SOURCING_COL_BUYPRICE - 1] or "").strip()
+            if len(row) >= SOURCING_COL_BUYPRICE
+            else ""
+        )
+        product_name = (
+            (row[SOURCING_COL_NAME - 1] or "").strip()
+            if len(row) >= SOURCING_COL_NAME
+            else ""
+        )
+
+        buy_price = _to_positive_int(buy_price_cell)
+
+        for vid in _parse_vendor_item_ids(vid_cell):
+            if vid not in info_by_vid:
+                info_by_vid[vid] = {
+                    "url": url,
+                    "buy_price": buy_price,
+                    "product_name": product_name,
+                }
+
+    _log_sourcing.info(f"소싱 정보 로드 완료: {len(info_by_vid)}건")
+    return info_by_vid
 
 
 def _check_order_price_guard(order: dict, min_price_by_vid: dict[str, int]) -> dict:
@@ -1615,6 +1693,7 @@ SOURCING_SHEET = "소싱목록"
 SOURCING_HEADER_ROW = 2
 SOURCING_DATA_START = 3
 SOURCING_COL_NAME = 2  # B열: 상품명
+SOURCING_COL_URL = 4  # D열: 구매링크
 SOURCING_COL_BUYPRICE = 8  # H열: 매입가격
 SOURCING_COL_MINPRICE = 11  # K열: 최소판매금액
 SOURCING_COL_VID = 15  # O열: vendorItemId(쿠팡)

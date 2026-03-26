@@ -228,6 +228,19 @@ EXCLUDE_KEYWORDS = [
     "notice",
 ]
 
+# ---------------- 소싱처 도메인 → 탭 매핑 ----------------
+DOMAIN_TO_SOURCING_TAB: dict[str, str] = {
+    "musinsa.com": "무신사",
+    "gmarket.co.kr": "지마켓",
+    "11st.co.kr": "11번가",
+    "auction.co.kr": "옥션",
+    "naver.com": "네이버",
+    "hmall.com": "hmall",
+    "oliveyoung.co.kr": "올리브영",
+    "skstoa.com": "sk스토아",
+    "ezwel.com": "복지몰",
+}
+
 
 # ---------------- Pydantic BaseSettings ----------------
 class Settings(BaseSettings):

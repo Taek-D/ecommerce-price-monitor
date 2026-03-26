@@ -181,17 +181,19 @@ class TestLoadSourcingInfoByVid:
         mock_ws = MagicMock()
         mock_ws.get_all_values.return_value = _make_mock_rows(
             [
-                _make_data_row("멀티상품", "https://example.com/p", "20000", "111,222"),
+                _make_data_row(
+                    "멀티상품", "https://example.com/p", "20000", "11111,22222"
+                ),
             ]
         )
         mock_open.return_value = mock_ws
 
         result = _load_sourcing_info_by_vid()
 
-        assert "111" in result
-        assert "222" in result
-        assert result["111"]["buy_price"] == 20000
-        assert result["222"]["buy_price"] == 20000
+        assert "11111" in result
+        assert "22222" in result
+        assert result["11111"]["buy_price"] == 20000
+        assert result["22222"]["buy_price"] == 20000
 
     @patch("coupang_manager._open_coupang_sheet")
     def test_empty_url(self, mock_open):
@@ -199,16 +201,16 @@ class TestLoadSourcingInfoByVid:
         mock_ws = MagicMock()
         mock_ws.get_all_values.return_value = _make_mock_rows(
             [
-                _make_data_row("상품A", "", "10000", "333"),
+                _make_data_row("상품A", "", "10000", "33333"),
             ]
         )
         mock_open.return_value = mock_ws
 
         result = _load_sourcing_info_by_vid()
 
-        assert "333" in result
-        assert result["333"]["url"] == ""
-        assert result["333"]["buy_price"] == 10000
+        assert "33333" in result
+        assert result["33333"]["url"] == ""
+        assert result["33333"]["buy_price"] == 10000
 
     @patch("coupang_manager._open_coupang_sheet")
     def test_empty_buy_price(self, mock_open):
@@ -216,15 +218,15 @@ class TestLoadSourcingInfoByVid:
         mock_ws = MagicMock()
         mock_ws.get_all_values.return_value = _make_mock_rows(
             [
-                _make_data_row("상품B", "https://example.com/b", "", "444"),
+                _make_data_row("상품B", "https://example.com/b", "", "44444"),
             ]
         )
         mock_open.return_value = mock_ws
 
         result = _load_sourcing_info_by_vid()
 
-        assert "444" in result
-        assert result["444"]["buy_price"] is None
+        assert "44444" in result
+        assert result["44444"]["buy_price"] is None
 
     @patch("coupang_manager._open_coupang_sheet")
     def test_vid_not_in_sourcing_list(self, mock_open):
@@ -247,17 +249,17 @@ class TestLoadSourcingInfoByVid:
         mock_ws = MagicMock()
         mock_ws.get_all_values.return_value = _make_mock_rows(
             [
-                _make_data_row("첫번째", "https://first.com", "10000", "555"),
-                _make_data_row("두번째", "https://second.com", "20000", "555"),
+                _make_data_row("첫번째", "https://first.com", "10000", "55555"),
+                _make_data_row("두번째", "https://second.com", "20000", "55555"),
             ]
         )
         mock_open.return_value = mock_ws
 
         result = _load_sourcing_info_by_vid()
 
-        assert result["555"]["product_name"] == "첫번째"
-        assert result["555"]["url"] == "https://first.com"
-        assert result["555"]["buy_price"] == 10000
+        assert result["55555"]["product_name"] == "첫번째"
+        assert result["55555"]["url"] == "https://first.com"
+        assert result["55555"]["buy_price"] == 10000
 
     @patch("coupang_manager._open_coupang_sheet")
     def test_sheet_open_failure(self, mock_open):
