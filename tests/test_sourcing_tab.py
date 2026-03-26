@@ -283,7 +283,7 @@ def _base_order_kwargs():
         "buyer_name": "홍길동",
         "product_name": "테스트 상품",
         "qty": 2,
-        "paid_total": 35000,
+        "paid_unit": 35000,
     }
 
 
@@ -328,7 +328,7 @@ class TestRecordOrderToSourcingTab:
         assert row[7] == "2"
         # I (index 8): sourcing URL
         assert row[8] == "https://www.musinsa.com/products/1"
-        # L (index 11): paid_total (판매가격)
+        # L (index 11): paid_unit (판매단가)
         assert row[11] == "35000"
         # M (index 12): buy_price (매입가격)
         assert row[12] == "15000"
@@ -476,14 +476,14 @@ class TestRecordOrderToSourcingTab:
         )
 
     @pytest.mark.asyncio
-    async def test_paid_total_none_renders_empty(self):
-        """When paid_total is None, L column should be empty string."""
+    async def test_paid_unit_none_renders_empty(self):
+        """When paid_unit is None, L column should be empty string."""
         mock_sh = MagicMock()
         mock_ws = MagicMock()
         mock_sh.worksheet.return_value = mock_ws
 
         kwargs = _base_order_kwargs()
-        kwargs["paid_total"] = None
+        kwargs["paid_unit"] = None
 
         await _record_order_to_sourcing_tab(
             mock_sh,
@@ -492,7 +492,7 @@ class TestRecordOrderToSourcingTab:
         )
 
         row = mock_ws.append_row.call_args[0][0]
-        assert row[11] == ""  # L: paid_total
+        assert row[11] == ""  # L: paid_unit
 
     @pytest.mark.asyncio
     async def test_buy_price_none_renders_empty(self):

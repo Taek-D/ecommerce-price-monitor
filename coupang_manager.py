@@ -757,7 +757,7 @@ async def _record_order_to_sourcing_tab(
     buyer_name: str,
     product_name: str,
     qty: int,
-    paid_total: int | None,
+    paid_unit: int | None,
 ) -> None:
     """주문 정보를 소싱처 탭에 자동 기록한다.
 
@@ -858,13 +858,13 @@ async def _record_order_to_sourcing_tab(
         url,  # I: 구매처 URL
         "",  # J: 배송회사
         "",  # K: (빈칸)
-        str(paid_total) if paid_total else "",  # L: 판매가격
+        str(paid_unit) if paid_unit else "",  # L: 판매가격(단가)
         str(buy_price) if buy_price else "",  # M: 매입가격
     ]
 
     # f. 행 추가
     try:
-        ws.append_row(row, value_input_option="USER_ENTERED")
+        ws.append_row(row, value_input_option="USER_ENTERED", table_range="A1")
     except Exception as e:
         _log_sourcing.error(
             f"소싱탭 행 추가 실패: orderId={order_id} tab={tab_name} error={e}"
@@ -1506,7 +1506,7 @@ async def process_new_orders():
                     buyer_name=buyer_name,
                     product_name=product_name,
                     qty=qty,
-                    paid_total=paid_total,
+                    paid_unit=paid_unit,
                 )
             except Exception as e:
                 _log_order.warning(
@@ -1593,7 +1593,7 @@ async def process_new_orders():
         if sh_sourcing and sourcing_info_by_vid is not None:
             guard_inst = _check_order_price_guard(order, min_price_by_vid)
             vendor_item_id_inst = guard_inst["vendor_item_id"] or "N/A"
-            paid_total_inst = guard_inst["paid_total"]
+            paid_unit_inst = guard_inst["paid_unit"]
             qty_inst = guard_inst["qty"]
             product_name_inst = guard_inst["product_name"]
             buyer_name_inst = receiver.get("name", "고객")
@@ -1606,7 +1606,7 @@ async def process_new_orders():
                     buyer_name=buyer_name_inst,
                     product_name=product_name_inst,
                     qty=qty_inst,
-                    paid_total=paid_total_inst,
+                    paid_unit=paid_unit_inst,
                 )
             except Exception as e:
                 _log_order.warning(
