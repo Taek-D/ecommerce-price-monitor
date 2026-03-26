@@ -267,6 +267,7 @@ class BaseAdapter:
     _network_idle_before_retry: bool = False
     _idle_ms: int = 500
     _idle_timeout_ms: int = 8000
+    _domain_concurrency: int | None = None  # None = use settings.per_domain_concurrency
     _post_extract_idle: bool = False
     _post_extract_idle_timeout_ms: int = 8000
     retry_on_extract_timeout: bool = True
@@ -740,9 +741,10 @@ class GmarketAdapter(BaseAdapter):
         "goodsPrice",
         "goods_price",
     ]
-    _sleep_after_load = 0.6
+    _sleep_after_load = 2.5
     _retry_on_timeout = 2
     _network_idle_before_retry = True
+    _domain_concurrency = 1
     _idle_ms = 600
     retry_on_extract_timeout = False
 
@@ -809,6 +811,9 @@ class GmarketAdapter(BaseAdapter):
                 f"{self.name} cloudflare challenge not resolved: "
                 f"{self._build_log_context(url)}"
             )
+
+    def _get_sleep_after_load(self) -> float:
+        return 2.5 + random.random() * 2.0
 
     def _extra_log_fields(self, url: str) -> dict[str, object]:
         goodscode = _extract_goodscode(url)

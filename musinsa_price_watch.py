@@ -396,7 +396,9 @@ async def check_once():
         for u in urls_snapshot:
             key = _domain_key(u)
             if key and key not in domain_sems:
-                domain_sems[key] = asyncio.Semaphore(settings.per_domain_concurrency)
+                ad = pick_adapter(u)
+                limit = ad._domain_concurrency or settings.per_domain_concurrency
+                domain_sems[key] = asyncio.Semaphore(limit)
 
         tasks = [
             asyncio.create_task(process_one_url(url, context, global_sem, domain_sems))
