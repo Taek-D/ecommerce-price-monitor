@@ -3,9 +3,22 @@
 **Defined:** 2026-03-25
 **Core Value:** 가격 변동과 주문 상태를 실시간으로 파악하여, 수동 모니터링 없이 즉각 대응할 수 있어야 한다
 
-## v1.1 Requirements
+## v1.2 Requirements
 
-Requirements for milestone v1.1 소싱탭자동기록. Each maps to roadmap phases.
+Requirements for milestone v1.2 지마켓안티봇. Each maps to roadmap phases.
+
+### 안티봇 우회
+
+- [ ] **ABOT-01**: Playwright 브라우저에 stealth 설정을 적용하여 headless 탐지를 회피한다 (user-agent, webdriver 플래그 등)
+- [ ] **ABOT-02**: 지마켓 상품 페이지에서 Cloudflare challenge를 통과하고 실제 콘텐츠(`#itemcase_basic`)가 로드된다
+- [ ] **ABOT-03**: stealth 설정이 다른 쇼핑몰 어댑터의 기존 동작을 깨뜨리지 않는다
+
+### 지마켓 가격 추출 정상화
+
+- [ ] **GFIX-01**: Cloudflare 통과 후 기존 지마켓 셀렉터로 가격이 정상 추출된다
+- [ ] **GFIX-02**: Cloudflare challenge 대기 시간을 고려한 타임아웃/재시도 로직이 적용된다
+
+## v1.1 Requirements (Completed)
 
 ### 소싱 매핑
 
@@ -29,6 +42,8 @@ Deferred to future release.
 - **SREC-03**: 소싱처 탭에 기록된 행에서 A열(구매날짜) 자동 기입
 - **SREC-04**: 소싱처 탭 기록 후 Discord 성공 알림 (요약 포함)
 - **SREC-05**: 중복 기록 방지 (동일 주문ID가 이미 소싱탭에 있으면 스킵)
+- **ABOT-04**: 올리브영 Cloudflare 우회 (지마켓과 동일 패턴 적용)
+- **ABOT-05**: 전체 어댑터 안티봇 강화 (실패율 모니터링 + 자동 재시도)
 
 ## Out of Scope
 
@@ -37,6 +52,9 @@ Deferred to future release.
 | 소싱처 탭 자동 생성 | 탭은 수동 관리, 없는 탭은 경고만 |
 | 소싱처에서 실제 주문 | 자동 구매 기능은 범위 밖 |
 | 매입가격 실시간 크롤링 | 소싱목록 기존 데이터 활용 |
+| 올리브영 어댑터 복구 | v1.2는 지마켓만 집중, 올리브영은 별도 마일스톤 |
+| 외부 안티봇 서비스 연동 | 자체 stealth 우선 시도, 유료 서비스는 실패 시 검토 |
+| 프록시 서버 구축 | 복잡도 대비 효과 불확실, 우선 stealth로 시도 |
 
 ## Traceability
 
@@ -48,12 +66,17 @@ Deferred to future release.
 | SREC-02 | Phase 2 | Complete |
 | EALT-01 | Phase 2 | Complete |
 | EALT-02 | Phase 2 | Complete |
+| ABOT-01 | Phase 3 | Pending |
+| ABOT-02 | Phase 3 | Pending |
+| ABOT-03 | Phase 3 | Pending |
+| GFIX-01 | Phase 3 | Pending |
+| GFIX-02 | Phase 3 | Pending |
 
 **Coverage:**
-- v1.1 requirements: 6 total
-- Mapped to phases: 6
+- v1.2 requirements: 5 total
+- Mapped to phases: 5
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-25*
-*Last updated: 2026-03-25 after initial definition*
+*Last updated: 2026-03-26 after v1.2 requirements added*
