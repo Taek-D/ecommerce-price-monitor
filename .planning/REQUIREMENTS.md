@@ -14,13 +14,13 @@ Requirements for milestone v1.1 소싱탭자동기록. Each maps to roadmap phas
 
 ### 소싱탭 기록
 
-- [ ] **SREC-01**: process_new_orders()에서 새 주문 처리 시 소싱처 탭에 자동으로 새 행을 추가한다 (B=주문자명, G=상품명, H=수량, I=구매처URL, L=판매가격, M=매입가격)
-- [ ] **SREC-02**: 판매가격(L열)은 쿠팡 주문 결제금액에서, 매입가격(M열)은 소싱목록 H열에서 가져온다
+- [x] **SREC-01**: process_new_orders()에서 새 주문 처리 시 소싱처 탭에 자동으로 새 행을 추가한다 (B=주문자명, G=상품명, H=수량, I=구매처URL, L=판매가격, M=매입가격)
+- [x] **SREC-02**: 판매가격(L열)은 쿠팡 주문 결제금액에서, 매입가격(M열)은 소싱목록 H열에서 가져온다
 
 ### 에러/알림
 
-- [ ] **EALT-01**: vendorItemId 매핑 실패(소싱목록에 없음) 시 Discord 경고 알림을 보내고 소싱탭 기록은 스킵한다
-- [ ] **EALT-02**: URL 도메인에 대응하는 소싱처 탭이 스프레드시트에 없을 때 Discord 경고 알림을 보낸다
+- [x] **EALT-01**: vendorItemId 매핑 실패(소싱목록에 없음) 시 Discord 경고 알림을 보내고 소싱탭 기록은 스킵한다
+- [x] **EALT-02**: URL 도메인에 대응하는 소싱처 탭이 스프레드시트에 없을 때 Discord 경고 알림을 보낸다
 
 ## v2 Requirements
 
@@ -44,10 +44,10 @@ Deferred to future release.
 |-------------|-------|--------|
 | SMAP-01 | Phase 2 | Complete |
 | SMAP-02 | Phase 2 | Complete |
-| SREC-01 | Phase 2 | Pending |
-| SREC-02 | Phase 2 | Pending |
-| EALT-01 | Phase 2 | Pending |
-| EALT-02 | Phase 2 | Pending |
+| SREC-01 | Phase 2 | Complete |
+| SREC-02 | Phase 2 | Complete |
+| EALT-01 | Phase 2 | Complete |
+| EALT-02 | Phase 2 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 6 total
