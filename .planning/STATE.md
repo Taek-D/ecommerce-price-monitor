@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: 지마켓안티봇
-status: planning
+status: ready_to_plan
 stopped_at: null
 last_updated: "2026-03-26"
-last_activity: 2026-03-26 — Milestone v1.2 started
+last_activity: 2026-03-26 — Roadmap created for v1.2
 progress:
-  total_phases: 0
+  total_phases: 1
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** 가격 변동과 주문 상태를 실시간으로 파악하여, 수동 모니터링 없이 즉각 대응
-**Current focus:** Defining requirements for v1.2 지마켓안티봇
+**Current focus:** Phase 3 — 지마켓 안티봇 우회 + 가격 추출 정상화
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-26 — Milestone v1.2 started
+Phase: 3 of 3 (지마켓 안티봇 우회 + 가격 추출 정상화)
+Plan: — (not yet planned)
+Status: Ready to plan
+Last activity: 2026-03-26 — Roadmap created for v1.2
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -54,15 +54,9 @@ Progress: [░░░░░░░░░░] 0%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- [v1.0 Phase 1]: `COUPANG_ORDER_WEBHOOK` 재사용 — 별도 웹훅 불필요, 주문 관련 알림 통합
-- [v1.0 Phase 1]: 상품준비중 주문이 없을 때 알림 미발송 (노이즈 방지)
-- [v1.0 Phase 01-discord]: pytest-asyncio 설치 필요 — 기존 requirements.txt에 없었음, dev 의존성으로 추가
-- [v1.0 Phase 01-discord]: _notify_pending_preparation()는 sync_delivery_status_to_sheet() 정의 바로 위에 배치
-- [v1.1 Phase 02-01]: Domain suffix matching (endswith) for URL-to-tab resolution — supports subdomains automatically
-- [v1.1 Phase 02-01]: First occurrence wins for duplicate vids in _load_sourcing_info_by_vid (unlike min_price which takes max)
-- [v1.1 Phase 02-02]: Separate gspread auth for sourcing tab to avoid sharing state with order sheet operations
-- [v1.1 Phase 02-02]: Double try/except pattern for non-blocking sourcing tab recording (function + caller)
-- [v1.1 Phase 02-02]: INSTRUCT orders reuse _check_order_price_guard for consistent variable extraction
+- [v1.1 Phase 02-01]: Domain suffix matching (endswith) for URL-to-tab resolution
+- [v1.1 Phase 02-02]: Separate gspread auth for sourcing tab
+- [v1.2 Roadmap]: All 5 requirements in single phase — tightly coupled (stealth -> challenge pass -> price extraction)
 
 ### Pending Todos
 
@@ -75,5 +69,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-26
-Stopped at: Completed 02-02-PLAN.md
+Stopped at: Roadmap created for v1.2
 Resume file: None
