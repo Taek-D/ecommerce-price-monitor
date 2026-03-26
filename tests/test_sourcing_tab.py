@@ -1,12 +1,13 @@
-"""Unit tests for sourcing tab mapping and lookup functions."""
+"""Unit tests for sourcing tab mapping, lookup, and recording functions."""
 
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 from config import DOMAIN_TO_SOURCING_TAB
 from coupang_manager import (
     _resolve_sourcing_tab_name,
     _load_sourcing_info_by_vid,
+    _record_order_to_sourcing_tab,
     _SOURCING_ORDER_TABS,
 )
 
@@ -269,3 +270,250 @@ class TestLoadSourcingInfoByVid:
         result = _load_sourcing_info_by_vid()
 
         assert result == {}
+
+
+# ── _record_order_to_sourcing_tab ────────────────────────────
+
+
+def _base_order_kwargs():
+    """Common keyword arguments for _record_order_to_sourcing_tab calls."""
+    return {
+        "order_id": "ORD-001",
+        "vendor_item_id": "12345",
+        "buyer_name": "홍길동",
+        "product_name": "테스트 상품",
+        "qty": 2,
+        "paid_total": 35000,
+    }
+
+
+def _base_sourcing_info():
+    """Sourcing info dict with one entry mapping vid 12345 to musinsa URL."""
+    return {
+        "12345": {
+            "url": "https://www.musinsa.com/products/1",
+            "buy_price": 15000,
+            "product_name": "소싱 상품명",
+        }
+    }
+
+
+class TestRecordOrderToSourcingTab:
+    """Integration tests for _record_order_to_sourcing_tab."""
+
+    @pytest.mark.asyncio
+    async def test_happy_path_appends_correct_row(self):
+        """When vid found and tab exists: append row with B,G,H,I,L,M columns."""
+        mock_sh = MagicMock()
+        mock_ws = MagicMock()
+        mock_sh.worksheet.return_value = mock_ws
+
+        await _record_order_to_sourcing_tab(
+            mock_sh,
+            _base_sourcing_info(),
+            **_base_order_kwargs(),
+        )
+
+        mock_ws.append_row.assert_called_once()
+        row = mock_ws.append_row.call_args[0][0]
+
+        # Row should be 13 elements (A through M)
+        assert len(row) == 13
+
+        # B (index 1): buyer_name
+        assert row[1] == "홍길동"
+        # G (index 6): product_name
+        assert row[6] == "테스트 상품"
+        # H (index 7): qty
+        assert row[7] == "2"
+        # I (index 8): sourcing URL
+        assert row[8] == "https://www.musinsa.com/products/1"
+        # L (index 11): paid_total (판매가격)
+        assert row[11] == "35000"
+        # M (index 12): buy_price (매입가격)
+        assert row[12] == "15000"
+
+        # Empty columns
+        assert row[0] == ""  # A: 구매날짜
+        assert row[2] == ""  # C: 수취인명
+        assert row[3] == ""  # D: 안심번호
+        assert row[4] == ""  # E: 배송지
+        assert row[5] == ""  # F: 메모
+        assert row[9] == ""  # J: 배송회사
+        assert row[10] == ""  # K: empty
+
+        # value_input_option should be USER_ENTERED
+        assert mock_ws.append_row.call_args[1]["value_input_option"] == "USER_ENTERED"
+
+    @pytest.mark.asyncio
+    async def test_correct_tab_selected(self):
+        """Tab name resolved from URL domain via _resolve_sourcing_tab_name."""
+        mock_sh = MagicMock()
+        mock_ws = MagicMock()
+        mock_sh.worksheet.return_value = mock_ws
+
+        await _record_order_to_sourcing_tab(
+            mock_sh,
+            _base_sourcing_info(),
+            **_base_order_kwargs(),
+        )
+
+        # URL is musinsa.com -> tab should be "무신사"
+        mock_sh.worksheet.assert_called_with("무신사")
+
+    @pytest.mark.asyncio
+    @patch("coupang_manager.post_webhook", new_callable=AsyncMock)
+    async def test_vid_not_found_sends_discord_alert(self, mock_webhook):
+        """When vid not in sourcing_info: Discord warning, no tab write."""
+        mock_sh = MagicMock()
+
+        kwargs = _base_order_kwargs()
+        kwargs["vendor_item_id"] = "99999"  # Not in sourcing info
+
+        await _record_order_to_sourcing_tab(
+            mock_sh,
+            _base_sourcing_info(),
+            **kwargs,
+        )
+
+        # No worksheet access
+        mock_sh.worksheet.assert_not_called()
+
+        # Discord alert sent
+        mock_webhook.assert_called_once()
+        call_kwargs = mock_webhook.call_args
+        embeds = (
+            call_kwargs[1].get("embeds") or call_kwargs[0][2]
+            if len(call_kwargs[0]) > 2
+            else call_kwargs[1].get("embeds")
+        )
+        assert embeds is not None
+        embed = embeds[0]
+        assert "소싱탭 기록 실패" in embed["title"]
+        # Check fields mention the reason
+        field_values = [f["value"] for f in embed["fields"]]
+        assert any("소싱목록에 vendorItemId 매핑 없음" in v for v in field_values)
+
+    @pytest.mark.asyncio
+    @patch("coupang_manager.post_webhook", new_callable=AsyncMock)
+    async def test_url_domain_unmapped_sends_discord_alert(self, mock_webhook):
+        """When URL domain has no matching tab: Discord warning, no tab write."""
+        mock_sh = MagicMock()
+
+        sourcing_info = {
+            "12345": {
+                "url": "https://unknown-shop.co.kr/products/1",
+                "buy_price": 10000,
+                "product_name": "알수없는 상품",
+            }
+        }
+
+        await _record_order_to_sourcing_tab(
+            mock_sh,
+            sourcing_info,
+            **_base_order_kwargs(),
+        )
+
+        # No worksheet access
+        mock_sh.worksheet.assert_not_called()
+
+        # Discord alert sent
+        mock_webhook.assert_called_once()
+        call_kwargs = mock_webhook.call_args
+        embeds = (
+            call_kwargs[1].get("embeds") or call_kwargs[0][2]
+            if len(call_kwargs[0]) > 2
+            else call_kwargs[1].get("embeds")
+        )
+        assert embeds is not None
+        embed = embeds[0]
+        assert "소싱탭 기록 실패" in embed["title"]
+        field_values = [f["value"] for f in embed["fields"]]
+        assert any("URL 도메인에 대응하는 소싱처 탭 없음" in v for v in field_values)
+
+    @pytest.mark.asyncio
+    @patch("coupang_manager.post_webhook", new_callable=AsyncMock)
+    async def test_worksheet_not_found_sends_discord_alert(self, mock_webhook):
+        """When tab exists in mapping but not in spreadsheet: Discord warning."""
+        import gspread.exceptions
+
+        mock_sh = MagicMock()
+        mock_sh.worksheet.side_effect = gspread.exceptions.WorksheetNotFound("무신사")
+
+        await _record_order_to_sourcing_tab(
+            mock_sh,
+            _base_sourcing_info(),
+            **_base_order_kwargs(),
+        )
+
+        # Discord alert sent
+        mock_webhook.assert_called_once()
+        call_kwargs = mock_webhook.call_args
+        embeds = (
+            call_kwargs[1].get("embeds") or call_kwargs[0][2]
+            if len(call_kwargs[0]) > 2
+            else call_kwargs[1].get("embeds")
+        )
+        assert embeds is not None
+        embed = embeds[0]
+        assert "소싱탭 기록 실패" in embed["title"]
+        field_values = [f["value"] for f in embed["fields"]]
+        assert any("스프레드시트에 탭 없음" in v for v in field_values)
+
+    @pytest.mark.asyncio
+    async def test_append_row_failure_does_not_propagate(self):
+        """When append_row raises, the error is caught (non-blocking)."""
+        mock_sh = MagicMock()
+        mock_ws = MagicMock()
+        mock_sh.worksheet.return_value = mock_ws
+        mock_ws.append_row.side_effect = Exception("Google API quota exceeded")
+
+        # Should NOT raise
+        await _record_order_to_sourcing_tab(
+            mock_sh,
+            _base_sourcing_info(),
+            **_base_order_kwargs(),
+        )
+
+    @pytest.mark.asyncio
+    async def test_paid_total_none_renders_empty(self):
+        """When paid_total is None, L column should be empty string."""
+        mock_sh = MagicMock()
+        mock_ws = MagicMock()
+        mock_sh.worksheet.return_value = mock_ws
+
+        kwargs = _base_order_kwargs()
+        kwargs["paid_total"] = None
+
+        await _record_order_to_sourcing_tab(
+            mock_sh,
+            _base_sourcing_info(),
+            **kwargs,
+        )
+
+        row = mock_ws.append_row.call_args[0][0]
+        assert row[11] == ""  # L: paid_total
+
+    @pytest.mark.asyncio
+    async def test_buy_price_none_renders_empty(self):
+        """When buy_price is None, M column should be empty string."""
+        mock_sh = MagicMock()
+        mock_ws = MagicMock()
+        mock_sh.worksheet.return_value = mock_ws
+
+        sourcing_info = {
+            "12345": {
+                "url": "https://www.musinsa.com/products/1",
+                "buy_price": None,
+                "product_name": "상품명",
+            }
+        }
+
+        await _record_order_to_sourcing_tab(
+            mock_sh,
+            sourcing_info,
+            **_base_order_kwargs(),
+        )
+
+        row = mock_ws.append_row.call_args[0][0]
+        assert row[12] == ""  # M: buy_price
