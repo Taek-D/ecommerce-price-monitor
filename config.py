@@ -25,6 +25,26 @@ MIN_PRICE = 5000
 WEB_TIMEOUT = 45000
 URL_TOTAL_TIMEOUT = 90
 
+# ---------------- Stealth / Anti-bot ----------------
+STEALTH_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
+STEALTH_CHROME_ARGS = [
+    "--no-sandbox",
+    "--disable-blink-features=AutomationControlled",
+    "--disable-features=AutomationControlled",
+    "--disable-dev-shm-usage",
+]
+STEALTH_INIT_SCRIPT = """
+Object.defineProperty(navigator, 'webdriver', { get: () => false });
+Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+Object.defineProperty(navigator, 'languages', { get: () => ['ko-KR', 'ko', 'en-US', 'en'] });
+window.chrome = { runtime: {} };
+"""
+CLOUDFLARE_CHALLENGE_WAIT_MS = 15000
+
 # ---------------- 무신사 ----------------
 MUSINSA_EXACT_PRICE_SELECTOR = 'span[class*="Price__CalculatedPrice"]'
 MUSINSA_SOLDOUT_SELECTOR = 'div[class*="Purchase__Container"] button span'

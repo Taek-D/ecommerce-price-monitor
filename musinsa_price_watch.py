@@ -24,6 +24,9 @@ from config import (
     H_COL_INDEX,
     J_COL_INDEX,
     URLS_START_ROW,
+    STEALTH_CHROME_ARGS,
+    STEALTH_USER_AGENT,
+    STEALTH_INIT_SCRIPT,
 )
 from utils import (
     _normalize_url,
@@ -34,6 +37,7 @@ from utils import (
     valid_price_value,
 )
 from adapters import pick_adapter
+from diagnostics import reset_diagnostic_capture_budget
 
 _log = logging.getLogger("musinsa_bot.price")
 _log_sheet = logging.getLogger("musinsa_bot.sheet")
@@ -110,9 +114,7 @@ def _build_url_reload_stats(col_vals: list[str]) -> tuple[list[str], dict]:
         rows_by_url[normalized].append(idx)
 
     unique_urls = list(dict.fromkeys(fresh))
-    duplicate_groups = {
-        url: rows for url, rows in rows_by_url.items() if len(rows) > 1
-    }
+    duplicate_groups = {url: rows for url, rows in rows_by_url.items() if len(rows) > 1}
     duplicate_examples = [
         {"url": url, "rows": rows}
         for url, rows in sorted(duplicate_groups.items(), key=lambda item: item[1][0])
@@ -147,8 +149,7 @@ def _log_url_reload_stats(stats: dict) -> None:
 
     for example in examples[:_DUPLICATE_LOG_LIMIT]:
         _log.warning(
-            "Duplicate URL rows detected: "
-            f"rows={example['rows']} url={example['url']}"
+            f"Duplicate URL rows detected: rows={example['rows']} url={example['url']}"
         )
     remaining = len(examples) - _DUPLICATE_LOG_LIMIT
     if remaining > 0:
@@ -197,55 +198,120 @@ async def process_one_url(
 
     loop = asyncio.get_running_loop()
     started = loop.time()
+    domain_key = _domain_key(url)
     last_error = None
+    meta = {}
+    queue_wait_total = 0.0
+    last_extract_elapsed: float | None = None
+    timeout_label = f"{URL_TOTAL_TIMEOUT:g}s"
+    retry_suppressed_reason: str | None = None
+
+    def _format_elapsed(value: float | None) -> str:
+        return "-" if value is None else f"{value:.2f}s"
 
     for attempt in range(1, settings.url_retry_count + 1):
         # 전체 경과시간이 URL_TOTAL_TIMEOUT을 넘으면 즉시 중단
-        total_elapsed = loop.time() - started
-        if total_elapsed > URL_TOTAL_TIMEOUT:
-            last_error = (
-                f"url total timeout ({total_elapsed:.0f}s > {URL_TOTAL_TIMEOUT}s)"
-            )
-            break
-
-        remaining = URL_TOTAL_TIMEOUT - total_elapsed
         page = None
+        meta = {}
+        extract_started: float | None = None
+        extract_task: asyncio.Task | None = None
         try:
+
+            async def _run_after_acquire():
+                nonlocal page
+                page = await context.new_page()
+                return await ad.extract(page, url)
+
+            async def _run_extract_with_timeout():
+                nonlocal extract_task
+                extract_task = asyncio.create_task(_run_after_acquire())
+                return await asyncio.wait_for(extract_task, timeout=URL_TOTAL_TIMEOUT)
+
+            async def _drain_extract_task() -> None:
+                if extract_task is None:
+                    return
+                if not extract_task.done():
+                    extract_task.cancel()
+                try:
+                    await extract_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+
+            queue_wait_started = loop.time()
             if domain_sem is None:
                 async with global_sem:
-                    page = await context.new_page()
-                    _res = await asyncio.wait_for(
-                        ad.extract(page, url), timeout=remaining
-                    )
-                    kind, value = _res.kind, _res.value
+                    queue_wait_elapsed = loop.time() - queue_wait_started
+                    queue_wait_total += queue_wait_elapsed
+                    if queue_wait_elapsed >= settings.queue_wait_log_threshold_seconds:
+                        _log.info(
+                            f"{ad.name} queue wait: url={url} attempt={attempt} "
+                            f"queue_wait={queue_wait_elapsed:.2f}s "
+                            f"domain_key={domain_key} has_domain_limit=False"
+                        )
+                    extract_started = loop.time()
+                    _res = await _run_extract_with_timeout()
             else:
                 async with domain_sem:
                     async with global_sem:
-                        page = await context.new_page()
-                        _res = await asyncio.wait_for(
-                            ad.extract(page, url), timeout=remaining
-                        )
-                        kind, value = _res.kind, _res.value
+                        queue_wait_elapsed = loop.time() - queue_wait_started
+                        queue_wait_total += queue_wait_elapsed
+                        if (
+                            queue_wait_elapsed
+                            >= settings.queue_wait_log_threshold_seconds
+                        ):
+                            _log.info(
+                                f"{ad.name} queue wait: url={url} attempt={attempt} "
+                                f"queue_wait={queue_wait_elapsed:.2f}s "
+                                f"domain_key={domain_key} has_domain_limit=True"
+                            )
+                        extract_started = loop.time()
+                        _res = await _run_extract_with_timeout()
+
+            last_extract_elapsed = loop.time() - extract_started
+            kind, value, meta = _res.kind, _res.value, (_res.meta or {})
 
             if kind == "price" and not valid_price_value(value):
                 last_error = f"extract returned invalid price: {value!r}"
             elif kind != "error":
                 elapsed = loop.time() - started
-                _log.info(f"{ad.name} {url} -> {kind} ({elapsed:.2f}s)")
+                diagnostic = meta.get("diagnostic") or {}
+                diagnostic_path = diagnostic.get("path")
+                suffix = (
+                    f" diagnostic_path={diagnostic_path}" if diagnostic_path else ""
+                )
+                _log.info(
+                    f"{ad.name} {url} -> {kind} ({elapsed:.2f}s) "
+                    f"queue_wait_total={queue_wait_total:.2f}s "
+                    f"last_extract_elapsed={_format_elapsed(last_extract_elapsed)}"
+                    f"{suffix}"
+                )
                 return {
                     "url": url,
                     "adapter": ad,
                     "kind": kind,
                     "value": value,
                     "elapsed": elapsed,
+                    "meta": meta,
                 }
 
             last_error = "extract returned error"
         except asyncio.TimeoutError:
-            last_error = f"url total timeout ({URL_TOTAL_TIMEOUT}s)"
+            if extract_started is not None:
+                last_extract_elapsed = loop.time() - extract_started
+            last_error = f"extract timeout ({timeout_label})"
+            if not getattr(ad, "retry_on_extract_timeout", True):
+                retry_suppressed_reason = "extract_timeout_policy"
+                break
         except Exception as e:
+            if extract_started is not None:
+                last_extract_elapsed = loop.time() - extract_started
             last_error = str(e)
         finally:
+            if extract_task is not None:
+                try:
+                    await _drain_extract_task()
+                except Exception:
+                    pass
             if page is not None:
                 try:
                     await page.close()
@@ -259,7 +325,17 @@ async def process_one_url(
             await asyncio.sleep(backoff)
 
     elapsed = loop.time() - started
-    _log.warning(f"{ad.name} {url} -> error ({elapsed:.2f}s) reason={last_error}")
+    diagnostic = (meta or {}).get("diagnostic") or {}
+    diagnostic_path = diagnostic.get("path")
+    suffix = f" diagnostic_path={diagnostic_path}" if diagnostic_path else ""
+    if retry_suppressed_reason:
+        suffix += f" retry_suppressed={retry_suppressed_reason}"
+    _log.warning(
+        f"{ad.name} {url} -> error ({elapsed:.2f}s) reason={last_error} "
+        f"queue_wait_total={queue_wait_total:.2f}s "
+        f"last_extract_elapsed={_format_elapsed(last_extract_elapsed)}"
+        f"{suffix}"
+    )
     return {
         "url": url,
         "adapter": ad,
@@ -267,6 +343,7 @@ async def process_one_url(
         "value": None,
         "elapsed": elapsed,
         "error": last_error,
+        "meta": meta,
     }
 
 
@@ -305,16 +382,14 @@ async def check_once():
     urls_snapshot = list(URLS)
 
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True, args=["--no-sandbox"])
+        reset_diagnostic_capture_budget()
+        browser = await pw.chromium.launch(headless=True, args=STEALTH_CHROME_ARGS)
         context = await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
+            user_agent=STEALTH_USER_AGENT,
             timezone_id="Asia/Seoul",
             locale="ko-KR",
         )
+        await context.add_init_script(STEALTH_INIT_SCRIPT)
 
         global_sem = asyncio.Semaphore(settings.max_concurrency)
         domain_sems: dict[str, asyncio.Semaphore] = {}
@@ -366,7 +441,12 @@ async def check_once():
         value = result.get("value")
 
         if kind == "error":
-            _log.error(f"{ad.name} error extracting {url}: {result.get('error')}")
+            diagnostic = (result.get("meta") or {}).get("diagnostic") or {}
+            diagnostic_path = diagnostic.get("path")
+            suffix = f" diagnostic_path={diagnostic_path}" if diagnostic_path else ""
+            _log.error(
+                f"{ad.name} error extracting {url}: {result.get('error')}{suffix}"
+            )
             error_count += 1
             continue
 
@@ -403,7 +483,11 @@ async def check_once():
                     reconciled = True
         else:
             success_price_count += 1
-            if existing_sheet_numeric != curr or blank_sheet_price or soldout_sheet_price:
+            if (
+                existing_sheet_numeric != curr
+                or blank_sheet_price
+                or soldout_sheet_price
+            ):
                 write_price = True
                 sheet_value = curr
                 if not changed:
