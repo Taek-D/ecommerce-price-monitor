@@ -9,8 +9,8 @@ Requirements for milestone v1.1 소싱탭자동기록. Each maps to roadmap phas
 
 ### 소싱 매핑
 
-- [ ] **SMAP-01**: 쿠팡 주문의 vendorItemId로 소싱목록 O열을 조회하여 해당 행의 구매링크(D열)와 매입가격(H열)을 가져올 수 있다
-- [ ] **SMAP-02**: 구매링크 URL의 도메인을 분석하여 대응하는 소싱처 탭 이름을 결정할 수 있다 (musinsa.com→무신사, gmarket.co.kr→지마켓 등)
+- [x] **SMAP-01**: 쿠팡 주문의 vendorItemId로 소싱목록 O열을 조회하여 해당 행의 구매링크(D열)와 매입가격(H열)을 가져올 수 있다
+- [x] **SMAP-02**: 구매링크 URL의 도메인을 분석하여 대응하는 소싱처 탭 이름을 결정할 수 있다 (musinsa.com→무신사, gmarket.co.kr→지마켓 등)
 
 ### 소싱탭 기록
 
@@ -42,8 +42,8 @@ Deferred to future release.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SMAP-01 | Phase 2 | Pending |
-| SMAP-02 | Phase 2 | Pending |
+| SMAP-01 | Phase 2 | Complete |
+| SMAP-02 | Phase 2 | Complete |
 | SREC-01 | Phase 2 | Pending |
 | SREC-02 | Phase 2 | Pending |
 | EALT-01 | Phase 2 | Pending |

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: 소싱탭자동기록
-status: planning
+status: executing
 stopped_at: null
-last_updated: "2026-03-25"
-last_activity: 2026-03-25 — Milestone v1.1 started
+last_updated: "2026-03-26T04:51:00Z"
+last_activity: 2026-03-26 — Completed 02-01-PLAN.md (sourcing data layer)
 progress:
   total_phases: 1
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 2
+  completed_plans: 1
+  percent: 50
 ---
 
 # Project State
@@ -21,29 +21,29 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-25)
 
 **Core value:** 가격 변동과 주문 상태를 실시간으로 파악하여, 수동 모니터링 없이 즉각 대응
-**Current focus:** Defining requirements for v1.1 소싱탭자동기록
+**Current focus:** Executing v1.1 소싱탭자동기록 Phase 02
 
 ## Current Position
 
 Phase: 2 of 2 (소싱탭 자동기록)
-Plan: 0 of ? in current phase
-Status: Ready to plan
-Last activity: 2026-03-25 — Roadmap created, milestone v1.1 defined
+Plan: 1 of 2 in current phase (02-01 complete)
+Status: Executing
+Last activity: 2026-03-26 — Completed 02-01-PLAN.md (sourcing data layer)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 0
-- Average duration: —
-- Total execution time: —
+- Total plans completed: 1
+- Average duration: 4min
+- Total execution time: 4min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 02 | 1 | 4min | 4min |
 
 *Updated after each plan completion*
 
@@ -58,6 +58,8 @@ Recent decisions affecting current work:
 - [v1.0 Phase 1]: 상품준비중 주문이 없을 때 알림 미발송 (노이즈 방지)
 - [v1.0 Phase 01-discord]: pytest-asyncio 설치 필요 — 기존 requirements.txt에 없었음, dev 의존성으로 추가
 - [v1.0 Phase 01-discord]: _notify_pending_preparation()는 sync_delivery_status_to_sheet() 정의 바로 위에 배치
+- [v1.1 Phase 02-01]: Domain suffix matching (endswith) for URL-to-tab resolution — supports subdomains automatically
+- [v1.1 Phase 02-01]: First occurrence wins for duplicate vids in _load_sourcing_info_by_vid (unlike min_price which takes max)
 
 ### Pending Todos
 
@@ -69,6 +71,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-25
-Stopped at: null
+Last session: 2026-03-26
+Stopped at: Completed 02-01-PLAN.md
 Resume file: None
