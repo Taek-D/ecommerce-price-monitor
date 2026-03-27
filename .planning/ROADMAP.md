@@ -34,7 +34,7 @@
 
 **Milestone Goal:** 분산된 운영 상태(JSON 파일, Sheets)를 SQLite DB로 통합하여 가격 이력 조회, 실패율 분석, 재시작 복구를 가능하게 한다.
 
-- [ ] **Phase 4: DB Foundation** — aiosqlite 싱글톤 + WAL 스키마 + main.py 라이프사이클
+- [x] **Phase 4: DB Foundation** — aiosqlite 싱글톤 + WAL 스키마 + main.py 라이프사이클 (completed 2026-03-27)
 - [ ] **Phase 5: Event Logging** — 가격 체크/변동/에러/작업 이벤트 append-only DB 저장 + dual-write 순서 보장
 - [ ] **Phase 6: Migration** — price_state.json + discovery_state.json DB 이전, DB를 source of truth로 전환
 
@@ -85,6 +85,6 @@ Plans:
 | 1. 상품준비중 Discord 알림 | v1.0 | 1/1 | Complete | 2026-03-20 |
 | 2. 소싱탭 자동기록 | v1.1 | 2/2 | Complete | 2026-03-26 |
 | 3. 지마켓 안티봇 우회 + 가격 추출 정상화 | v1.2 | 2/2 | Complete | 2026-03-26 |
-| 4. DB Foundation | 1/2 | In Progress|  | - |
+| 4. DB Foundation | 2/2 | Complete   | 2026-03-27 | - |
 | 5. Event Logging | v1.3 | 0/? | Not started | - |
 | 6. Migration | v1.3 | 0/? | Not started | - |
