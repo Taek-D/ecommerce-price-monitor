@@ -49,6 +49,7 @@
 | Google Sheets | gspread + google-auth |
 | 쿠팡 API | HMAC-SHA256 서명 기반 REST API |
 | SMS 발송 | 마이문자 API |
+| DB 저장소 | aiosqlite (SQLite + WAL) |
 | 환경 변수 | python-dotenv |
 
 
@@ -58,12 +59,18 @@
 main.py                     # 통합 진입점 (스케줄러 등록)
 musinsa_price_watch.py      # 가격 모니터링 엔진 (어댑터 패턴)
 coupang_manager.py          # 쿠팡 주문/동기화/발송/재고/정산 자동화
+db.py                       # SQLite DB 모듈 (싱글톤 + WAL)
+migrate.py                  # JSON → DB 마이그레이션 스크립트
+config.py                   # 전역 설정 (상수 + Pydantic BaseSettings)
+utils.py                    # 유틸리티 + httpx 클라이언트 + Discord 웹훅
+adapters.py                 # 플랫폼별 어댑터 + ExtractionResult
 setup_coupang_match.py      # 쿠팡 상품 ↔ 소싱목록 퍼지 매칭 초기 설정
 setup_sheets.py             # 구글 시트 초기 구조 확인
 fetch_order_sheet.py        # 쿠팡주문관리 시트 읽기/쓰기 유틸
 fix_order_sheet_headers.py  # 주문관리 시트 헤더/드롭다운 설정
 check_sheet.py              # 소싱목록 탭 구조 확인
 requirements.txt            # pip 의존성
+ops.db                      # SQLite 운영 DB (git 미추적, 런타임 생성)
 safe/                       # Google Service Account 키 (git 미추적)
 .env                        # 환경 변수 (git 미추적)
 docs/SETUP.md               # 설치/설정 가이드
@@ -129,13 +136,26 @@ python setup_coupang_match.py       # 쿠팡 상품 매칭
 python fix_order_sheet_headers.py   # 주문 시트 헤더 설정
 ```
 
-### 5. 실행
+### 5. DB 마이그레이션 (기존 사용자)
+
+기존 `price_state.json`이 있는 경우, 최초 1회 실행:
+
+```bash
+python migrate.py
+```
+
+- 봇 정지 상태에서 실행 (실행 중이면 거부됨)
+- `price_state.json` → DB `price_state` 테이블
+- `discovery_state.json` → DB `discovery_candidates` 테이블
+- 성공 시 원본을 `.bak`으로 리네임
+
+### 6. 실행
 
 ```bash
 python main.py
 ```
 
-### 6. 테스트
+### 7. 테스트
 
 ```bash
 python -m pytest -q
@@ -143,7 +163,7 @@ python -m pytest -q
 
 - `pytest-asyncio`가 설치되어 있어야 async 테스트가 실행됩니다.
 
-### 7. 진단 캡처
+### 8. 진단 캡처
 
 - 진단 캡처는 기본적으로 비활성입니다.
 - 활성화하면 `.runtime/diagnostics` 아래에 실페이지 HTML, 본문 텍스트, JSON, 스크린샷이 저장됩니다.
@@ -163,13 +183,20 @@ main.py (통합 진입점)
 │       ├── AuctionAdapter
 │       ├── ElevenStAdapter
 │       └── UniversalAdapter (catch-all)
-└── coupang_manager.py (쿠팡 자동화)
-    ├── coupang_order_job()      # 주문 처리
-    ├── coupang_sync_job()       # 상품 동기화
-    ├── sourcing_price_job()     # 소싱가격 반영
-    ├── shipping_job()           # 발송 자동화
-    ├── stock_check_job()        # 재고 품절 처리
-    └── settlement_job()         # 정산 집계
+├── coupang_manager.py (쿠팡 자동화)
+│   ├── coupang_order_job()      # 주문 처리
+│   ├── coupang_sync_job()       # 상품 동기화
+│   ├── sourcing_price_job()     # 소싱가격 반영
+│   ├── shipping_job()           # 발송 자동화
+│   ├── stock_check_job()        # 재고 품절 처리
+│   └── settlement_job()         # 정산 집계
+└── db.py (SQLite 운영 DB)
+    ├── price_state              # 가격 상태 (load/save_state)
+    ├── price_checks             # 가격 체크 이벤트 로그
+    ├── price_events             # 가격 변동 이벤트
+    ├── adapter_runs             # 어댑터 에러 로그
+    ├── job_runs                 # 스케줄러 작업 실행 기록
+    └── discovery_candidates     # 발굴 후보 상품
 ```
 
 ### 외부 연동

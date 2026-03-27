@@ -25,6 +25,10 @@ docs/.pdca-snapshots/
 
 # Backup files
 *백업본*
+*.bak
+
+# Runtime logs
+bot.log
 
 # Architecture / diagram images
 *.png
