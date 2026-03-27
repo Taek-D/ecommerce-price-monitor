@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: SQLite운영저장소
-status: completed
-stopped_at: Phase 5 context gathered
-last_updated: "2026-03-27T09:34:07.915Z"
-last_activity: 2026-03-27 — Phase 4 Plan 2 (DB Lifecycle Wiring) complete
+status: in_progress
+stopped_at: Completed 05-02-PLAN.md
+last_updated: "2026-03-27T10:05:35Z"
+last_activity: 2026-03-27 — Phase 5 Plan 2 (job_runs DB Tracking) complete
 progress:
   total_phases: 3
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 20
+  total_plans: 3
+  completed_plans: 3
+  percent: 30
 ---
 
 # Project State
@@ -21,23 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-27)
 
 **Core value:** 가격 변동과 주문 상태를 실시간으로 파악하여, 수동 모니터링 없이 즉각 대응
-**Current focus:** v1.3 Phase 4 — DB Foundation (complete)
+**Current focus:** v1.3 Phase 5 — Event Logging (plan 02 complete)
 
 ## Current Position
 
-Phase: 4 of 6 (DB Foundation)
+Phase: 5 of 6 (Event Logging)
 Plan: 2 of 2 in current phase (complete)
-Status: Phase 4 complete — ready for Phase 5
-Last activity: 2026-03-27 — Phase 4 Plan 2 (DB Lifecycle Wiring) complete
+Status: Phase 5 Plan 2 complete — job_runs tracking wired
+Last activity: 2026-03-27 — Phase 5 Plan 2 (job_runs DB Tracking) complete
 
-Progress: [██░░░░░░░░] 20%
+Progress: [███░░░░░░░] 30%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 6
-- Average duration: 4.8min
-- Total execution time: 33min
+- Total plans completed: 7
+- Average duration: 4.7min
+- Total execution time: 37min
 
 **By Phase:**
 
@@ -46,6 +46,7 @@ Progress: [██░░░░░░░░] 20%
 | 02 | 2 | 9min | 4.5min |
 | 03 | 2 | 15min | 7.5min |
 | 04 | 2 | 9min | 4.5min |
+| 05 | 1 | 4min | 4.0min |
 
 *Updated after each plan completion*
 
@@ -67,6 +68,10 @@ Recent decisions affecting current work:
 - [Phase 04-02]: open_db() placed after banner print, before load_state — ensures WAL ready before any async IO
 - [Phase 04-02]: sched=None before try block — guards finally from AttributeError when scheduler never initialized
 - [Phase 04-02]: sched.shutdown(wait=False) before db.close_db() in finally — drains scheduler before closing DB
+- [Phase 05-02]: _try_db_job_start/_try_db_job_finish are fire-and-forget: exceptions caught, logged, swallowed — job execution always proceeds
+- [Phase 05-02]: job_run_id scoped inside async with lock block — each lane-lock acquisition gets its own rowid
+- [Phase 05-02]: try/except/else pattern: error branch calls _try_db_job_finish then re-raises; APScheduler sees unmodified exception
+- [Phase 05-02]: check_once excluded from job_runs tracking — called directly in main(), not via _run_with_lane_lock
 
 ### Pending Todos
 
@@ -79,6 +84,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-27T09:34:07.913Z
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-event-logging/05-CONTEXT.md
+Last session: 2026-03-27T10:05:35Z
+Stopped at: Completed 05-02-PLAN.md
+Resume file: .planning/phases/05-event-logging/05-02-SUMMARY.md

@@ -69,7 +69,7 @@ Plans:
 
 Plans:
 - [ ] 05-01-PLAN.md — price_checks/price_events/adapter_runs DB 로깅 헬퍼 + check_once() 통합 + dual-write 순서 보장
-- [ ] 05-02-PLAN.md — job_runs DB 추적 (_run_with_lane_lock 통합)
+- [x] 05-02-PLAN.md — job_runs DB 추적 (_run_with_lane_lock 통합)
 
 ### Phase 6: Migration
 **Goal**: price_state.json과 discovery_state.json이 DB로 이전되고, 봇 재시작 후 DB에서 상태를 로드하며, Discord 오알림이 발생하지 않는다
@@ -90,5 +90,5 @@ Plans:
 | 2. 소싱탭 자동기록 | v1.1 | 2/2 | Complete | 2026-03-26 |
 | 3. 지마켓 안티봇 우회 + 가격 추출 정상화 | v1.2 | 2/2 | Complete | 2026-03-26 |
 | 4. DB Foundation | v1.3 | 2/2 | Complete | 2026-03-27 |
-| 5. Event Logging | v1.3 | 0/2 | Not started | - |
+| 5. Event Logging | v1.3 | 1/2 | In progress | - |
 | 6. Migration | v1.3 | 0/? | Not started | - |

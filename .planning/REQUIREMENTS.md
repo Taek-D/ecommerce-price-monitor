@@ -19,7 +19,7 @@ Requirements for milestone v1.3 SQLite운영저장소. Each maps to roadmap phas
 - [ ] **LOG-01**: check_once()에서 price_checks 이벤트 DB 저장
 - [ ] **LOG-02**: 가격 변동 시 price_events DB 저장
 - [ ] **LOG-03**: 어댑터 추출 에러 시 adapter_runs DB 저장 (에러만)
-- [ ] **LOG-04**: 스케줄러 작업 실행 시 job_runs DB 저장
+- [x] **LOG-04**: 스케줄러 작업 실행 시 job_runs DB 저장
 
 ### Migration
 
@@ -63,7 +63,7 @@ Requirements for milestone v1.3 SQLite운영저장소. Each maps to roadmap phas
 | LOG-01 | Phase 5 | Pending |
 | LOG-02 | Phase 5 | Pending |
 | LOG-03 | Phase 5 | Pending |
-| LOG-04 | Phase 5 | Pending |
+| LOG-04 | Phase 5 | Complete |
 | COEX-01 | Phase 5 | Pending |
 | COEX-02 | Phase 5 | Pending |
 | MIG-01 | Phase 6 | Pending |
@@ -78,4 +78,4 @@ Requirements for milestone v1.3 SQLite운영저장소. Each maps to roadmap phas
 
 ---
 *Requirements defined: 2026-03-27*
-*Last updated: 2026-03-27 after roadmap creation (phases 4-6 assigned)*
+*Last updated: 2026-03-27 after 05-02 execution (LOG-04 complete)*
