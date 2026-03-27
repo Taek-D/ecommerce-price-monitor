@@ -1,6 +1,9 @@
 safe/
 price_state.json
 discovery_state.json
+ops.db
+ops.db-wal
+ops.db-shm
 .env
 
 # Python cache

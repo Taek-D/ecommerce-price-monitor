@@ -18,6 +18,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
 from logging_config import setup_logging
 
+import db
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 os.chdir(PROJECT_ROOT)
@@ -29,6 +30,11 @@ _PRODUCT_LANE_LOCK = asyncio.Lock()
 _VALID_BOT_MODES = {"full", "sourcing_only"}
 
 _log = logging.getLogger("musinsa_bot.main")
+_SOURCING_PRICE_JOB_DEFAULTS = {
+    "coalesce": False,
+    "max_instances": 2,
+    "misfire_grace_time": 900,
+}
 
 
 def _configure_stdio() -> None:
@@ -41,6 +47,15 @@ def _configure_stdio() -> None:
 
 
 _configure_stdio()
+
+
+def _mask_identifier(value: str) -> str:
+    text = (value or "").strip()
+    if not text:
+        return "❌ 미설정"
+    if len(text) <= 4:
+        return "*" * len(text)
+    return f"{text[:2]}{'*' * (len(text) - 4)}{text[-2:]}"
 
 
 def _read_lock_pid() -> int | None:
@@ -295,110 +310,121 @@ async def main():
     print("  통합 이커머스 자동화 봇 시작")
     print("=" * 50)
     print("  [무신사봇] 가격 모니터링")
-    print(f"  [쿠팡]    주문 자동화  | VENDOR_ID: {COUPANG_VENDOR_ID or '❌ 미설정'}")
+    print(
+        f"  [쿠팡]    주문 자동화  | VENDOR_ID: {_mask_identifier(COUPANG_VENDOR_ID)}"
+    )
     print(
         f"  [쿠팡]    상품 동기화  | ACCESS_KEY: {'✅' if COUPANG_ACCESS_KEY else '❌ 미설정'}"
     )
     print("  [쿠팡]    발송 자동화  | 송장번호 감지 → 배송중 실시간 처리")
     print("  [쿠팡]    재고 품절    | 쿠팡 실재고 30분 주기 자동 컨트롤")
     print("  [쿠팡]    정산 집계    | 1시간 주기 자동 집계 탭 갱신")
-    print(f"  [마이문자] SMS 연동    | ID: {MYMUNJA_ID or '❌ 미설정'}")
+    print(f"  [마이문자] SMS 연동    | ID: {_mask_identifier(MYMUNJA_ID)}")
     print(f"  [MODE]      BOT_MODE={bot_mode}")
     print("=" * 50)
 
-    # ?? 珥덇린 濡쒕뱶 ??????????????????????????????
-    if bot_mode == "full":
-        load_state()
+    await db.open_db()
 
-        await check_once()
-        await run_initial_coupang_lanes()  # startup: two-lane parallel
-    else:
-        await run_initial_sourcing_only_lane()
+    sched = None
+    try:
+        if bot_mode == "full":
+            load_state()
 
-    # ?? ?ㅼ?以꾨윭 ?깅줉 ??????????????????????????
-    sched = AsyncIOScheduler(
-        job_defaults={
-            "coalesce": True,
-            "max_instances": 1,
-            "misfire_grace_time": 180,
-        }
-    )
+            await check_once()
+            await run_initial_coupang_lanes()  # startup: two-lane parallel
+        else:
+            await run_initial_sourcing_only_lane()
 
-    # 湲곗〈: ?댁빱癒몄뒪 媛寃?紐⑤땲?곕쭅 (5遺?
-    if bot_mode == "full":
-        sched.add_job(
-            check_once,
-            trigger=IntervalTrigger(minutes=15, jitter=10),
-            id="musinsa_check",
-            name="무신사봇 가격 모니터링",
-        )
-        sched.add_job(
-            scheduled_coupang_order_job,
-            trigger=IntervalTrigger(minutes=5, jitter=15),
-            id="coupang_order",
-            name="쿠팡 주문 자동화",
-        )
-        sched.add_job(
-            scheduled_coupang_sync_job,
-            trigger=IntervalTrigger(minutes=5, jitter=20),
-            id="coupang_sync",
-            name="쿠팡 상품 동기화",
-        )
-        sched.add_job(
-            scheduled_sourcing_price_job,
-            trigger=IntervalTrigger(minutes=5, jitter=25),
-            id="sourcing_price",
-            name="소싱목록 가격 자동 동기화",
-        )
-        sched.add_job(
-            scheduled_sourcing_match_job,
-            trigger=IntervalTrigger(minutes=15, jitter=20),
-            id="sourcing_match",
-            name="소싱목록 자동 매칭",
-        )
-        sched.add_job(
-            scheduled_shipping_job,
-            trigger=IntervalTrigger(minutes=5, jitter=10),
-            id="shipping",
-            name="발송처리 자동화",
-        )
-        sched.add_job(
-            scheduled_stock_check_job,
-            trigger=IntervalTrigger(minutes=30, jitter=60),
-            id="stock_check",
-            name="재고 자동 품절처리",
-        )
-        sched.add_job(
-            scheduled_settlement_job,
-            trigger=IntervalTrigger(hours=1, jitter=120),
-            id="settlement",
-            name="정산/매출 자동 집계",
-        )
-        sched.add_job(
-            scheduled_sourcing_order_match_job,
-            trigger=IntervalTrigger(minutes=10, jitter=30),
-            id="sourcing_order_match",
-            name="소싱처 주문 매칭",
-        )
-    else:
-        sched.add_job(
-            scheduled_sourcing_match_job,
-            trigger=IntervalTrigger(minutes=15, jitter=10),
-            id="sourcing_match",
-            name="소싱목록 자동 매칭",
-        )
-        sched.add_job(
-            scheduled_sourcing_price_job,
-            trigger=IntervalTrigger(minutes=5, jitter=10),
-            id="sourcing_price",
-            name="소싱목록 가격 자동 동기화",
+        sched = AsyncIOScheduler(
+            job_defaults={
+                "coalesce": True,
+                "max_instances": 1,
+                "misfire_grace_time": 180,
+            }
         )
 
-    sched.start()
-    _log.info("Scheduler running.. (Ctrl+C to stop)")
+        # 湲곗〈: ?댁빱癒몄뒪 媛寃?紐⑤땲?곕쭅 (5遺?
+        if bot_mode == "full":
+            sched.add_job(
+                check_once,
+                trigger=IntervalTrigger(minutes=15, jitter=10),
+                id="musinsa_check",
+                name="무신사봇 가격 모니터링",
+            )
+            sched.add_job(
+                scheduled_coupang_order_job,
+                trigger=IntervalTrigger(minutes=5, jitter=15),
+                id="coupang_order",
+                name="쿠팡 주문 자동화",
+            )
+            sched.add_job(
+                scheduled_coupang_sync_job,
+                trigger=IntervalTrigger(minutes=5, jitter=20),
+                id="coupang_sync",
+                name="쿠팡 상품 동기화",
+            )
+            sched.add_job(
+                scheduled_sourcing_price_job,
+                trigger=IntervalTrigger(minutes=5, jitter=25),
+                id="sourcing_price",
+                **_SOURCING_PRICE_JOB_DEFAULTS,
+                name="소싱목록 가격 자동 동기화",
+            )
+            sched.add_job(
+                scheduled_sourcing_match_job,
+                trigger=IntervalTrigger(minutes=15, jitter=20),
+                id="sourcing_match",
+                name="소싱목록 자동 매칭",
+            )
+            sched.add_job(
+                scheduled_shipping_job,
+                trigger=IntervalTrigger(minutes=5, jitter=10),
+                id="shipping",
+                name="발송처리 자동화",
+            )
+            sched.add_job(
+                scheduled_stock_check_job,
+                trigger=IntervalTrigger(minutes=30, jitter=60),
+                id="stock_check",
+                name="재고 자동 품절처리",
+            )
+            sched.add_job(
+                scheduled_settlement_job,
+                trigger=IntervalTrigger(hours=1, jitter=120),
+                id="settlement",
+                name="정산/매출 자동 집계",
+            )
+            sched.add_job(
+                scheduled_sourcing_order_match_job,
+                trigger=IntervalTrigger(minutes=10, jitter=30),
+                id="sourcing_order_match",
+                name="소싱처 주문 매칭",
+            )
+        else:
+            sched.add_job(
+                scheduled_sourcing_match_job,
+                trigger=IntervalTrigger(minutes=15, jitter=10),
+                id="sourcing_match",
+                name="소싱목록 자동 매칭",
+            )
+            sched.add_job(
+                scheduled_sourcing_price_job,
+                trigger=IntervalTrigger(minutes=5, jitter=10),
+                id="sourcing_price",
+                **_SOURCING_PRICE_JOB_DEFAULTS,
+                name="소싱목록 가격 자동 동기화",
+            )
 
-    while True:
-        await asyncio.sleep(3600)
+        sched.start()
+        _log.info("Scheduler running.. (Ctrl+C to stop)")
+
+        while True:
+            await asyncio.sleep(3600)
+
+    finally:
+        if sched is not None:
+            sched.shutdown(wait=False)
+        await db.close_db()
 
 
 if __name__ == "__main__":

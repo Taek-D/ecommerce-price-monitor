@@ -69,3 +69,85 @@ def test_sourcing_match_job_still_skips_when_product_lane_busy(
         isolated_product_lane_lock.release()
 
     asyncio.run(scenario())
+
+
+def test_sourcing_price_job_scheduler_overrides_in_full_mode(monkeypatch):
+    captured = {}
+
+    class _FakeScheduler:
+        def __init__(self, *, job_defaults):
+            captured["job_defaults"] = job_defaults
+            captured["jobs"] = []
+
+        def add_job(self, func, **kwargs):
+            captured["jobs"].append((func, kwargs))
+
+        def start(self):
+            captured["started"] = True
+
+        def shutdown(self, wait=True):
+            pass
+
+    async def _stop_sleep(seconds):
+        raise RuntimeError("stop")
+
+    async def _noop():
+        return None
+
+    monkeypatch.setattr(main, "AsyncIOScheduler", _FakeScheduler)
+    monkeypatch.setattr(main, "setup_logging", lambda: None)
+    monkeypatch.setattr(main, "log_webhook_routing_once", lambda: None)
+    monkeypatch.setattr(main, "load_state", lambda: None)
+    monkeypatch.setattr(main, "check_once", _noop)
+    monkeypatch.setattr(main, "run_initial_coupang_lanes", _noop)
+    monkeypatch.setattr(main.asyncio, "sleep", _stop_sleep)
+    monkeypatch.setenv("BOT_MODE", "full")
+
+    with pytest.raises(RuntimeError, match="stop"):
+        asyncio.run(main.main())
+
+    jobs = {kwargs["id"]: kwargs for _, kwargs in captured["jobs"]}
+    assert jobs["sourcing_price"]["coalesce"] is False
+    assert jobs["sourcing_price"]["max_instances"] == 2
+    assert jobs["sourcing_price"]["misfire_grace_time"] == 900
+    assert "coalesce" not in jobs["coupang_order"]
+
+
+def test_sourcing_price_job_scheduler_overrides_in_sourcing_only_mode(monkeypatch):
+    captured = {}
+
+    class _FakeScheduler:
+        def __init__(self, *, job_defaults):
+            captured["job_defaults"] = job_defaults
+            captured["jobs"] = []
+
+        def add_job(self, func, **kwargs):
+            captured["jobs"].append((func, kwargs))
+
+        def start(self):
+            captured["started"] = True
+
+        def shutdown(self, wait=True):
+            pass
+
+    async def _stop_sleep(seconds):
+        raise RuntimeError("stop")
+
+    async def _noop():
+        return None
+
+    monkeypatch.setattr(main, "AsyncIOScheduler", _FakeScheduler)
+    monkeypatch.setattr(main, "setup_logging", lambda: None)
+    monkeypatch.setattr(main, "log_webhook_routing_once", lambda: None)
+    monkeypatch.setattr(main, "run_initial_sourcing_only_lane", _noop)
+    monkeypatch.setattr(main.asyncio, "sleep", _stop_sleep)
+    monkeypatch.setenv("BOT_MODE", "sourcing_only")
+
+    with pytest.raises(RuntimeError, match="stop"):
+        asyncio.run(main.main())
+
+    jobs = {kwargs["id"]: kwargs for _, kwargs in captured["jobs"]}
+    assert jobs["sourcing_price"]["coalesce"] is False
+    assert jobs["sourcing_price"]["max_instances"] == 2
+    assert jobs["sourcing_price"]["misfire_grace_time"] == 900
+    assert "coalesce" not in jobs["sourcing_match"]
