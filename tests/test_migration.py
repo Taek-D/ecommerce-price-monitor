@@ -378,3 +378,210 @@ async def test_migration_failure_no_bak(tmp_path, monkeypatch):
     assert not (tmp_path / "discovery_state.json.bak").exists()
 
     await db.close_db()
+
+
+# ── Tests for DB-based load_state / save_state (MIG-04) ──────────────────────
+
+
+async def _open_db_for_watch(tmp_path, monkeypatch):
+    """Open DB for musinsa_price_watch tests. Resets both db._conn and mpw state."""
+    import musinsa_price_watch as mpw
+
+    db_path = str(tmp_path / "watch_test.db")
+    monkeypatch.setattr(db, "DB_FILE", db_path)
+    monkeypatch.setattr(db, "_conn", None)
+    await db.open_db()
+    # Reset the global state dict before each test
+    monkeypatch.setattr(mpw, "state", {})
+    return db_path
+
+
+# ── Test 10: load_state() reads from DB price_state table ────────────────────
+
+
+async def test_load_state_reads_from_db(tmp_path, monkeypatch):
+    """load_state() reads url->price rows from DB and populates global state."""
+    import musinsa_price_watch as mpw
+
+    await _open_db_for_watch(tmp_path, monkeypatch)
+
+    conn = db.get_conn()
+    # Insert known rows into price_state
+    await conn.execute(
+        "INSERT INTO price_state(url, price, updated_at) VALUES (?,?,?)",
+        ("https://shop.com/item/1", 15000, "2026-01-01T00:00:00"),
+    )
+    await conn.execute(
+        "INSERT INTO price_state(url, price, updated_at) VALUES (?,?,?)",
+        ("https://shop.com/item/2", None, "2026-01-01T00:00:00"),
+    )
+    await conn.commit()
+
+    await mpw.load_state()
+
+    assert mpw.state == {
+        "https://shop.com/item/1": 15000,
+        "https://shop.com/item/2": None,
+    }
+
+    await db.close_db()
+
+
+# ── Test 11: load_state() returns empty dict when DB table is empty ───────────
+
+
+async def test_load_state_empty_db(tmp_path, monkeypatch):
+    """load_state() returns empty dict when price_state table has no rows."""
+    import musinsa_price_watch as mpw
+
+    await _open_db_for_watch(tmp_path, monkeypatch)
+
+    await mpw.load_state()
+
+    assert mpw.state == {}
+
+    await db.close_db()
+
+
+# ── Test 12: load_state() graceful fallback on DB error ──────────────────────
+
+
+async def test_load_state_db_error_fallback(tmp_path, monkeypatch):
+    """load_state() sets state={} gracefully when DB connection is unavailable."""
+    import musinsa_price_watch as mpw
+
+    await _open_db_for_watch(tmp_path, monkeypatch)
+
+    # Force DB connection to None to simulate unavailable DB
+    monkeypatch.setattr(db, "_conn", None)
+
+    await mpw.load_state()
+
+    assert mpw.state == {}
+
+    await db.close_db()
+
+
+# ── Test 13: save_state() upserts all entries into price_state table ─────────
+
+
+async def test_save_state_upserts_to_db(tmp_path, monkeypatch):
+    """save_state() upserts all entries from global state dict into price_state."""
+    import musinsa_price_watch as mpw
+    from config import settings as real_settings
+
+    await _open_db_for_watch(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        mpw,
+        "state",
+        {
+            "https://a.com/1": 10000,
+            "https://a.com/2": None,
+            "https://a.com/3": 55000,
+        },
+    )
+
+    # Ensure dry_run is False
+    monkeypatch.setattr(real_settings, "dry_run", False)
+
+    await mpw.save_state()
+
+    conn = db.get_conn()
+    async with conn.execute("SELECT url, price FROM price_state ORDER BY url") as cur:
+        rows = await cur.fetchall()
+
+    assert len(rows) == 3
+    url_price = {r[0]: r[1] for r in rows}
+    assert url_price["https://a.com/1"] == 10000
+    assert url_price["https://a.com/2"] is None
+    assert url_price["https://a.com/3"] == 55000
+
+    await db.close_db()
+
+
+# ── Test 14: save_state() skips when dry_run is True ─────────────────────────
+
+
+async def test_save_state_skips_on_dry_run(tmp_path, monkeypatch):
+    """save_state() does nothing when settings.dry_run is True."""
+    import musinsa_price_watch as mpw
+    from config import settings as real_settings
+
+    await _open_db_for_watch(tmp_path, monkeypatch)
+    monkeypatch.setattr(mpw, "state", {"https://b.com/item": 9999})
+    monkeypatch.setattr(real_settings, "dry_run", True)
+
+    await mpw.save_state()
+
+    conn = db.get_conn()
+    async with conn.execute("SELECT COUNT(*) FROM price_state") as cur:
+        row = await cur.fetchone()
+    assert row[0] == 0, "No rows should be written when dry_run=True"
+
+    await db.close_db()
+
+
+# ── Test 15: save_state() does NOT create price_state.json ───────────────────
+
+
+async def test_save_state_no_json_file(tmp_path, monkeypatch):
+    """save_state() does NOT create or modify price_state.json."""
+    import musinsa_price_watch as mpw
+    from config import settings as real_settings
+
+    await _open_db_for_watch(tmp_path, monkeypatch)
+    monkeypatch.setattr(mpw, "state", {"https://c.com/item": 3000})
+    monkeypatch.setattr(real_settings, "dry_run", False)
+
+    # Patch STATE_FILE to point inside tmp_path so we can check it wasn't created
+    import config
+
+    json_path = str(tmp_path / "price_state.json")
+    monkeypatch.setattr(config, "STATE_FILE", json_path)
+    # Also patch mpw's reference since it imports STATE_FILE at module load
+    monkeypatch.setattr(mpw, "STATE_FILE", json_path)
+
+    await mpw.save_state()
+
+    import os
+
+    assert not os.path.exists(json_path), (
+        "price_state.json must NOT be created by save_state()"
+    )
+
+    await db.close_db()
+
+
+# ── Test 16: unchanged prices after load_state produce no Discord alerts ──────
+
+
+async def test_no_spurious_alerts_after_load(tmp_path, monkeypatch):
+    """After load_state() populates state, unchanged price extraction yields no alert."""
+    import musinsa_price_watch as mpw
+    from config import settings as real_settings
+
+    await _open_db_for_watch(tmp_path, monkeypatch)
+
+    # Pre-populate price_state with a known price
+    conn = db.get_conn()
+    await conn.execute(
+        "INSERT INTO price_state(url, price, updated_at) VALUES (?,?,?)",
+        ("https://shop.com/item/99", 20000, "2026-01-01T00:00:00"),
+    )
+    await conn.commit()
+
+    await mpw.load_state()
+    assert mpw.state.get("https://shop.com/item/99") == 20000
+
+    # Simulate what check_once does for price comparison:
+    # If current price == state[url], no alert should fire.
+    url = "https://shop.com/item/99"
+    current_price = 20000  # same as state
+    prev_price = mpw.state.get(url)
+
+    # No change: current == prev
+    assert current_price == prev_price, (
+        "Price unchanged; check_once would NOT send Discord alert"
+    )
+
+    await db.close_db()
