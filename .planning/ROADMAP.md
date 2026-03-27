@@ -49,7 +49,11 @@
   2. 6개 테이블(price_state, price_checks, price_events, adapter_runs, job_runs, discovery_candidates)이 스키마 자동 생성된다
   3. Ctrl+C로 봇 종료 시 프로세스가 즉시 종료된다 (aiosqlite 스레드 hang 없음)
   4. db.py 이외의 모듈은 aiosqlite를 직접 import하지 않는다 (단일 진입점)
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 04-01-PLAN.md — aiosqlite dependency + DB_FILE constant + db.py module + tests
+- [ ] 04-02-PLAN.md — main.py DB lifecycle integration + .gitignore entries
 
 ### Phase 5: Event Logging
 **Goal**: 모든 가격 체크, 변동, 어댑터 실패, 작업 실행이 DB에 기록되고, Sheets 쓰기는 DB 성공 후에만 실행된다
@@ -81,6 +85,6 @@
 | 1. 상품준비중 Discord 알림 | v1.0 | 1/1 | Complete | 2026-03-20 |
 | 2. 소싱탭 자동기록 | v1.1 | 2/2 | Complete | 2026-03-26 |
 | 3. 지마켓 안티봇 우회 + 가격 추출 정상화 | v1.2 | 2/2 | Complete | 2026-03-26 |
-| 4. DB Foundation | v1.3 | 0/? | Not started | - |
+| 4. DB Foundation | v1.3 | 0/2 | Not started | - |
 | 5. Event Logging | v1.3 | 0/? | Not started | - |
 | 6. Migration | v1.3 | 0/? | Not started | - |
