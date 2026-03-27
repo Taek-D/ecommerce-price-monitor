@@ -258,56 +258,71 @@ def _log_api_error(method: str, response: httpx.Response) -> None:
         )
 
 
+# ── Rate Limit ────────────────────────────────────────────────────────────────
+_COUPANG_API_DELAY = 0.35  # 쿠팡 API 호출 간 최소 딜레이 (초)
+_coupang_api_sem = asyncio.Semaphore(3)  # 동시 쿠팡 API 호출 제한
+
+
 async def _coupang_get(
     path: str, params: dict | None = None, log_error: bool = True
 ) -> dict:
     """Coupang API GET request"""
-    query = _encode_query(params)
-    full_path = f"{path}?{query}" if query else path
-    headers = _make_coupang_signature("GET", path, query)
+    async with _coupang_api_sem:
+        query = _encode_query(params)
+        full_path = f"{path}?{query}" if query else path
+        headers = _make_coupang_signature("GET", path, query)
 
-    client = _get_http_client()
-    r = await client.get(COUPANG_BASE_URL + full_path, headers=headers)
-    if not r.is_success and log_error:
-        _log_api_error("GET", r)
-    r.raise_for_status()
-    return r.json()
+        client = _get_http_client()
+        r = await client.get(COUPANG_BASE_URL + full_path, headers=headers)
+        if not r.is_success and log_error:
+            _log_api_error("GET", r)
+        r.raise_for_status()
+        await asyncio.sleep(_COUPANG_API_DELAY)
+        return r.json()
 
 
 async def _coupang_put(
     path: str, body: dict | None = None, params: dict | None = None
 ) -> dict:
     """Coupang API PUT request"""
-    query = _encode_query(params)
-    full_path = f"{path}?{query}" if query else path
-    headers = _make_coupang_signature("PUT", path, query)
-    client = _get_http_client()
-    if body is None:
-        r = await client.put(COUPANG_BASE_URL + full_path, headers=headers)
-    else:
-        r = await client.put(COUPANG_BASE_URL + full_path, headers=headers, json=body)
-    if not r.is_success:
-        _log_api_error("PUT", r)
-    r.raise_for_status()
-    return r.json()
+    async with _coupang_api_sem:
+        query = _encode_query(params)
+        full_path = f"{path}?{query}" if query else path
+        headers = _make_coupang_signature("PUT", path, query)
+        client = _get_http_client()
+        if body is None:
+            r = await client.put(COUPANG_BASE_URL + full_path, headers=headers)
+        else:
+            r = await client.put(
+                COUPANG_BASE_URL + full_path, headers=headers, json=body
+            )
+        if not r.is_success:
+            _log_api_error("PUT", r)
+        r.raise_for_status()
+        await asyncio.sleep(_COUPANG_API_DELAY)
+        return r.json()
 
 
 async def _coupang_post(
     path: str, body: dict | None = None, params: dict | None = None
 ) -> dict:
     """Coupang API POST request"""
-    query = _encode_query(params)
-    full_path = f"{path}?{query}" if query else path
-    headers = _make_coupang_signature("POST", path, query)
-    client = _get_http_client()
-    if body is None:
-        r = await client.post(COUPANG_BASE_URL + full_path, headers=headers)
-    else:
-        r = await client.post(COUPANG_BASE_URL + full_path, headers=headers, json=body)
-    if not r.is_success:
-        _log_api_error("POST", r)
-    r.raise_for_status()
-    return r.json()
+    async with _coupang_api_sem:
+        query = _encode_query(params)
+        full_path = f"{path}?{query}" if query else path
+        headers = _make_coupang_signature("POST", path, query)
+        client = _get_http_client()
+        if body is None:
+            r = await client.post(COUPANG_BASE_URL + full_path, headers=headers)
+        else:
+            r = await client.post(
+                COUPANG_BASE_URL + full_path, headers=headers, json=body
+            )
+        if not r.is_success:
+            _log_api_error("POST", r)
+        r.raise_for_status()
+        await asyncio.sleep(_COUPANG_API_DELAY)
+        return r.json()
 
 
 # ──────────────────────────────────────────────
@@ -325,6 +340,10 @@ ORDER_PRIVACY_SMS_MESSAGE = (
 )
 
 
+_SMS_SEMAPHORE = asyncio.Semaphore(2)  # 동시 SMS 발송 제한
+_SMS_INTERVAL = 1.0  # SMS 발송 간 최소 딜레이 (초)
+
+
 async def send_sms(phone: str, message: str, msg_type: str = "sms") -> dict:
     """
     마이문자 SMS/LMS 발송
@@ -334,48 +353,52 @@ async def send_sms(phone: str, message: str, msg_type: str = "sms") -> dict:
         _log_sms.warning("마이문자 계정 미설정 — 건너뜀")
         return {"code": "SKIP", "msg": "not configured"}
 
-    if msg_type == "lms":
-        url = "https://www.mymunja.co.kr/Remote/RemoteMms.html"
-    else:
-        url = "https://www.mymunja.co.kr/Remote/RemoteSms.html"
-
-    # 전화번호 정규화 (숫자만)
-    phone_clean = re.sub(r"[^0-9]", "", phone)
-
-    data = {
-        "remote_id": MYMUNJA_ID,
-        "remote_pass": MYMUNJA_PASS,
-        "remote_num": "1",
-        "remote_reserve": "0",  # 즉시발송
-        "remote_phone": phone_clean,
-        "remote_callback": re.sub(r"[^0-9]", "", MYMUNJA_CALLBACK),
-        "remote_msg": message,  # 아래에서 CP949 기준으로 수동 URL 인코딩
-    }
-
-    try:
-        client = _get_http_client()
-        # 마이문자 Remote API는 EUC-KR/CP949 기반 폼 인코딩을 기대한다.
-        encoded_body = urlencode(data, encoding="cp949", errors="replace")
-        headers = {"Content-Type": "application/x-www-form-urlencoded; charset=EUC-KR"}
-        r = await client.post(url, content=encoded_body, headers=headers, timeout=20)
-        r.raise_for_status()
-        # 응답: 결과코드|결과메시지|잔여건수|etc1|etc2
-        parts = r.text.strip().split("|")
-        code = parts[0] if parts else "9999"
-        msg = parts[1] if len(parts) > 1 else ""
-        cols = parts[2] if len(parts) > 2 else "0"
-
-        if code == "0000":
-            _log_sms.info(
-                f"OK send success -> {_mask_phone(phone_clean)} | remain: {cols}"
-            )
+    async with _SMS_SEMAPHORE:
+        if msg_type == "lms":
+            url = "https://www.mymunja.co.kr/Remote/RemoteMms.html"
         else:
-            _log_sms.error(f"FAIL send failed -> code={code} msg={msg}")
+            url = "https://www.mymunja.co.kr/Remote/RemoteSms.html"
 
-        return {"code": code, "msg": msg, "cols": cols}
-    except Exception as e:
-        _log_sms.error(f"Exception: {e}")
-        return {"code": "ERROR", "msg": str(e)}
+        # 전화번호 정규화 (숫자만)
+        phone_clean = re.sub(r"[^0-9]", "", phone)
+
+        data = {
+            "remote_id": MYMUNJA_ID,
+            "remote_pass": MYMUNJA_PASS,
+            "remote_num": "1",
+            "remote_reserve": "0",  # 즉시발송
+            "remote_phone": phone_clean,
+            "remote_callback": re.sub(r"[^0-9]", "", MYMUNJA_CALLBACK),
+            "remote_msg": message,
+        }
+
+        try:
+            client = _get_http_client()
+            encoded_body = urlencode(data, encoding="cp949", errors="replace")
+            headers = {
+                "Content-Type": "application/x-www-form-urlencoded; charset=EUC-KR"
+            }
+            r = await client.post(
+                url, content=encoded_body, headers=headers, timeout=20
+            )
+            r.raise_for_status()
+            parts = r.text.strip().split("|")
+            code = parts[0] if parts else "9999"
+            msg = parts[1] if len(parts) > 1 else ""
+            cols = parts[2] if len(parts) > 2 else "0"
+
+            if code == "0000":
+                _log_sms.info(
+                    f"OK send success -> {_mask_phone(phone_clean)} | remain: {cols}"
+                )
+            else:
+                _log_sms.error(f"FAIL send failed -> code={code} msg={msg}")
+
+            await asyncio.sleep(_SMS_INTERVAL)
+            return {"code": code, "msg": msg, "cols": cols}
+        except Exception as e:
+            _log_sms.error(f"Exception: {e}")
+            return {"code": "ERROR", "msg": str(e)}
 
 
 async def send_order_privacy_sms(phone: str) -> bool:
