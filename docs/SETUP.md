@@ -71,3 +71,13 @@ COUPANG_ORDER_WEBHOOK=https://discord.com/api/webhooks/...      # 주문/배송 
 - 쿠팡 주문 자동화 (결제완료 → 발주확인 → 상품준비중)
 - 쿠팡 배송 상태 시트 동기화
 - sync_delivery_status_to_sheet() 실행 후 상품준비중 주문 현황을 Discord embed로 자동 알림
+
+## 실행 / 검증
+
+```bash
+python main.py
+python -m pytest -q
+```
+
+- async 테스트를 실행하려면 `pytest-asyncio`가 설치되어 있어야 합니다.
+- 진단 캡처는 기본적으로 꺼져 있으며, 켜면 `.runtime/diagnostics` 아래에 실페이지 HTML/텍스트/스크린샷이 저장됩니다.

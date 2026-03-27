@@ -394,7 +394,9 @@ class TestIsSoldoutStatus:
 
 class TestBuildPriceChangeEmbed:
     def test_breaks_out_skip_reasons(self, monkeypatch):
-        monkeypatch.setattr(coupang_manager, "_now_kst_str", lambda: "2026-03-23 12:34:56")
+        monkeypatch.setattr(
+            coupang_manager, "_now_kst_str", lambda: "2026-03-23 12:34:56"
+        )
 
         embed = _build_price_change_embed(
             {
@@ -427,7 +429,9 @@ class TestBuildPriceChangeEmbed:
         assert "34,880" in fields["vendorItemId / 옵션 / 판매가"]
 
     def test_shows_zero_counts_when_no_skips(self, monkeypatch):
-        monkeypatch.setattr(coupang_manager, "_now_kst_str", lambda: "2026-03-23 12:34:56")
+        monkeypatch.setattr(
+            coupang_manager, "_now_kst_str", lambda: "2026-03-23 12:34:56"
+        )
 
         embed = _build_price_change_embed(
             {

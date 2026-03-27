@@ -29,6 +29,11 @@ docs/SETUP.md            # 설치/설정 가이드
 - `check_once()` → 전체 URL 순회, 가격 추출, 변동 감지, 알림 발송
 - ADAPTERS 리스트 순서: 전용 어댑터 → UniversalAdapter (마지막)
 
+## Runtime Entry Point
+- Runtime entry point is `main.py`
+- `musinsa_price_watch.py` is the price monitoring engine called by `main.py`
+- `price_state.json` and `discovery_state.json` are runtime state files
+
 ## Development Workflow
 
 ### 패키지 관리
@@ -37,7 +42,7 @@ docs/SETUP.md            # 설치/설정 가이드
 
 ### 실행
 ```bash
-python musinsa_price_watch.py
+python main.py
 ```
 
 ### 환경 변수

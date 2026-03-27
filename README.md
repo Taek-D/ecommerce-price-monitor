@@ -135,6 +135,20 @@ python fix_order_sheet_headers.py   # 주문 시트 헤더 설정
 python main.py
 ```
 
+### 6. 테스트
+
+```bash
+python -m pytest -q
+```
+
+- `pytest-asyncio`가 설치되어 있어야 async 테스트가 실행됩니다.
+
+### 7. 진단 캡처
+
+- 진단 캡처는 기본적으로 비활성입니다.
+- 활성화하면 `.runtime/diagnostics` 아래에 실페이지 HTML, 본문 텍스트, JSON, 스크린샷이 저장됩니다.
+- 해당 디렉터리는 Git 추적 대상이 아닙니다.
+
 
 ## 아키텍처
 

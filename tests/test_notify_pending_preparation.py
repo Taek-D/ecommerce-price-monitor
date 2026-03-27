@@ -7,6 +7,14 @@ from unittest.mock import AsyncMock, patch, call
 # ── _notify_pending_preparation ──────────────────────────────────────────────
 
 
+@pytest.fixture(autouse=True)
+def reset_pending_preparation_state():
+    import coupang_manager
+
+    coupang_manager._pending_preparation_active = False
+    coupang_manager._last_pending_preparation_notify_at = None
+
+
 @pytest.fixture()
 def make_rows():
     """Build rows list matching the sheet column layout.

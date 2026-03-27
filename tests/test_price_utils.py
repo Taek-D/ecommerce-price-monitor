@@ -274,7 +274,9 @@ class TestElevenStAdapter:
         ad._network_idle_before_retry = False
         page = _FakePage(locator_texts={ad.EXACT_PRICE_SELECTOR: ["12,345"]})
 
-        result = asyncio.run(ad._do_extract(page, "https://www.11st.co.kr/products/123"))
+        result = asyncio.run(
+            ad._do_extract(page, "https://www.11st.co.kr/products/123")
+        )
 
         assert result == ExtractionResult("price", 12345)
 
@@ -283,7 +285,9 @@ class TestElevenStAdapter:
         ad._sleep_after_load = 0
         page = _FakePage(body_text="현재 판매중인 상품이 아닙니다.")
 
-        result = asyncio.run(ad._do_extract(page, "https://www.11st.co.kr/products/123"))
+        result = asyncio.run(
+            ad._do_extract(page, "https://www.11st.co.kr/products/123")
+        )
 
         assert result == ExtractionResult("soldout")
 
@@ -296,7 +300,9 @@ class TestElevenStAdapter:
             locator_texts={ad.EXACT_PRICE_SELECTOR: ["24,900"]},
         )
 
-        result = asyncio.run(ad._do_extract(page, "https://www.11st.co.kr/products/123"))
+        result = asyncio.run(
+            ad._do_extract(page, "https://www.11st.co.kr/products/123")
+        )
 
         assert result == ExtractionResult("price", 24900)
 
@@ -313,7 +319,9 @@ class TestElevenStAdapter:
 
         monkeypatch.setattr(ad, "_fallback", unexpected_fallback)
 
-        result = asyncio.run(ad._do_extract(page, "https://www.11st.co.kr/products/123"))
+        result = asyncio.run(
+            ad._do_extract(page, "https://www.11st.co.kr/products/123")
+        )
 
         assert result == ExtractionResult("error")
 
