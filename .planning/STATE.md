@@ -4,10 +4,10 @@ milestone: v1.3
 milestone_name: SQLite운영저장소
 status: active
 stopped_at: ""
-last_updated: "2026-03-27T06:00:00.000Z"
-last_activity: 2026-03-27 — Milestone v1.3 started
+last_updated: "2026-03-27T06:30:00.000Z"
+last_activity: 2026-03-27 — Roadmap created for v1.3 (Phases 4-6)
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,14 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-27)
 
 **Core value:** 가격 변동과 주문 상태를 실시간으로 파악하여, 수동 모니터링 없이 즉각 대응
-**Current focus:** v1.3 SQLite 운영 저장소
+**Current focus:** v1.3 Phase 4 — DB Foundation
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-27 — Milestone v1.3 started
+Phase: 4 of 6 (DB Foundation)
+Plan: — of — in current phase
+Status: Ready to plan
+Last activity: 2026-03-27 — Roadmap created, phases 4-6 defined
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -42,10 +44,9 @@ Last activity: 2026-03-27 — Milestone v1.3 started
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 02 | 2 | 9min | 4.5min |
+| 03 | 2 | 15min | 7.5min |
 
 *Updated after each plan completion*
-| Phase 03 P01 | 9min | 2 tasks | 5 files |
-| Phase 03 P02 | 6min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -54,12 +55,12 @@ Last activity: 2026-03-27 — Milestone v1.3 started
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- [v1.1 Phase 02-01]: Domain suffix matching (endswith) for URL-to-tab resolution
-- [v1.1 Phase 02-02]: Separate gspread auth for sourcing tab
-- [v1.2 Roadmap]: All 5 requirements in single phase — tightly coupled (stealth -> challenge pass -> price extraction)
 - [Phase 03]: _after_goto hook in BaseAdapter preserves template method; GmarketAdapter overrides for Cloudflare challenge wait
-- [Phase 03]: GmarketAdapter._retry_on_timeout raised 1→2 (3 total attempts) + CLOUDFLARE_CHALLENGE_WAIT_MS=15000 for #itemcase_basic
-- [Phase 03-02]: Reused _FakePage/_FakeLocator pattern for adapter regression tests; live Cloudflare bypass confirmed via human-verify
+- [Phase 03-02]: Reused _FakePage/_FakeLocator pattern for adapter regression tests; live Cloudflare bypass confirmed
+- [v1.3 Roadmap]: Single aiosqlite connection singleton mandatory — multiple connections cause lock errors (aiosqlite #251)
+- [v1.3 Roadmap]: WAL pragma must be first operation after connect(), before init_schema()
+- [v1.3 Roadmap]: db.close_db() must be in main() finally block — daemon=True workaround invalid since aiosqlite v0.22.0
+- [v1.3 Roadmap]: Migration runs with bot stopped; BEGIN IMMEDIATE transaction; row-count verify before commit
 
 ### Pending Todos
 
@@ -67,10 +68,11 @@ None yet.
 
 ### Blockers/Concerns
 
-None yet.
+- [Phase 6]: discovery_state.json was git-removed (commit 8eff71c) — actual on-disk state unknown. Migration helper must treat missing file as empty state (zero rows, no error).
+- [Phase 5-6]: Dual-write partial failure (DB ok, Sheets fail or vice versa) must not cause spurious Discord alerts. DB-first write order is the guard.
 
 ## Session Continuity
 
-Last session: 2026-03-26T07:24:00Z
-Stopped at: Completed 03-02-PLAN.md (Phase 3 complete)
+Last session: 2026-03-27T06:30:00Z
+Stopped at: Roadmap created (phases 4-6 defined, files written)
 Resume file: None

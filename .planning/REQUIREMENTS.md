@@ -56,26 +56,26 @@ Requirements for milestone v1.3 SQLite운영저장소. Each maps to roadmap phas
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DB-01 | — | Pending |
-| DB-02 | — | Pending |
-| DB-03 | — | Pending |
-| DB-04 | — | Pending |
-| LOG-01 | — | Pending |
-| LOG-02 | — | Pending |
-| LOG-03 | — | Pending |
-| LOG-04 | — | Pending |
-| MIG-01 | — | Pending |
-| MIG-02 | — | Pending |
-| MIG-03 | — | Pending |
-| MIG-04 | — | Pending |
-| COEX-01 | — | Pending |
-| COEX-02 | — | Pending |
+| DB-01 | Phase 4 | Pending |
+| DB-02 | Phase 4 | Pending |
+| DB-03 | Phase 4 | Pending |
+| DB-04 | Phase 4 | Pending |
+| LOG-01 | Phase 5 | Pending |
+| LOG-02 | Phase 5 | Pending |
+| LOG-03 | Phase 5 | Pending |
+| LOG-04 | Phase 5 | Pending |
+| COEX-01 | Phase 5 | Pending |
+| COEX-02 | Phase 5 | Pending |
+| MIG-01 | Phase 6 | Pending |
+| MIG-02 | Phase 6 | Pending |
+| MIG-03 | Phase 6 | Pending |
+| MIG-04 | Phase 6 | Pending |
 
 **Coverage:**
 - v1.3 requirements: 14 total
-- Mapped to phases: 0
-- Unmapped: 14
+- Mapped to phases: 14
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-27*
-*Last updated: 2026-03-27 after initial definition*
+*Last updated: 2026-03-27 after roadmap creation (phases 4-6 assigned)*
