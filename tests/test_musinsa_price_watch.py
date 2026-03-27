@@ -81,7 +81,7 @@ def _sheet_rows(url, price="10,000", ts="2026-03-01 00:00:00"):
 def _set_common_mocks(monkeypatch, ws, result_by_url):
     monkeypatch.setattr(mpw, "_open_sheet", lambda: ws)
     monkeypatch.setattr(mpw, "async_playwright", lambda: _FakePlaywrightManager())
-    monkeypatch.setattr(mpw, "save_state", lambda: None)
+    monkeypatch.setattr(mpw, "save_state", AsyncMock())
     monkeypatch.setattr(mpw, "post_webhook", AsyncMock())
     monkeypatch.setattr(mpw, "datetime", _FrozenDateTime)
 

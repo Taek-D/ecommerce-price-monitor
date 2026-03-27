@@ -371,7 +371,7 @@ async def main():
     sched = None
     try:
         if bot_mode == "full":
-            load_state()
+            await load_state()
 
             await check_once()
             await run_initial_coupang_lanes()  # startup: two-lane parallel

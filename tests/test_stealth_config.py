@@ -90,7 +90,7 @@ def test_check_once_launches_browser_with_stealth_args(monkeypatch):
 
     monkeypatch.setattr(mpw, "async_playwright", lambda: _FakePWManager())
     monkeypatch.setattr(mpw, "_open_sheet", lambda: None)
-    monkeypatch.setattr(mpw, "save_state", lambda: None)
+    monkeypatch.setattr(mpw, "save_state", AsyncMock())
     monkeypatch.setattr(mpw, "post_webhook", AsyncMock())
     monkeypatch.setattr(mpw, "process_one_url", fake_process_one_url)
     mpw.URLS = [url]
@@ -153,7 +153,7 @@ def test_check_once_calls_add_init_script_with_stealth_script(monkeypatch):
 
     monkeypatch.setattr(mpw, "async_playwright", lambda: _FakePWManager())
     monkeypatch.setattr(mpw, "_open_sheet", lambda: None)
-    monkeypatch.setattr(mpw, "save_state", lambda: None)
+    monkeypatch.setattr(mpw, "save_state", AsyncMock())
     monkeypatch.setattr(mpw, "post_webhook", AsyncMock())
     monkeypatch.setattr(mpw, "process_one_url", fake_process_one_url)
     mpw.URLS = [url]

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -97,7 +98,7 @@ def test_sourcing_price_job_scheduler_overrides_in_full_mode(monkeypatch):
     monkeypatch.setattr(main, "AsyncIOScheduler", _FakeScheduler)
     monkeypatch.setattr(main, "setup_logging", lambda: None)
     monkeypatch.setattr(main, "log_webhook_routing_once", lambda: None)
-    monkeypatch.setattr(main, "load_state", lambda: None)
+    monkeypatch.setattr(main, "load_state", AsyncMock())
     monkeypatch.setattr(main, "check_once", _noop)
     monkeypatch.setattr(main, "run_initial_coupang_lanes", _noop)
     monkeypatch.setattr(main.asyncio, "sleep", _stop_sleep)

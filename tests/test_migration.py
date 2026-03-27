@@ -533,13 +533,8 @@ async def test_save_state_no_json_file(tmp_path, monkeypatch):
     monkeypatch.setattr(mpw, "state", {"https://c.com/item": 3000})
     monkeypatch.setattr(real_settings, "dry_run", False)
 
-    # Patch STATE_FILE to point inside tmp_path so we can check it wasn't created
-    import config
-
+    # The new save_state() uses DB only — verify no JSON file is created
     json_path = str(tmp_path / "price_state.json")
-    monkeypatch.setattr(config, "STATE_FILE", json_path)
-    # Also patch mpw's reference since it imports STATE_FILE at module load
-    monkeypatch.setattr(mpw, "STATE_FILE", json_path)
 
     await mpw.save_state()
 

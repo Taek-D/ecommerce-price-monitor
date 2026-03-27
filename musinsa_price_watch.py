@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import os
 import random
@@ -18,7 +17,6 @@ from logging_config import setup_logging
 from config import (
     settings,
     KST,
-    STATE_FILE,
     URL_TOTAL_TIMEOUT,
     D_COL_INDEX,
     H_COL_INDEX,
@@ -243,27 +241,39 @@ def _log_url_reload_stats(stats: dict) -> None:
 
 
 # ---------------- 상태/주기 작업 ----------------
-def load_state():
+async def load_state():
     global state
     try:
-        if os.path.exists(STATE_FILE):
-            with open(STATE_FILE, "r", encoding="utf-8") as f:
-                state = json.load(f)
-        else:
-            state = {}
+        conn = db.get_conn()
+        async with conn.execute("SELECT url, price FROM price_state") as cur:
+            rows = await cur.fetchall()
+        state = {row[0]: row[1] for row in rows}
     except Exception:
         state = {}
 
 
-def save_state():
+async def save_state():
     if settings.dry_run:
         _log.debug("DRY_RUN state save skipped")
         return
 
-    tmp_path = STATE_FILE + ".tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(state, f, ensure_ascii=False, indent=2)
-    os.replace(tmp_path, STATE_FILE)
+    async def _do_upsert():
+        conn = db.get_conn()
+        now = datetime.now(KST).isoformat()
+        await conn.execute("BEGIN IMMEDIATE")
+        try:
+            for url, price in state.items():
+                await conn.execute(
+                    "INSERT OR REPLACE INTO price_state(url, price, updated_at)"
+                    " VALUES (?,?,?)",
+                    (url, price, now),
+                )
+            await conn.commit()
+        except Exception:
+            await conn.execute("ROLLBACK")
+            raise
+
+    await _db_write_guarded(_do_upsert)
 
 
 def _domain_key(url: str) -> str:
@@ -460,7 +470,7 @@ async def check_once():
 
     if not URLS:
         _log.warning("URL list is empty; skip")
-        save_state()
+        await save_state()
         return
 
     ts = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
@@ -500,13 +510,13 @@ async def check_once():
             ws = _open_sheet()
         except Exception as e:
             _log_sheet.error(f"Sheet open error: {e}")
-            save_state()
+            await save_state()
             return
     try:
         row_by_url, sheet_price_by_url = build_sheet_row_index(ws)
     except Exception as e:
         _log_sheet.error(f"Sheet index error: {e}")
-        save_state()
+        await save_state()
         return
 
     removed_count = 0
@@ -692,7 +702,7 @@ async def check_once():
         except Exception as e:
             _log_sheet.error(f"Batch update error: {e}")
 
-    save_state()
+    await save_state()
     elapsed = asyncio.get_running_loop().time() - run_started
     summary_stats = url_reload_stats or _last_url_reload_stats or {}
     sheet_input_total = summary_stats.get("sheet_nonempty_urls", len(urls_snapshot))
@@ -713,7 +723,7 @@ async def check_once():
 async def main():
     setup_logging()
     _log.info(f"DRY_RUN={settings.dry_run}")
-    load_state()
+    await load_state()
 
     await check_once()
 
