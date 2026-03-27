@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: SQLite운영저장소
-status: completed
-stopped_at: Phase 6 context gathered
-last_updated: "2026-03-27T10:43:58.051Z"
-last_activity: 2026-03-27 — Phase 5 Plan 2 (job_runs DB Tracking) complete
+status: in_progress
+stopped_at: "Completed 06-migration/06-01-PLAN.md"
+last_updated: "2026-03-27T11:16:00Z"
+last_activity: 2026-03-27 — Phase 6 Plan 1 (JSON-to-DB Migration Script) complete
 progress:
   total_phases: 3
   completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
-  percent: 30
+  total_plans: 6
+  completed_plans: 5
+  percent: 42
 ---
 
 # Project State
@@ -21,23 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-27)
 
 **Core value:** 가격 변동과 주문 상태를 실시간으로 파악하여, 수동 모니터링 없이 즉각 대응
-**Current focus:** v1.3 Phase 5 — Event Logging (plan 02 complete)
+**Current focus:** v1.3 Phase 6 — Migration (plan 01 complete, plan 02 next)
 
 ## Current Position
 
-Phase: 5 of 6 (Event Logging)
-Plan: 2 of 2 in current phase (complete)
-Status: Phase 5 Plan 2 complete — job_runs tracking wired
-Last activity: 2026-03-27 — Phase 5 Plan 2 (job_runs DB Tracking) complete
+Phase: 6 of 6 (Migration)
+Plan: 1 of 2 in current phase (complete)
+Status: Phase 6 Plan 1 complete — migrate.py JSON-to-DB migration script created
+Last activity: 2026-03-27 — Phase 6 Plan 1 (JSON-to-DB Migration Script) complete
 
-Progress: [███░░░░░░░] 30%
+Progress: [████░░░░░░] 42%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7
-- Average duration: 4.7min
-- Total execution time: 37min
+- Total plans completed: 8 (was 7, +1 this session)
+- Average duration: 4.6min
+- Total execution time: 42min
 
 **By Phase:**
 
@@ -47,6 +47,7 @@ Progress: [███░░░░░░░] 30%
 | 03 | 2 | 15min | 7.5min |
 | 04 | 2 | 9min | 4.5min |
 | 05 | 1 | 4min | 4.0min |
+| 06 | 1 | 5min | 5.0min |
 
 *Updated after each plan completion*
 
@@ -75,6 +76,9 @@ Recent decisions affecting current work:
 - [Phase 05-01]: _db_write_guarded alert fires at exactly count==5 (not >=5) to avoid re-alerting on 6th+ consecutive failure
 - [Phase 05-01]: url_in_state computed before state[url]=curr mutation — guards first_seen vs restock classification
 - [Phase 05-01]: _db_log_adapter_run placed before continue in kind='error' block — logs even when sheet row missing
+- [Phase 06-01]: migrate.main() closes DB in finally block — tests re-open DB after main() returns to verify row data
+- [Phase 06-01]: count_before/count_after approach for discovery_candidates INSERT OR IGNORE — handles pre-existing rows correctly
+- [Phase 06-01]: LOCK_FILE and DISCOVERY_STATE_FILE as module-level constants in migrate.py for monkeypatch testability
 
 ### Pending Todos
 
@@ -87,6 +91,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-27T10:43:58.047Z
-Stopped at: Phase 6 context gathered
-Resume file: .planning/phases/06-migration/06-CONTEXT.md
+Last session: 2026-03-27T11:16:00Z
+Stopped at: Completed 06-migration/06-01-PLAN.md
+Resume file: .planning/phases/06-migration/06-02-PLAN.md

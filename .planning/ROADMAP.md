@@ -95,4 +95,4 @@ Plans:
 | 3. 지마켓 안티봇 우회 + 가격 추출 정상화 | v1.2 | 2/2 | Complete | 2026-03-26 |
 | 4. DB Foundation | v1.3 | 2/2 | Complete | 2026-03-27 |
 | 5. Event Logging | v1.3 | 2/2 | Complete | 2026-03-27 |
-| 6. Migration | v1.3 | 0/2 | Not started | - |
+| 6. Migration | 1/2 | In Progress|  | - |

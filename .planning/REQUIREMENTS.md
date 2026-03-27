@@ -23,9 +23,9 @@ Requirements for milestone v1.3 SQLite운영저장소. Each maps to roadmap phas
 
 ### Migration
 
-- [ ] **MIG-01**: price_state.json → DB price_state 테이블 마이그레이션
-- [ ] **MIG-02**: discovery_state.json → DB discovery_candidates 테이블 마이그레이션
-- [ ] **MIG-03**: 마이그레이션 후 48시간 JSON 백업 유지
+- [x] **MIG-01**: price_state.json → DB price_state 테이블 마이그레이션
+- [x] **MIG-02**: discovery_state.json → DB discovery_candidates 테이블 마이그레이션
+- [x] **MIG-03**: 마이그레이션 후 48시간 JSON 백업 유지
 - [ ] **MIG-04**: load_state()를 DB 기반으로 전환 (DB = source of truth)
 
 ### Coexistence
@@ -66,9 +66,9 @@ Requirements for milestone v1.3 SQLite운영저장소. Each maps to roadmap phas
 | LOG-04 | Phase 5 | Complete |
 | COEX-01 | Phase 5 | Complete |
 | COEX-02 | Phase 5 | Complete |
-| MIG-01 | Phase 6 | Pending |
-| MIG-02 | Phase 6 | Pending |
-| MIG-03 | Phase 6 | Pending |
+| MIG-01 | Phase 6 | Complete |
+| MIG-02 | Phase 6 | Complete |
+| MIG-03 | Phase 6 | Complete |
 | MIG-04 | Phase 6 | Pending |
 
 **Coverage:**
