@@ -38,15 +38,101 @@ from utils import (
 )
 from adapters import pick_adapter
 from diagnostics import reset_diagnostic_capture_budget
+import db
 
 _log = logging.getLogger("musinsa_bot.price")
 _log_sheet = logging.getLogger("musinsa_bot.sheet")
+_log_db = logging.getLogger("musinsa_bot.db_log")
 
 state = {}
 URLS: list[str] = []
 _last_url_reload_stats: dict | None = None
 
 _DUPLICATE_LOG_LIMIT = 5
+_db_fail_count: int = 0
+_DB_ALERT_THRESHOLD: int = 5
+
+
+# ---------------- DB write helpers ----------------
+
+
+async def _db_write_guarded(coro_factory) -> bool:
+    """Acquire DB write lock, run coro_factory(), handle failures.
+
+    Returns True on success (resets _db_fail_count).
+    Returns False on any Exception (increments _db_fail_count).
+    On the 5th consecutive failure, sends a Discord warning alert.
+    """
+    global _db_fail_count
+    try:
+        async with db._write_lock:
+            await coro_factory()
+        _db_fail_count = 0
+        return True
+    except Exception as e:
+        _db_fail_count += 1
+        _log_db.error("DB write failed (consecutive=%d): %s", _db_fail_count, e)
+        if _db_fail_count == _DB_ALERT_THRESHOLD:
+            await post_webhook(
+                settings.discord_webhook_url,
+                "[DB 경고] DB 쓰기 연속 5회 실패. 확인 필요.",
+            )
+        return False
+
+
+async def _db_log_price_check(url: str, price: int | None, kind: str) -> None:
+    """Insert a row into price_checks for changed or error results."""
+
+    async def _write():
+        conn = db.get_conn()
+        await conn.execute(
+            "INSERT INTO price_checks(url, price, kind, checked_at) "
+            "VALUES (?, ?, ?, datetime('now'))",
+            (url, price, kind),
+        )
+        await conn.commit()
+
+    await _db_write_guarded(_write)
+
+
+async def _db_log_price_event(
+    url: str,
+    old_price: int | None,
+    new_price: int | None,
+    event_type: str,
+) -> None:
+    """Insert a row into price_events for price transitions."""
+
+    async def _write():
+        conn = db.get_conn()
+        await conn.execute(
+            "INSERT INTO price_events(url, old_price, new_price, event_type, detected_at) "
+            "VALUES (?, ?, ?, ?, datetime('now'))",
+            (url, old_price, new_price, event_type),
+        )
+        await conn.commit()
+
+    await _db_write_guarded(_write)
+
+
+async def _db_log_adapter_run(
+    adapter_name: str,
+    url: str,
+    error: str,
+    tb: str | None = None,
+) -> None:
+    """Insert a row into adapter_runs for error results."""
+
+    async def _write():
+        conn = db.get_conn()
+        await conn.execute(
+            "INSERT INTO adapter_runs(adapter, url, error, traceback, run_at) "
+            "VALUES (?, ?, ?, ?, datetime('now'))",
+            (adapter_name, url, error, tb),
+        )
+        await conn.commit()
+
+    await _db_write_guarded(_write)
 
 
 # ---------------- Google Sheets ----------------
