@@ -157,6 +157,42 @@ def _resolve_bot_mode() -> str:
     return raw
 
 
+async def _try_db_job_start(job_name: str) -> int | None:
+    """INSERT job_runs row with status='running'. Returns rowid or None on failure."""
+    try:
+        async with db._write_lock:
+            conn = db.get_conn()
+            cursor = await conn.execute(
+                "INSERT INTO job_runs(job_name, started_at, status) "
+                "VALUES (?, datetime('now'), 'running')",
+                (job_name,),
+            )
+            await conn.commit()
+            return cursor.lastrowid
+    except Exception as exc:
+        _log.error("job_runs INSERT failed for %s: %s", job_name, exc)
+        return None
+
+
+async def _try_db_job_finish(
+    rowid: int | None, status: str, error: str | None = None
+) -> None:
+    """UPDATE job_runs row by rowid. No-op if rowid is None."""
+    if rowid is None:
+        return
+    try:
+        async with db._write_lock:
+            conn = db.get_conn()
+            await conn.execute(
+                "UPDATE job_runs SET finished_at=datetime('now'), status=?, error=? "
+                "WHERE id=?",
+                (status, error, rowid),
+            )
+            await conn.commit()
+    except Exception as exc:
+        _log.error("job_runs UPDATE failed for rowid=%s: %s", rowid, exc)
+
+
 async def _run_with_lane_lock(
     lock: asyncio.Lock,
     lane_name: str,
@@ -190,16 +226,23 @@ async def _run_with_lane_lock(
                 f"wait_elapsed={wait_elapsed:.2f} run_started={run_started}"
             )
         run_started_monotonic = asyncio.get_running_loop().time()
-        await job_func()
-        if wait_for_lock:
-            run_elapsed = asyncio.get_running_loop().time() - run_started_monotonic
-            _log.info(
-                f"{job_name} finished in {run_elapsed:.2f}s "
-                f"job_name={job_name} lane_name={lane_name} "
-                f"requested_at={requested_at} wait_started={wait_started} "
-                f"wait_elapsed={wait_elapsed:.2f} run_started={run_started} "
-                f"run_elapsed={run_elapsed:.2f}"
-            )
+        job_run_id = await _try_db_job_start(job_name)
+        try:
+            await job_func()
+        except Exception as exc:
+            await _try_db_job_finish(job_run_id, "error", str(exc))
+            raise
+        else:
+            await _try_db_job_finish(job_run_id, "success")
+            if wait_for_lock:
+                run_elapsed = asyncio.get_running_loop().time() - run_started_monotonic
+                _log.info(
+                    f"{job_name} finished in {run_elapsed:.2f}s "
+                    f"job_name={job_name} lane_name={lane_name} "
+                    f"requested_at={requested_at} wait_started={wait_started} "
+                    f"wait_elapsed={wait_elapsed:.2f} run_started={run_started} "
+                    f"run_elapsed={run_elapsed:.2f}"
+                )
 
 
 async def run_order_lane_job(
