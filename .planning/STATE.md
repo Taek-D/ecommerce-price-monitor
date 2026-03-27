@@ -72,6 +72,9 @@ Recent decisions affecting current work:
 - [Phase 05-02]: job_run_id scoped inside async with lock block — each lane-lock acquisition gets its own rowid
 - [Phase 05-02]: try/except/else pattern: error branch calls _try_db_job_finish then re-raises; APScheduler sees unmodified exception
 - [Phase 05-02]: check_once excluded from job_runs tracking — called directly in main(), not via _run_with_lane_lock
+- [Phase 05-01]: _db_write_guarded alert fires at exactly count==5 (not >=5) to avoid re-alerting on 6th+ consecutive failure
+- [Phase 05-01]: url_in_state computed before state[url]=curr mutation — guards first_seen vs restock classification
+- [Phase 05-01]: _db_log_adapter_run placed before continue in kind='error' block — logs even when sheet row missing
 
 ### Pending Todos
 
@@ -84,6 +87,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-27T10:05:35Z
-Stopped at: Completed 05-02-PLAN.md
-Resume file: .planning/phases/05-event-logging/05-02-SUMMARY.md
+Last session: 2026-03-27T10:07:52Z
+Stopped at: Completed 05-01-PLAN.md
+Resume file: .planning/phases/05-event-logging/05-01-SUMMARY.md
