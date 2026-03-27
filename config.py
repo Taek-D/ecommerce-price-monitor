@@ -21,6 +21,7 @@ URLS_START_ROW = 3
 
 # ---------------- 동작 파라미터 ----------------
 STATE_FILE = "price_state.json"
+DB_FILE = str(_PROJECT_ROOT / "ops.db")
 MIN_PRICE = 5000
 WEB_TIMEOUT = 45000
 URL_TOTAL_TIMEOUT = 90
