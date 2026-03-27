@@ -33,6 +33,15 @@
 
 <!-- Current scope. Building toward these. -->
 
+- [ ] SQLite 운영 데이터 통합 저장소 (aiosqlite 기반)
+- [ ] 가격 체크 이벤트 append-only 저장 (price_checks, price_events 테이블)
+- [ ] 상품 발굴 후보 DB 저장 (discovery_candidates 테이블)
+- [ ] 어댑터 실패/성공 로그 DB 저장 (adapter_runs 테이블)
+- [ ] 작업 실행 로그 DB 저장 (job_runs 테이블)
+- [ ] price_state.json → SQLite 마이그레이션 (DB가 source of truth)
+- [ ] discovery_state.json → SQLite 마이그레이션
+- [ ] 기존 Google Sheets 읽기/쓰기 로직 유지 (점진적 전환)
+
 ### Out of Scope
 
 <!-- Explicit boundaries. Includes reasoning to prevent re-adding. -->
@@ -70,5 +79,15 @@
 | Stealth 브라우저 설정 상수화 | config.py에 STEALTH_* 상수 집중 관리 | ✓ Good |
 | CF challenge 15초 대기 + 3회 재시도 | #itemcase_basic 셀렉터로 challenge 통과 감지 | ✓ Good |
 
+## Current Milestone: v1.3 SQLite운영저장소
+
+**Goal:** 분산된 운영 상태(JSON 파일, Sheets)를 SQLite DB로 통합하여 가격 이력 조회, 실패율 분석, 재시작 복구를 가능하게 한다.
+
+**Target features:**
+- SQLite 스키마 설계 + aiosqlite 연동
+- price_state.json / discovery_state.json → DB 마이그레이션
+- 가격/발굴/어댑터/작업 이벤트 append-only 저장
+- 기존 Sheets 로직 유지 (점진적 전환)
+
 ---
-*Last updated: 2026-03-26 after v1.2 milestone complete*
+*Last updated: 2026-03-27 after v1.3 milestone started*
