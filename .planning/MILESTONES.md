@@ -1,5 +1,14 @@
 # Milestones
 
+## v1.3 SQLite운영저장소 (Shipped: 2026-03-27)
+
+**Phases completed:** 3 phases, 6 plans, 0 tasks
+
+**Key accomplishments:**
+- (none recorded)
+
+---
+
 ## v1.2 지마켓안티봇 (Shipped: 2026-03-26)
 
 **Phases completed:** 1 phase, 2 plans, 4 tasks

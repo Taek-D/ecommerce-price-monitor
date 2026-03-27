@@ -33,14 +33,17 @@
 
 <!-- Current scope. Building toward these. -->
 
-- [ ] SQLite 운영 데이터 통합 저장소 (aiosqlite 기반)
-- [ ] 가격 체크 이벤트 append-only 저장 (price_checks, price_events 테이블)
-- [ ] 상품 발굴 후보 DB 저장 (discovery_candidates 테이블)
-- [ ] 어댑터 실패/성공 로그 DB 저장 (adapter_runs 테이블)
-- [ ] 작업 실행 로그 DB 저장 (job_runs 테이블)
-- [ ] price_state.json → SQLite 마이그레이션 (DB가 source of truth)
-- [ ] discovery_state.json → SQLite 마이그레이션
-- [ ] 기존 Google Sheets 읽기/쓰기 로직 유지 (점진적 전환)
+(Next milestone에서 정의)
+
+### Validated (v1.3)
+
+- ✓ SQLite 운영 데이터 통합 저장소 (aiosqlite 싱글톤 + WAL) — v1.3
+- ✓ 가격 체크/변동 이벤트 append-only DB 저장 — v1.3
+- ✓ 어댑터 에러 로그 DB 저장 — v1.3
+- ✓ 스케줄러 작업 실행 로그 DB 저장 — v1.3
+- ✓ price_state.json → SQLite 마이그레이션 (DB = source of truth) — v1.3
+- ✓ discovery_state.json → SQLite 마이그레이션 — v1.3
+- ✓ 기존 Google Sheets 읽기/쓰기 로직 유지 (DB-first dual-write) — v1.3
 
 ### Out of Scope
 
@@ -78,16 +81,26 @@
 | _after_goto 훅 패턴 | BaseAdapter 템플릿 메서드에 post-navigation 확장점 추가 | ✓ Good |
 | Stealth 브라우저 설정 상수화 | config.py에 STEALTH_* 상수 집중 관리 | ✓ Good |
 | CF challenge 15초 대기 + 3회 재시도 | #itemcase_basic 셀렉터로 challenge 통과 감지 | ✓ Good |
+| aiosqlite 싱글톤 + WAL 모드 | SQLite 다중 커넥션 lock 에러 방지 | ✓ Good |
+| _db_write_guarded 패턴 | DB 쓰기 실패 격리 + 연속 5회 실패 시 Discord 경고 | ✓ Good |
+| DB-first dual-write | DB 쓰기 완료 후 Sheets 쓰기 — Sheets 무회귀 보장 | ✓ Good |
+| migrate.py 별도 스크립트 | 봇 정지 후 수동 실행, 트랜잭션 안전, row-count 검증 | ✓ Good |
 
-## Current Milestone: v1.3 SQLite운영저장소
+## Current State
 
-**Goal:** 분산된 운영 상태(JSON 파일, Sheets)를 SQLite DB로 통합하여 가격 이력 조회, 실패율 분석, 재시작 복구를 가능하게 한다.
+**Shipped:** v1.3 SQLite운영저장소 (2026-03-27)
+**Codebase:** 9,371 LOC Python, 326 tests passing
+**Tech stack:** Python 3.11+ / Playwright / APScheduler / httpx / gspread / aiosqlite
+**DB:** ops.db (SQLite WAL, 7 tables) — single source of truth for price state
 
-**Target features:**
-- SQLite 스키마 설계 + aiosqlite 연동
-- price_state.json / discovery_state.json → DB 마이그레이션
-- 가격/발굴/어댑터/작업 이벤트 append-only 저장
-- 기존 Sheets 로직 유지 (점진적 전환)
+**Next milestone:** TBD — `/gsd:new-milestone`로 시작
+
+## v1.4 후보
+
+- 어댑터별 Circuit Breaker + 자동 격리
+- Canary 헬스체크 (셀렉터 깨짐 조기 감지)
+- 스마트 알림 + 가격 분석 대시보드
+- Discovery → 모니터링 등록 반자동 파이프라인
 
 ---
-*Last updated: 2026-03-27 after v1.3 milestone started*
+*Last updated: 2026-03-27 after v1.3 milestone complete*
