@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: SQLite운영저장소
-status: in_progress
-stopped_at: "Completed 06-migration/06-01-PLAN.md"
-last_updated: "2026-03-27T11:16:00Z"
-last_activity: 2026-03-27 — Phase 6 Plan 1 (JSON-to-DB Migration Script) complete
+status: complete
+stopped_at: "Completed 06-migration/06-02-PLAN.md"
+last_updated: "2026-03-27T11:31:00Z"
+last_activity: 2026-03-27 — Phase 6 Plan 2 (DB-Based State I/O) complete — v1.3 milestone DONE
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 6
-  completed_plans: 5
-  percent: 42
+  completed_plans: 6
+  percent: 100
 ---
 
 # Project State
@@ -21,23 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-27)
 
 **Core value:** 가격 변동과 주문 상태를 실시간으로 파악하여, 수동 모니터링 없이 즉각 대응
-**Current focus:** v1.3 Phase 6 — Migration (plan 01 complete, plan 02 next)
+**Current focus:** v1.3 COMPLETE — All 6 plans across 3 phases executed
 
 ## Current Position
 
-Phase: 6 of 6 (Migration)
-Plan: 1 of 2 in current phase (complete)
-Status: Phase 6 Plan 1 complete — migrate.py JSON-to-DB migration script created
-Last activity: 2026-03-27 — Phase 6 Plan 1 (JSON-to-DB Migration Script) complete
+Phase: 6 of 6 (Migration) — COMPLETE
+Plan: 2 of 2 in current phase (complete)
+Status: ALL PLANS COMPLETE — v1.3 SQLite운영저장소 milestone achieved
+Last activity: 2026-03-27 — Phase 6 Plan 2 (DB-Based State I/O) complete
 
-Progress: [████░░░░░░] 42%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 8 (was 7, +1 this session)
-- Average duration: 4.6min
-- Total execution time: 42min
+- Total plans completed: 9
+- Average duration: 5.0min
+- Total execution time: 53min
 
 **By Phase:**
 
@@ -47,7 +47,7 @@ Progress: [████░░░░░░] 42%
 | 03 | 2 | 15min | 7.5min |
 | 04 | 2 | 9min | 4.5min |
 | 05 | 1 | 4min | 4.0min |
-| 06 | 1 | 5min | 5.0min |
+| 06 | 2 | 16min | 8.0min |
 
 *Updated after each plan completion*
 
@@ -79,18 +79,20 @@ Recent decisions affecting current work:
 - [Phase 06-01]: migrate.main() closes DB in finally block — tests re-open DB after main() returns to verify row data
 - [Phase 06-01]: count_before/count_after approach for discovery_candidates INSERT OR IGNORE — handles pre-existing rows correctly
 - [Phase 06-01]: LOCK_FILE and DISCOVERY_STATE_FILE as module-level constants in migrate.py for monkeypatch testability
+- [Phase 06-02]: Full state dict upsert on every save_state() call — simpler than change-tracking; 236 rows fast in WAL mode
+- [Phase 06-02]: _do_upsert does NOT acquire db._write_lock — _db_write_guarded already holds it (deadlock avoidance)
+- [Phase 06-02]: BEGIN IMMEDIATE + ROLLBACK on exception inside _do_upsert for atomic upsert batch
 
 ### Pending Todos
 
-None yet.
+None.
 
 ### Blockers/Concerns
 
-- [Phase 6]: discovery_state.json was git-removed (commit 8eff71c) — actual on-disk state unknown. Migration helper must treat missing file as empty state (zero rows, no error).
-- [Phase 5-6]: Dual-write partial failure (DB ok, Sheets fail or vice versa) must not cause spurious Discord alerts. DB-first write order is the guard.
+None — all phases and plans complete.
 
 ## Session Continuity
 
-Last session: 2026-03-27T11:16:00Z
-Stopped at: Completed 06-migration/06-01-PLAN.md
-Resume file: .planning/phases/06-migration/06-02-PLAN.md
+Last session: 2026-03-27T11:31:00Z
+Stopped at: Completed 06-migration/06-02-PLAN.md
+Resume file: N/A — all plans complete

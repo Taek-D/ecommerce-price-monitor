@@ -5,7 +5,7 @@
 - ✅ **v1.0 배송알림** — Phase 1 (shipped 2026-03-20)
 - ✅ **v1.1 소싱탭자동기록** — Phase 2 (shipped 2026-03-26)
 - ✅ **v1.2 지마켓안티봇** — Phase 3 (shipped 2026-03-26)
-- 🚧 **v1.3 SQLite운영저장소** — Phases 4-6 (in progress)
+- ✅ **v1.3 SQLite운영저장소** — Phases 4-6 (shipped 2026-03-27)
 
 ## Phases
 
@@ -30,13 +30,13 @@
 
 </details>
 
-### 🚧 v1.3 SQLite운영저장소 (In Progress)
+### ✅ v1.3 SQLite운영저장소 (SHIPPED 2026-03-27)
 
 **Milestone Goal:** 분산된 운영 상태(JSON 파일, Sheets)를 SQLite DB로 통합하여 가격 이력 조회, 실패율 분석, 재시작 복구를 가능하게 한다.
 
 - [x] **Phase 4: DB Foundation** — aiosqlite 싱글톤 + WAL 스키마 + main.py 라이프사이클 (completed 2026-03-27)
 - [x] **Phase 5: Event Logging** — 가격 체크/변동/에러/작업 이벤트 append-only DB 저장 + dual-write 순서 보장 (completed 2026-03-27)
-- [ ] **Phase 6: Migration** — price_state.json + discovery_state.json DB 이전, DB를 source of truth로 전환
+- [x] **Phase 6: Migration** — price_state.json + discovery_state.json DB 이전, DB를 source of truth로 전환 (completed 2026-03-27)
 
 ## Phase Details
 
@@ -68,7 +68,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — price_checks/price_events/adapter_runs DB 로깅 헬퍼 + check_once() 통합 + dual-write 순서 보장
+- [x] 05-01-PLAN.md — price_checks/price_events/adapter_runs DB 로깅 헬퍼 + check_once() 통합 + dual-write 순서 보장
 - [x] 05-02-PLAN.md — job_runs DB 추적 (_run_with_lane_lock 통합)
 
 ### Phase 6: Migration
@@ -83,8 +83,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 06-01-PLAN.md — migrate.py 스크립트 (price_state + discovery_state JSON-to-DB 마이그레이션 + .bak 백업)
-- [ ] 06-02-PLAN.md — load_state()/save_state() DB 전환 (DB = single source of truth)
+- [x] 06-01-PLAN.md — migrate.py 스크립트 (price_state + discovery_state JSON-to-DB 마이그레이션 + .bak 백업)
+- [x] 06-02-PLAN.md — load_state()/save_state() DB 전환 (DB = single source of truth)
 
 ## Progress
 
@@ -95,4 +95,4 @@ Plans:
 | 3. 지마켓 안티봇 우회 + 가격 추출 정상화 | v1.2 | 2/2 | Complete | 2026-03-26 |
 | 4. DB Foundation | v1.3 | 2/2 | Complete | 2026-03-27 |
 | 5. Event Logging | v1.3 | 2/2 | Complete | 2026-03-27 |
-| 6. Migration | 1/2 | In Progress|  | - |
+| 6. Migration | v1.3 | 2/2 | Complete | 2026-03-27 |
