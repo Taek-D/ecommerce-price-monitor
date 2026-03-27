@@ -52,8 +52,8 @@
 **Plans**: 2 plans
 
 Plans:
-- [ ] 04-01-PLAN.md — aiosqlite dependency + DB_FILE constant + db.py module + tests
-- [ ] 04-02-PLAN.md — main.py DB lifecycle integration + .gitignore entries
+- [x] 04-01-PLAN.md — aiosqlite dependency + DB_FILE constant + db.py module + tests
+- [x] 04-02-PLAN.md — main.py DB lifecycle integration + .gitignore entries
 
 ### Phase 5: Event Logging
 **Goal**: 모든 가격 체크, 변동, 어댑터 실패, 작업 실행이 DB에 기록되고, Sheets 쓰기는 DB 성공 후에만 실행된다
@@ -65,7 +65,11 @@ Plans:
   3. 어댑터 추출 에러 발생 시 adapter_runs 테이블에 에러 행이 추가된다
   4. 스케줄러 작업 실행 시 job_runs 테이블에 시작/종료 시각이 기록된다
   5. DB 쓰기 실패 시에도 기존 Sheets 로직은 정상 동작한다 (Sheets 로직 무회귀)
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 05-01-PLAN.md — price_checks/price_events/adapter_runs DB 로깅 헬퍼 + check_once() 통합 + dual-write 순서 보장
+- [ ] 05-02-PLAN.md — job_runs DB 추적 (_run_with_lane_lock 통합)
 
 ### Phase 6: Migration
 **Goal**: price_state.json과 discovery_state.json이 DB로 이전되고, 봇 재시작 후 DB에서 상태를 로드하며, Discord 오알림이 발생하지 않는다
@@ -85,6 +89,6 @@ Plans:
 | 1. 상품준비중 Discord 알림 | v1.0 | 1/1 | Complete | 2026-03-20 |
 | 2. 소싱탭 자동기록 | v1.1 | 2/2 | Complete | 2026-03-26 |
 | 3. 지마켓 안티봇 우회 + 가격 추출 정상화 | v1.2 | 2/2 | Complete | 2026-03-26 |
-| 4. DB Foundation | 2/2 | Complete   | 2026-03-27 | - |
-| 5. Event Logging | v1.3 | 0/? | Not started | - |
+| 4. DB Foundation | v1.3 | 2/2 | Complete | 2026-03-27 |
+| 5. Event Logging | v1.3 | 0/2 | Not started | - |
 | 6. Migration | v1.3 | 0/? | Not started | - |
