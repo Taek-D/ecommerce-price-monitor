@@ -80,7 +80,11 @@ Plans:
   2. 봇 재시작 후 첫 번째 check_once() 사이클에서 Discord 가격 변동 알림이 발생하지 않는다 (DB load 정상)
   3. 마이그레이션 후 48시간 동안 price_state.json.bak 파일이 존재한다
   4. discovery_state.json이 없는 환경에서 마이그레이션이 에러 없이 완료된다 (빈 상태로 처리)
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — migrate.py 스크립트 (price_state + discovery_state JSON-to-DB 마이그레이션 + .bak 백업)
+- [ ] 06-02-PLAN.md — load_state()/save_state() DB 전환 (DB = single source of truth)
 
 ## Progress
 
@@ -90,5 +94,5 @@ Plans:
 | 2. 소싱탭 자동기록 | v1.1 | 2/2 | Complete | 2026-03-26 |
 | 3. 지마켓 안티봇 우회 + 가격 추출 정상화 | v1.2 | 2/2 | Complete | 2026-03-26 |
 | 4. DB Foundation | v1.3 | 2/2 | Complete | 2026-03-27 |
-| 5. Event Logging | 2/2 | Complete   | 2026-03-27 | - |
-| 6. Migration | v1.3 | 0/? | Not started | - |
+| 5. Event Logging | v1.3 | 2/2 | Complete | 2026-03-27 |
+| 6. Migration | v1.3 | 0/2 | Not started | - |
