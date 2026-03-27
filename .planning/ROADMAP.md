@@ -85,6 +85,6 @@ Plans:
 | 1. 상품준비중 Discord 알림 | v1.0 | 1/1 | Complete | 2026-03-20 |
 | 2. 소싱탭 자동기록 | v1.1 | 2/2 | Complete | 2026-03-26 |
 | 3. 지마켓 안티봇 우회 + 가격 추출 정상화 | v1.2 | 2/2 | Complete | 2026-03-26 |
-| 4. DB Foundation | v1.3 | 0/2 | Not started | - |
+| 4. DB Foundation | 1/2 | In Progress|  | - |
 | 5. Event Logging | v1.3 | 0/? | Not started | - |
 | 6. Migration | v1.3 | 0/? | Not started | - |

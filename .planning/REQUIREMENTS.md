@@ -9,10 +9,10 @@ Requirements for milestone v1.3 SQLite운영저장소. Each maps to roadmap phas
 
 ### DB Foundation
 
-- [ ] **DB-01**: DB 모듈(db.py) 생성 — aiosqlite 싱글톤 커넥션 + WAL 모드
-- [ ] **DB-02**: 스키마 자동 생성 (products, price_checks, price_events, adapter_runs, job_runs, discovery_candidates)
+- [x] **DB-01**: DB 모듈(db.py) 생성 — aiosqlite 싱글톤 커넥션 + WAL 모드
+- [x] **DB-02**: 스키마 자동 생성 (products, price_checks, price_events, adapter_runs, job_runs, discovery_candidates)
 - [ ] **DB-03**: main.py에서 DB 초기화/셧다운 라이프사이클 관리
-- [ ] **DB-04**: config.py에 DB_FILE 경로 상수 추가
+- [x] **DB-04**: config.py에 DB_FILE 경로 상수 추가
 
 ### Event Logging
 
@@ -56,10 +56,10 @@ Requirements for milestone v1.3 SQLite운영저장소. Each maps to roadmap phas
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DB-01 | Phase 4 | Pending |
-| DB-02 | Phase 4 | Pending |
+| DB-01 | Phase 4 | Complete |
+| DB-02 | Phase 4 | Complete |
 | DB-03 | Phase 4 | Pending |
-| DB-04 | Phase 4 | Pending |
+| DB-04 | Phase 4 | Complete |
 | LOG-01 | Phase 5 | Pending |
 | LOG-02 | Phase 5 | Pending |
 | LOG-03 | Phase 5 | Pending |
