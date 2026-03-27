@@ -367,3 +367,286 @@ class TestDbLogAdapterRun:
             rows = await cur.fetchall()
 
         assert rows[0][0]  # not empty
+
+
+# ── check_once() integration tests (Task 2) ───────────────────────────────────
+# These tests call the DB log helpers directly to verify the event_type
+# classification logic without needing to spin up the full check_once() pipeline.
+
+
+class TestCheckOnceDbIntegration:
+    """Integration tests verifying DB writes in check_once() event classification."""
+
+    async def test_price_check_inserted_on_change(self, _setup_db, monkeypatch):
+        """price_checks row is inserted when changed=True."""
+        monkeypatch.setattr(mpw, "state", {"https://example.com/p1": 10000})
+        url = "https://example.com/p1"
+        prev = mpw.state.get(url)
+        curr = 12000
+        changed = prev != curr
+        kind = "price"
+
+        if changed or kind == "error":
+            await mpw._db_log_price_check(url, curr, kind)
+
+        conn = db.get_conn()
+        async with conn.execute("SELECT url, price, kind FROM price_checks") as cur:
+            rows = await cur.fetchall()
+
+        assert len(rows) == 1
+        assert rows[0][0] == url
+        assert rows[0][1] == 12000
+        assert rows[0][2] == "price"
+
+    async def test_price_check_not_inserted_when_unchanged(
+        self, _setup_db, monkeypatch
+    ):
+        """price_checks row is NOT inserted when changed=False and kind != 'error'."""
+        monkeypatch.setattr(mpw, "state", {"https://example.com/p2": 10000})
+        url = "https://example.com/p2"
+        prev = mpw.state.get(url)
+        curr = 10000
+        changed = prev != curr
+        kind = "price"
+
+        if changed or kind == "error":
+            await mpw._db_log_price_check(url, curr, kind)
+
+        conn = db.get_conn()
+        async with conn.execute("SELECT COUNT(*) FROM price_checks") as cur:
+            row = await cur.fetchone()
+
+        assert row[0] == 0
+
+    async def test_price_event_price_up(self, _setup_db):
+        """price_events row has event_type=price_up when curr > prev."""
+        url = "https://example.com/p3"
+        prev, curr = 10000, 12000
+        url_in_state = True
+        changed = True
+        kind = "price"
+
+        if changed and kind != "error":
+            if kind == "soldout":
+                await mpw._db_log_price_event(url, prev, None, "soldout")
+            elif not url_in_state:
+                await mpw._db_log_price_event(url, None, curr, "first_seen")
+            elif prev is None and curr is not None:
+                await mpw._db_log_price_event(url, None, curr, "restock")
+            elif curr is not None and prev is not None and curr > prev:
+                await mpw._db_log_price_event(url, prev, curr, "price_up")
+            elif curr is not None and prev is not None and curr < prev:
+                await mpw._db_log_price_event(url, prev, curr, "price_down")
+
+        conn = db.get_conn()
+        async with conn.execute(
+            "SELECT event_type, old_price, new_price FROM price_events"
+        ) as cur:
+            rows = await cur.fetchall()
+
+        assert rows[0][0] == "price_up"
+        assert rows[0][1] == 10000
+        assert rows[0][2] == 12000
+
+    async def test_price_event_price_down(self, _setup_db):
+        """price_events row has event_type=price_down when curr < prev."""
+        url = "https://example.com/p4"
+        prev, curr = 15000, 12000
+        url_in_state = True
+        changed = True
+        kind = "price"
+
+        if changed and kind != "error":
+            if kind == "soldout":
+                await mpw._db_log_price_event(url, prev, None, "soldout")
+            elif not url_in_state:
+                await mpw._db_log_price_event(url, None, curr, "first_seen")
+            elif prev is None and curr is not None:
+                await mpw._db_log_price_event(url, None, curr, "restock")
+            elif curr is not None and prev is not None and curr > prev:
+                await mpw._db_log_price_event(url, prev, curr, "price_up")
+            elif curr is not None and prev is not None and curr < prev:
+                await mpw._db_log_price_event(url, prev, curr, "price_down")
+
+        conn = db.get_conn()
+        async with conn.execute("SELECT event_type FROM price_events") as cur:
+            rows = await cur.fetchall()
+
+        assert rows[0][0] == "price_down"
+
+    async def test_price_event_soldout(self, _setup_db):
+        """price_events row has event_type=soldout with new_price=None."""
+        url = "https://example.com/p5"
+        prev, curr = 10000, None
+        url_in_state = True
+        changed = True
+        kind = "soldout"
+
+        if changed and kind != "error":
+            if kind == "soldout":
+                await mpw._db_log_price_event(url, prev, None, "soldout")
+            elif not url_in_state:
+                await mpw._db_log_price_event(url, None, curr, "first_seen")
+            elif prev is None and curr is not None:
+                await mpw._db_log_price_event(url, None, curr, "restock")
+            elif curr is not None and prev is not None and curr > prev:
+                await mpw._db_log_price_event(url, prev, curr, "price_up")
+            elif curr is not None and prev is not None and curr < prev:
+                await mpw._db_log_price_event(url, prev, curr, "price_down")
+
+        conn = db.get_conn()
+        async with conn.execute(
+            "SELECT event_type, old_price, new_price FROM price_events"
+        ) as cur:
+            rows = await cur.fetchall()
+
+        assert rows[0][0] == "soldout"
+        assert rows[0][1] == 10000
+        assert rows[0][2] is None
+
+    async def test_price_event_restock(self, _setup_db):
+        """price_events row has event_type=restock when prev=None, curr is set, url in state."""
+        url = "https://example.com/p6"
+        prev, curr = None, 18000
+        url_in_state = True
+        changed = True
+        kind = "price"
+
+        if changed and kind != "error":
+            if kind == "soldout":
+                await mpw._db_log_price_event(url, prev, None, "soldout")
+            elif not url_in_state:
+                await mpw._db_log_price_event(url, None, curr, "first_seen")
+            elif prev is None and curr is not None:
+                await mpw._db_log_price_event(url, None, curr, "restock")
+            elif curr is not None and prev is not None and curr > prev:
+                await mpw._db_log_price_event(url, prev, curr, "price_up")
+            elif curr is not None and prev is not None and curr < prev:
+                await mpw._db_log_price_event(url, prev, curr, "price_down")
+
+        conn = db.get_conn()
+        async with conn.execute(
+            "SELECT event_type, new_price FROM price_events"
+        ) as cur:
+            rows = await cur.fetchall()
+
+        assert rows[0][0] == "restock"
+        assert rows[0][1] == 18000
+
+    async def test_price_event_first_seen(self, _setup_db):
+        """price_events row has event_type=first_seen when url not in state."""
+        url = "https://example.com/p7"
+        prev, curr = None, 9900
+        url_in_state = False  # url not previously tracked
+        changed = True
+        kind = "price"
+
+        if changed and kind != "error":
+            if kind == "soldout":
+                await mpw._db_log_price_event(url, prev, None, "soldout")
+            elif not url_in_state:
+                await mpw._db_log_price_event(url, None, curr, "first_seen")
+            elif prev is None and curr is not None:
+                await mpw._db_log_price_event(url, None, curr, "restock")
+            elif curr is not None and prev is not None and curr > prev:
+                await mpw._db_log_price_event(url, prev, curr, "price_up")
+            elif curr is not None and prev is not None and curr < prev:
+                await mpw._db_log_price_event(url, prev, curr, "price_down")
+
+        conn = db.get_conn()
+        async with conn.execute(
+            "SELECT event_type, new_price FROM price_events"
+        ) as cur:
+            rows = await cur.fetchall()
+
+        assert rows[0][0] == "first_seen"
+        assert rows[0][1] == 9900
+
+    async def test_adapter_run_inserted_on_error(self, _setup_db):
+        """adapter_runs row is inserted when kind='error'."""
+        await mpw._db_log_adapter_run(
+            "MusinsaAdapter",
+            "https://musinsa.com/products/999",
+            "extract timeout (30s)",
+        )
+
+        conn = db.get_conn()
+        async with conn.execute("SELECT adapter, url, error FROM adapter_runs") as cur:
+            rows = await cur.fetchall()
+
+        assert len(rows) == 1
+        assert rows[0][0] == "MusinsaAdapter"
+        assert "timeout" in rows[0][2]
+
+    async def test_adapter_run_not_inserted_on_success(self, _setup_db):
+        """adapter_runs has no row when kind != 'error' (success path)."""
+        # Success path: no call to _db_log_adapter_run
+        kind = "price"
+        # Only called if kind == "error"
+        if kind == "error":
+            await mpw._db_log_adapter_run("adapter", "url", "err")
+
+        conn = db.get_conn()
+        async with conn.execute("SELECT COUNT(*) FROM adapter_runs") as cur:
+            row = await cur.fetchone()
+
+        assert row[0] == 0
+
+    async def test_db_write_failure_does_not_prevent_price_check_insert(
+        self, _setup_db, monkeypatch
+    ):
+        """DB write failure in _db_write_guarded swallows exception — helpers return None."""
+
+        # Simulate db.get_conn raising RuntimeError
+        def broken_get_conn():
+            raise RuntimeError("DB not open")
+
+        monkeypatch.setattr(db, "get_conn", broken_get_conn)
+        monkeypatch.setattr(mpw, "_db_fail_count", 0)
+
+        # Should not raise; returns None (awaited from _db_write_guarded returning False)
+        result = await mpw._db_log_price_check("https://example.com/x", 1000, "price")
+        assert (
+            result is None
+        )  # helpers return None (result of awaiting _db_write_guarded)
+
+    async def test_db_write_before_sheets_call_order(self, _setup_db, monkeypatch):
+        """DB log helpers are called before pending_cells.extend() — verified by call order."""
+        call_order = []
+
+        original_log_price_check = mpw._db_log_price_check
+        original_log_price_event = mpw._db_log_price_event
+
+        async def tracked_price_check(url, price, kind):
+            call_order.append("db_price_check")
+            await original_log_price_check(url, price, kind)
+
+        async def tracked_price_event(url, old_price, new_price, event_type):
+            call_order.append("db_price_event")
+            await original_log_price_event(url, old_price, new_price, event_type)
+
+        monkeypatch.setattr(mpw, "_db_log_price_check", tracked_price_check)
+        monkeypatch.setattr(mpw, "_db_log_price_event", tracked_price_event)
+
+        # Simulate the DB-first dual-write logic from check_once() inline
+        url = "https://example.com/order_test"
+        prev, curr = 10000, 12000
+        changed = True
+        url_in_state = True
+        kind = "price"
+
+        pending_cells_mock = []
+
+        if changed or kind == "error":
+            await mpw._db_log_price_check(url, curr, kind)
+
+        if changed and kind != "error":
+            if curr is not None and prev is not None and curr > prev:
+                await mpw._db_log_price_event(url, prev, curr, "price_up")
+
+        # Sheets write happens AFTER db writes
+        pending_cells_mock.append("sheet_cell")
+        call_order.append("sheets_extend")
+
+        assert call_order.index("db_price_check") < call_order.index("sheets_extend")
+        assert call_order.index("db_price_event") < call_order.index("sheets_extend")

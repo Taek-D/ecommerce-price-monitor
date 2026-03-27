@@ -536,6 +536,7 @@ async def check_once():
                 f"{ad.name} error extracting {url}: {result.get('error')}{suffix}"
             )
             error_count += 1
+            await _db_log_adapter_run(ad.name, url, result.get("error", "unknown"))
             continue
 
         row = row_by_url.get(url)
@@ -552,6 +553,7 @@ async def check_once():
         prev = state.get(url)
         curr = None if kind == "soldout" else value
         changed = prev != curr
+        url_in_state = url in state
 
         existing_sheet_price = sheet_price_by_url.get(url, "")
         existing_sheet_numeric = normalize_price(existing_sheet_price)
@@ -580,6 +582,22 @@ async def check_once():
                 sheet_value = curr
                 if not changed:
                     reconciled = True
+
+        # DB-first writes (LOG-01, LOG-02) — must occur before pending_cells.extend()
+        if changed or kind == "error":
+            await _db_log_price_check(url, curr if kind != "error" else None, kind)
+
+        if changed and kind != "error":
+            if kind == "soldout":
+                await _db_log_price_event(url, prev, None, "soldout")
+            elif not url_in_state:
+                await _db_log_price_event(url, None, curr, "first_seen")
+            elif prev is None and curr is not None:
+                await _db_log_price_event(url, None, curr, "restock")
+            elif curr is not None and prev is not None and curr > prev:
+                await _db_log_price_event(url, prev, curr, "price_up")
+            elif curr is not None and prev is not None and curr < prev:
+                await _db_log_price_event(url, prev, curr, "price_down")
 
         if write_price or write_time:
             if settings.dry_run:
