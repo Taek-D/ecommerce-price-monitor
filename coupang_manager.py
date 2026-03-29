@@ -547,10 +547,13 @@ def _to_positive_int(value) -> int | None:
             text = str(value).strip()
             if not text:
                 return None
-            digits = re.sub(r"[^0-9\-]", "", text)
-            if not digits or digits in {"-", "+"}:
-                return None
-            parsed = int(digits)
+            if "." in text:
+                parsed = int(float(text))
+            else:
+                digits = re.sub(r"[^0-9\-]", "", text)
+                if not digits or digits in {"-", "+"}:
+                    return None
+                parsed = int(digits)
         return parsed if parsed > 0 else None
     except Exception:
         return None
@@ -905,7 +908,7 @@ async def _record_order_to_sourcing_tab(
 
     # f. 행 추가
     try:
-        ws.append_row(row, value_input_option="USER_ENTERED", table_range="A1")
+        ws.append_row(row, value_input_option="USER_ENTERED", table_range="A2")
     except Exception as e:
         _log_sourcing.error(
             f"소싱탭 행 추가 실패: orderId={order_id} tab={tab_name} error={e}"
