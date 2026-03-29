@@ -8,7 +8,17 @@ from coupang_manager import (
     _resolve_sourcing_tab_name,
     _load_sourcing_info_by_vid,
     _record_order_to_sourcing_tab,
+    match_sourcing_orders_to_coupang,
     _SOURCING_ORDER_TABS,
+    _SOURCING_TAB_ORDERER_COL,
+    _SOURCING_TAB_PRODUCT_COL,
+    _SOURCING_TAB_ORDER_ID_COL,
+    ORDER_START_ROW,
+    COL_ORDER_ID,
+    COL_ORDER_NAME,
+    COL_ORDER_PRODUCT,
+    COL_ORDER_STATUS,
+    COL_ORDER_DATE,
 )
 
 
@@ -340,7 +350,7 @@ class TestRecordOrderToSourcingTab:
         assert row[4] == ""  # E: 배송지
         assert row[5] == ""  # F: 메모
         assert row[9] == ""  # J: 배송회사
-        assert row[10] == ""  # K: empty
+        assert row[10] == "ORD-001"  # K: 쿠팡주문ID
 
         # value_input_option should be USER_ENTERED
         assert mock_ws.append_row.call_args[1]["value_input_option"] == "USER_ENTERED"
@@ -517,3 +527,154 @@ class TestRecordOrderToSourcingTab:
 
         row = mock_ws.append_row.call_args[0][0]
         assert row[12] == ""  # M: buy_price
+
+
+# ── match_sourcing_orders_to_coupang ───────────────────────────
+
+
+def _make_sourcing_tab_row(
+    name: str = "",
+    product: str = "",
+    order_id: str = "",
+) -> list[str]:
+    """소싱처 탭 행 생성 (A~K, 11 columns minimum)."""
+    row = [""] * 11
+    row[_SOURCING_TAB_ORDERER_COL - 1] = name  # B열
+    row[_SOURCING_TAB_PRODUCT_COL - 1] = product  # G열
+    row[_SOURCING_TAB_ORDER_ID_COL - 1] = order_id  # K열
+    return row
+
+
+def _make_order_row(
+    order_id: str = "",
+    product: str = "",
+    name: str = "",
+    status: str = "",
+) -> list[str]:
+    """쿠팡주문관리 탭 행 생성 (A~H minimum)."""
+    row = [""] * max(COL_ORDER_STATUS, COL_ORDER_DATE)
+    row[COL_ORDER_ID - 1] = order_id
+    row[COL_ORDER_PRODUCT - 1] = product
+    row[COL_ORDER_NAME - 1] = name
+    row[COL_ORDER_STATUS - 1] = status
+    return row
+
+
+class TestMatchSourcingOrdersToCoupang:
+    """match_sourcing_orders_to_coupang 동명이인 오매칭 방지 테스트."""
+
+    def _setup_mocks(self, sourcing_tabs: dict[str, list], order_rows: list):
+        """공통 mock 설정. sourcing_tabs: {탭이름: [행들]}, order_rows: 주문 행들."""
+        mock_gc = MagicMock()
+        mock_sh = MagicMock()
+        mock_gc.open_by_key.return_value = mock_sh
+
+        ws_cache: dict[str, MagicMock] = {}
+
+        def worksheet_side_effect(name):
+            if name in ws_cache:
+                return ws_cache[name]
+            ws = MagicMock()
+            if name in sourcing_tabs:
+                ws.get_all_values.return_value = [["헤더"] * 11] + sourcing_tabs[name]
+            elif name == "쿠팡주문관리":
+                # ORDER_START_ROW=2 이므로 헤더 1행 + 데이터
+                ws.get_all_values.return_value = [["헤더"] * 8] + order_rows
+            else:
+                import gspread.exceptions
+
+                raise gspread.exceptions.WorksheetNotFound(name)
+            ws_cache[name] = ws
+            return ws
+
+        mock_sh.worksheet.side_effect = worksheet_side_effect
+        return mock_gc
+
+    @pytest.mark.asyncio
+    @patch("coupang_manager.COUPANG_ORDER_SHEET", "쿠팡주문관리")
+    @patch("coupang_manager.gspread.authorize")
+    @patch("coupang_manager._google_creds")
+    async def test_order_id_match(self, mock_creds, mock_authorize):
+        """orderId가 일치하면 '주문완료'로 변경."""
+        sourcing = {"무신사": [_make_sourcing_tab_row("김철수", "상품A", "ORD-100")]}
+        orders = [_make_order_row("ORD-100", "상품A", "김철수", "결제완료")]
+
+        mock_gc = self._setup_mocks(sourcing, orders)
+        mock_authorize.return_value = mock_gc
+
+        await match_sourcing_orders_to_coupang()
+
+        # flush 호출 확인
+        order_ws = mock_gc.open_by_key.return_value.worksheet("쿠팡주문관리")
+        order_ws.batch_update.assert_called()
+
+    @pytest.mark.asyncio
+    @patch("coupang_manager.COUPANG_ORDER_SHEET", "쿠팡주문관리")
+    @patch("coupang_manager.gspread.authorize")
+    @patch("coupang_manager._google_creds")
+    async def test_name_product_fallback(self, mock_creds, mock_authorize):
+        """orderId 없는 수동 입력 → (이름+상품명) 매칭."""
+        sourcing = {"무신사": [_make_sourcing_tab_row("이영희", "비타민C 1000mg", "")]}
+        orders = [_make_order_row("ORD-200", "비타민C 1000mg", "이영희", "결제완료")]
+
+        mock_gc = self._setup_mocks(sourcing, orders)
+        mock_authorize.return_value = mock_gc
+
+        await match_sourcing_orders_to_coupang()
+
+        order_ws = mock_gc.open_by_key.return_value.worksheet("쿠팡주문관리")
+        order_ws.batch_update.assert_called()
+
+    @pytest.mark.asyncio
+    @patch("coupang_manager.COUPANG_ORDER_SHEET", "쿠팡주문관리")
+    @patch("coupang_manager.gspread.authorize")
+    @patch("coupang_manager._google_creds")
+    async def test_same_name_different_product_no_match(
+        self, mock_creds, mock_authorize
+    ):
+        """핵심 회귀: 같은 이름이지만 상품이 다르면 매칭 안 됨 (동명이인 방지)."""
+        sourcing = {"무신사": [_make_sourcing_tab_row("김철수", "운동화", "")]}
+        orders = [_make_order_row("ORD-300", "선크림", "김철수", "결제완료")]
+
+        mock_gc = self._setup_mocks(sourcing, orders)
+        mock_authorize.return_value = mock_gc
+
+        await match_sourcing_orders_to_coupang()
+
+        order_ws = mock_gc.open_by_key.return_value.worksheet("쿠팡주문관리")
+        # update가 호출되지 않아야 함 (매칭 없음)
+        order_ws.batch_update.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("coupang_manager.COUPANG_ORDER_SHEET", "쿠팡주문관리")
+    @patch("coupang_manager.gspread.authorize")
+    @patch("coupang_manager._google_creds")
+    async def test_already_completed_skipped(self, mock_creds, mock_authorize):
+        """이미 '주문완료' 상태인 주문은 스킵."""
+        sourcing = {"무신사": [_make_sourcing_tab_row("박민수", "상품B", "ORD-400")]}
+        orders = [_make_order_row("ORD-400", "상품B", "박민수", "주문완료")]
+
+        mock_gc = self._setup_mocks(sourcing, orders)
+        mock_authorize.return_value = mock_gc
+
+        await match_sourcing_orders_to_coupang()
+
+        order_ws = mock_gc.open_by_key.return_value.worksheet("쿠팡주문관리")
+        order_ws.batch_update.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("coupang_manager.COUPANG_ORDER_SHEET", "쿠팡주문관리")
+    @patch("coupang_manager.gspread.authorize")
+    @patch("coupang_manager._google_creds")
+    async def test_empty_product_no_fallback_match(self, mock_creds, mock_authorize):
+        """상품명이 비어있으면 (이름+상품명) 폴백 매칭 안 됨."""
+        sourcing = {"무신사": [_make_sourcing_tab_row("최지우", "", "")]}
+        orders = [_make_order_row("ORD-500", "아무상품", "최지우", "결제완료")]
+
+        mock_gc = self._setup_mocks(sourcing, orders)
+        mock_authorize.return_value = mock_gc
+
+        await match_sourcing_orders_to_coupang()
+
+        order_ws = mock_gc.open_by_key.return_value.worksheet("쿠팡주문관리")
+        order_ws.batch_update.assert_not_called()

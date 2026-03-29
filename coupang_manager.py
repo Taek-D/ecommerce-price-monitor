@@ -901,7 +901,7 @@ async def _record_order_to_sourcing_tab(
         str(qty),  # H: 수량
         url,  # I: 구매처 URL
         "",  # J: 배송회사
-        "",  # K: (빈칸)
+        order_id,  # K: 쿠팡주문ID
         str(paid_unit) if paid_unit else "",  # L: 판매가격(단가)
         str(buy_price) if buy_price else "",  # M: 매입가격
     ]
@@ -3975,10 +3975,18 @@ _SOURCING_ORDER_TABS = [
     "sk스토아",
 ]
 _SOURCING_TAB_ORDERER_COL = 2  # B열: 주문자명
+_SOURCING_TAB_PRODUCT_COL = 7  # G열: 상품명
+_SOURCING_TAB_ORDER_ID_COL = 11  # K열: 쿠팡주문ID
 
 
 async def match_sourcing_orders_to_coupang() -> None:
-    """소싱처 탭 B열(주문자명)과 쿠팡주문관리 D열(수신자) 매칭 → G열 '주문완료' 처리."""
+    """소싱처 주문 ↔ 쿠팡 주문 매칭 → '주문완료' 처리.
+
+    매칭 우선순위:
+      1순위: orderId 정확 매칭 (소싱처 K열 ↔ 쿠팡 A열)
+      2순위: (이름 + 상품명) 쌍 매칭 (수동 입력 건, K열 없는 행)
+    이름만으로는 매칭하지 않아 동명이인 오매칭을 방지한다.
+    """
     _log_order.info(f"소싱처 주문 매칭 시작... ({_now_kst_str()})")
 
     try:
@@ -3988,25 +3996,49 @@ async def match_sourcing_orders_to_coupang() -> None:
         _log_order.error(f"시트 열기 실패: {e}")
         return
 
-    # 1) 모든 소싱처 탭에서 B열(주문자명) 수집
-    all_orderers: set[str] = set()
+    # 1) 모든 소싱처 탭에서 매칭 인덱스 구축
+    order_id_set: set[str] = set()
+    name_product_pairs: set[tuple[str, str]] = set()
+
     for tab_name in _SOURCING_ORDER_TABS:
         try:
             ws = sh.worksheet(tab_name)
-            col_values = ws.col_values(_SOURCING_TAB_ORDERER_COL)
-            # 헤더 제외, 빈 값 제외
-            names = {v.strip() for v in col_values[1:] if v.strip()}
-            all_orderers.update(names)
+            tab_rows = ws.get_all_values()
+            for tab_row in tab_rows[1:]:  # 헤더 제외
+                oid = (
+                    tab_row[_SOURCING_TAB_ORDER_ID_COL - 1].strip()
+                    if len(tab_row) >= _SOURCING_TAB_ORDER_ID_COL
+                    else ""
+                )
+                if oid:
+                    order_id_set.add(oid)
+                else:
+                    # orderId 없는 행(수동 입력) → (이름, 상품명) 폴백
+                    name = (
+                        tab_row[_SOURCING_TAB_ORDERER_COL - 1].strip()
+                        if len(tab_row) >= _SOURCING_TAB_ORDERER_COL
+                        else ""
+                    )
+                    product = (
+                        tab_row[_SOURCING_TAB_PRODUCT_COL - 1].strip()
+                        if len(tab_row) >= _SOURCING_TAB_PRODUCT_COL
+                        else ""
+                    )
+                    if name and product:
+                        name_product_pairs.add((name, _normalize_product_name(product)))
         except gspread.exceptions.WorksheetNotFound:
             pass
         except Exception as e:
             _log_order.warning(f"'{tab_name}' 탭 읽기 실패: {e}")
 
-    if not all_orderers:
-        _log_order.warning("소싱처 주문자명 없음 → 스킵")
+    if not order_id_set and not name_product_pairs:
+        _log_order.warning("소싱처 매칭 대상 없음 → 스킵")
         return
 
-    _log_order.info(f"소싱처 주문자명 {len(all_orderers)}명 수집")
+    _log_order.info(
+        f"소싱처 인덱스 구축: orderId {len(order_id_set)}건, "
+        f"이름+상품 {len(name_product_pairs)}건"
+    )
 
     # 2) 쿠팡주문관리 탭 읽기
     try:
@@ -4016,33 +4048,47 @@ async def match_sourcing_orders_to_coupang() -> None:
         _log_order.error(f"쿠팡주문관리 읽기 실패: {e}")
         return
 
-    # 3) D열(수신자) ↔ 소싱처 주문자명 매칭 → G열 '주문완료'
+    # 3) 매칭: orderId 우선, (이름+상품명) 폴백
     pending: dict[str, object] = {}
-    matched_count = 0
+    matched_by_oid = 0
+    matched_by_name_product = 0
 
     for row_idx, row in enumerate(rows[ORDER_START_ROW - 1 :], start=ORDER_START_ROW):
         if len(row) < COL_ORDER_STATUS:
             continue
 
-        recipient = (
-            row[COL_ORDER_NAME - 1].strip() if len(row) >= COL_ORDER_NAME else ""
-        )
         status = row[COL_ORDER_STATUS - 1].strip()
-
-        if not recipient:
-            continue
         # 이미 주문완료이거나 취소/반품/환불이면 스킵
         if status in ("주문완료", "취소", "반품", "환불"):
             continue
 
-        if recipient in all_orderers:
+        oid = row[COL_ORDER_ID - 1].strip() if len(row) >= COL_ORDER_ID else ""
+        recipient = (
+            row[COL_ORDER_NAME - 1].strip() if len(row) >= COL_ORDER_NAME else ""
+        )
+        product = (
+            row[COL_ORDER_PRODUCT - 1].strip() if len(row) >= COL_ORDER_PRODUCT else ""
+        )
+
+        # 1순위: orderId 매칭
+        if oid and oid in order_id_set:
             _queue_sheet_cell_update(pending, row_idx, COL_ORDER_STATUS, "주문완료")
-            matched_count += 1
+            matched_by_oid += 1
+        # 2순위: (이름 + 상품명) 매칭
+        elif recipient and product:
+            pair = (recipient, _normalize_product_name(product))
+            if pair in name_product_pairs:
+                _queue_sheet_cell_update(pending, row_idx, COL_ORDER_STATUS, "주문완료")
+                matched_by_name_product += 1
 
     if pending:
         _flush_sheet_cell_updates(order_ws, pending)
 
-    _log_order.info(f"완료: {matched_count}건 '주문완료' 처리")
+    total = matched_by_oid + matched_by_name_product
+    _log_order.info(
+        f"완료: {total}건 '주문완료' 처리 "
+        f"(orderId={matched_by_oid}, 이름+상품={matched_by_name_product})"
+    )
 
 
 async def sourcing_order_match_job():
