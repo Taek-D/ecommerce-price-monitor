@@ -33,7 +33,14 @@
 
 <!-- Current scope. Building toward these. -->
 
-(Next milestone에서 정의)
+#### Current Milestone: v1.4 버그픽스3종
+
+**Goal:** 소싱처 탭 기록 및 쿠팡 판매가 변동 관련 3가지 버그 수정
+
+**Target fixes:**
+- 최소판매가격에 따른 판매가 변동 미작동
+- 소싱처 탭 주문자 입력 시 빈 행이 아닌 랜덤 위치에 기록
+- 소싱처 탭 판매가격 10배 문제 재발
 
 ### Validated (v1.3)
 
@@ -93,7 +100,7 @@
 **Tech stack:** Python 3.11+ / Playwright / APScheduler / httpx / gspread / aiosqlite
 **DB:** ops.db (SQLite WAL, 7 tables) — single source of truth for price state
 
-**Next milestone:** TBD — `/gsd:new-milestone`로 시작
+**Next milestone:** v1.4 버그픽스3종 — 소싱탭/판매가 버그 3종 수정
 
 ## v1.4 후보
 
@@ -103,4 +110,4 @@
 - Discovery → 모니터링 등록 반자동 파이프라인
 
 ---
-*Last updated: 2026-03-27 after v1.3 milestone complete*
+*Last updated: 2026-03-31 after v1.4 milestone started*
