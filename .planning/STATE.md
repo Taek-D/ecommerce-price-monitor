@@ -4,7 +4,7 @@ milestone: v1.4
 milestone_name: 버그픽스3종
 status: completed
 stopped_at: Completed 08-sourcing-tab-record-bug-fix-01-PLAN.md
-last_updated: "2026-03-30T18:29:15.876Z"
+last_updated: "2026-03-30T18:35:52.360Z"
 last_activity: 2026-03-31 — Phase 8 plan 01 executed (sourcing tab bug fix)
 progress:
   total_phases: 2
