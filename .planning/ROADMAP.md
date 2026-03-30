@@ -44,7 +44,7 @@
 
 **Milestone Goal:** 소싱처 탭 기록 및 쿠팡 판매가 변동 관련 3가지 버그 수정
 
-- [ ] **Phase 7: 가격동기화 버그 수정** - K열 최소판매금액 변동 감지 → 쿠팡 API 판매가 변경 로직 수정
+- [x] **Phase 7: 가격동기화 버그 수정** - K열 최소판매금액 변동 감지 → 쿠팡 API 판매가 변경 로직 수정 (completed 2026-03-30)
 - [ ] **Phase 8: 소싱탭 기록 버그 수정** - append_row 랜덤 위치 삽입 및 L열 10배 기록 버그 수정
 
 ## Phase Details
@@ -87,5 +87,5 @@ Plans:
 | 4. DB Foundation | v1.3 | 2/2 | Complete | 2026-03-27 |
 | 5. Event Logging | v1.3 | 2/2 | Complete | 2026-03-27 |
 | 6. Migration | v1.3 | 2/2 | Complete | 2026-03-27 |
-| 7. 가격동기화 버그 수정 | v1.4 | 0/1 | In progress | - |
+| 7. 가격동기화 버그 수정 | 1/1 | Complete   | 2026-03-30 | - |
 | 8. 소싱탭 기록 버그 수정 | v1.4 | 0/2 | Not started | - |

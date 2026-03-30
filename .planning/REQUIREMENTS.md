@@ -9,8 +9,8 @@
 
 ### 가격동기화
 
-- [ ] **PRICE-01**: 소싱목록 K열(최소판매금액) 변경 시 쿠팡 판매가가 실제로 변동되어야 한다
-- [ ] **PRICE-02**: 가격동기화 변동 감지 → API 호출 → 성공/실패 Discord 알림이 정상 작동해야 한다
+- [x] **PRICE-01**: 소싱목록 K열(최소판매금액) 변경 시 쿠팡 판매가가 실제로 변동되어야 한다
+- [x] **PRICE-02**: 가격동기화 변동 감지 → API 호출 → 성공/실패 Discord 알림이 정상 작동해야 한다
 
 ### 소싱탭기록
 
@@ -32,8 +32,8 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PRICE-01 | Phase 7 | Pending |
-| PRICE-02 | Phase 7 | Pending |
+| PRICE-01 | Phase 7 | Complete |
+| PRICE-02 | Phase 7 | Complete |
 | SRCTAB-01 | Phase 8 | Pending |
 | SRCTAB-02 | Phase 8 | Pending |
 
