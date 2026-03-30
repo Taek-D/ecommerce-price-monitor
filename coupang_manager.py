@@ -2475,8 +2475,9 @@ async def refresh_product_sheet_from_api(force: bool = False) -> bool:
 
 async def update_sale_price(vendor_item_id: str, new_price: int) -> bool:
     """
-    판매가 변경 API 호출
+    판매가 변경 API 호출 + 읽기 검증 (read-back verification)
     PUT /vendor-items/{vendorItemId}/prices/{price}
+    API가 SUCCESS를 반환해도 실제 가격 변경을 GET으로 확인한 후 True 반환.
     """
     if new_price % 10 != 0:
         _log_sync.error(
@@ -2490,17 +2491,52 @@ async def update_sale_price(vendor_item_id: str, new_price: int) -> bool:
     try:
         result = await _coupang_put(path, params={"forceSalePriceUpdate": "true"})
         code = str(result.get("code", ""))
-        if code in ("SUCCESS", "200"):
-            _log_sync.info(
-                f"판매가 변경 → vendorItemId={vendor_item_id} | {new_price:,}원"
-            )
-            return True
-        else:
+        _log_sync.info(
+            f"판매가 변경 API 응답: vid={vendor_item_id} "
+            f"price={new_price:,} response={result}"
+        )
+        if code not in ("SUCCESS", "200"):
             _log_sync.error(f"판매가 변경 실패 → {result}")
             return False
     except Exception as e:
         _log_sync.error(f"판매가 변경 예외: {e}")
         return False
+
+    # Read-back verification: Coupang API returns SUCCESS but price may not be applied
+    for attempt in range(2):
+        await asyncio.sleep(1.5 if attempt == 0 else 3.0)
+        try:
+            api_data = await get_vendor_item_stock(vendor_item_id)
+            actual: int | None = None
+            if api_data:
+                for key in ("salePrice", "price"):
+                    val = api_data.get(key)
+                    if val is not None:
+                        try:
+                            candidate = int(val)
+                        except (ValueError, TypeError):
+                            continue
+                        if candidate > 0:
+                            actual = candidate
+                            break
+            if actual == new_price:
+                _log_sync.info(
+                    f"판매가 변경 검증 성공: vid={vendor_item_id} "
+                    f"price={new_price:,}원 (attempt {attempt + 1})"
+                )
+                return True
+            _log_sync.warning(
+                f"판매가 변경 검증 불일치 (attempt {attempt + 1}/2): "
+                f"vid={vendor_item_id} expected={new_price:,} actual={actual}"
+            )
+        except Exception as e:
+            _log_sync.warning(f"판매가 검증 조회 실패: {e}")
+
+    _log_sync.error(
+        f"판매가 변경 검증 최종 실패: vid={vendor_item_id} "
+        f"expected={new_price:,} — API said SUCCESS but price not applied"
+    )
+    return False
 
 
 async def update_stock(vendor_item_id: str, quantity: int) -> bool:
