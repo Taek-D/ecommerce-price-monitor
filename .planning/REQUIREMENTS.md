@@ -32,16 +32,16 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PRICE-01 | — | Pending |
-| PRICE-02 | — | Pending |
-| SRCTAB-01 | — | Pending |
-| SRCTAB-02 | — | Pending |
+| PRICE-01 | Phase 7 | Pending |
+| PRICE-02 | Phase 7 | Pending |
+| SRCTAB-01 | Phase 8 | Pending |
+| SRCTAB-02 | Phase 8 | Pending |
 
 **Coverage:**
 - v1.4 requirements: 4 total
-- Mapped to phases: 0
-- Unmapped: 4 ⚠️
+- Mapped to phases: 4
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-31*
-*Last updated: 2026-03-31 after initial definition*
+*Last updated: 2026-03-31 after roadmap creation (Phases 7-8)*
