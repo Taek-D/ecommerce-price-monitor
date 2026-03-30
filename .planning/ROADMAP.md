@@ -58,10 +58,10 @@
   2. 변동 감지 후 쿠팡 API 판매가 변경 호출이 실행된다
   3. API 호출 성공 시 Discord에 성공 알림이 전송된다
   4. API 호출 실패 시 Discord에 실패 알림이 전송된다
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 07-01: sync_sourcing_prices() 버그 원인 분석 및 수정
+- [ ] 07-01-PLAN.md — Fix price state persistence, change detection, and Discord failure notifications
 
 ### Phase 8: 소싱탭 기록 버그 수정
 **Goal**: 소싱처 탭에 주문 데이터가 항상 마지막 행 다음에 순차적으로 추가되고, L열 판매가격이 올바른 단가로 기록된다
@@ -87,5 +87,5 @@ Plans:
 | 4. DB Foundation | v1.3 | 2/2 | Complete | 2026-03-27 |
 | 5. Event Logging | v1.3 | 2/2 | Complete | 2026-03-27 |
 | 6. Migration | v1.3 | 2/2 | Complete | 2026-03-27 |
-| 7. 가격동기화 버그 수정 | v1.4 | 0/1 | Not started | - |
+| 7. 가격동기화 버그 수정 | v1.4 | 0/1 | In progress | - |
 | 8. 소싱탭 기록 버그 수정 | v1.4 | 0/2 | Not started | - |
