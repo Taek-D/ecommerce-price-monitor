@@ -61,7 +61,7 @@
 **Plans**: 1 plan
 
 Plans:
-- [ ] 07-01-PLAN.md — Fix price state persistence, change detection, and Discord failure notifications
+- [x] 07-01-PLAN.md — Fix price state persistence, change detection, and Discord failure notifications
 
 ### Phase 8: 소싱탭 기록 버그 수정
 **Goal**: 소싱처 탭에 주문 데이터가 항상 마지막 행 다음에 순차적으로 추가되고, L열 판매가격이 올바른 단가로 기록된다
@@ -71,11 +71,10 @@ Plans:
   1. 주문 데이터 기록 시 소싱처 탭의 기존 데이터 마지막 행 바로 다음에 삽입된다
   2. 여러 주문이 연속으로 기록될 때 랜덤 위치가 아닌 순차적으로 쌓인다
   3. L열에 기록되는 판매가격이 실제 주문 단가와 일치한다 (10배 곱해지지 않음)
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 08-01: _record_order_to_sourcing_tab() append_row 위치 버그 수정
-- [ ] 08-02: _record_order_to_sourcing_tab() L열 판매가격 10배 버그 수정
+- [ ] 08-01-PLAN.md — Fix append_row position bug and L column 10x price bug
 
 ## Progress
 
@@ -87,5 +86,5 @@ Plans:
 | 4. DB Foundation | v1.3 | 2/2 | Complete | 2026-03-27 |
 | 5. Event Logging | v1.3 | 2/2 | Complete | 2026-03-27 |
 | 6. Migration | v1.3 | 2/2 | Complete | 2026-03-27 |
-| 7. 가격동기화 버그 수정 | 1/1 | Complete   | 2026-03-30 | - |
-| 8. 소싱탭 기록 버그 수정 | v1.4 | 0/2 | Not started | - |
+| 7. 가격동기화 버그 수정 | v1.4 | 1/1 | Complete | 2026-03-30 |
+| 8. 소싱탭 기록 버그 수정 | v1.4 | 0/1 | Not started | - |
