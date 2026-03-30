@@ -14,8 +14,8 @@
 
 ### 소싱탭기록
 
-- [ ] **SRCTAB-01**: 소싱처 탭에 주문 데이터 기록 시 빈 행(마지막 데이터 행 다음)에 순차적으로 추가되어야 한다
-- [ ] **SRCTAB-02**: 소싱처 탭 L열(판매가격)에 올바른 단가가 기록되어야 한다 (10배 곱해지는 버그 수정)
+- [x] **SRCTAB-01**: 소싱처 탭에 주문 데이터 기록 시 빈 행(마지막 데이터 행 다음)에 순차적으로 추가되어야 한다
+- [x] **SRCTAB-02**: 소싱처 탭 L열(판매가격)에 올바른 단가가 기록되어야 한다 (10배 곱해지는 버그 수정)
 
 ## Future Requirements
 
@@ -34,8 +34,8 @@
 |-------------|-------|--------|
 | PRICE-01 | Phase 7 | Complete |
 | PRICE-02 | Phase 7 | Complete |
-| SRCTAB-01 | Phase 8 | Pending |
-| SRCTAB-02 | Phase 8 | Pending |
+| SRCTAB-01 | Phase 8 | Complete |
+| SRCTAB-02 | Phase 8 | Complete |
 
 **Coverage:**
 - v1.4 requirements: 4 total
