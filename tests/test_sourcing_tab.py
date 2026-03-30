@@ -420,8 +420,8 @@ class TestRecordOrderToSourcingTab:
         assert row[7] == "2"
         # I (index 8): sourcing URL
         assert row[8] == "https://www.musinsa.com/products/1"
-        # L (index 11): paid_unit (판매단가)
-        assert row[11] == "35000"
+        # L (index 11): paid_unit // 10 (판매단가, salesPrice is 10x)
+        assert row[11] == "3500"
         # M (index 12): buy_price (매입가격)
         assert row[12] == "15000"
 
@@ -612,6 +612,93 @@ class TestRecordOrderToSourcingTab:
 
         row = mock_ws.update.call_args[0][1][0]
         assert row[12] == ""  # M: buy_price
+
+
+# ── TestPaidUnitDivision (L column 10x bug) ─────────────────────
+
+
+class TestPaidUnitDivision:
+    """Tests that paid_unit is divided by 10 before recording to L column."""
+
+    @pytest.mark.asyncio
+    async def test_paid_unit_divided_by_10(self):
+        """paid_unit=35000 -> L column should be '3500'."""
+        mock_sh = MagicMock()
+        mock_ws = MagicMock()
+        mock_sh.worksheet.return_value = mock_ws
+        mock_ws.get_all_values.return_value = [["hdr"] * 13]
+
+        kwargs = _base_order_kwargs()
+        kwargs["paid_unit"] = 35000
+
+        await _record_order_to_sourcing_tab(
+            mock_sh,
+            _base_sourcing_info(),
+            **kwargs,
+        )
+
+        row = mock_ws.update.call_args[0][1][0]
+        assert row[11] == "3500"  # L: 35000 // 10
+
+    @pytest.mark.asyncio
+    async def test_paid_unit_none_still_empty(self):
+        """paid_unit=None -> L column should be ''."""
+        mock_sh = MagicMock()
+        mock_ws = MagicMock()
+        mock_sh.worksheet.return_value = mock_ws
+        mock_ws.get_all_values.return_value = [["hdr"] * 13]
+
+        kwargs = _base_order_kwargs()
+        kwargs["paid_unit"] = None
+
+        await _record_order_to_sourcing_tab(
+            mock_sh,
+            _base_sourcing_info(),
+            **kwargs,
+        )
+
+        row = mock_ws.update.call_args[0][1][0]
+        assert row[11] == ""  # L: None stays empty
+
+    @pytest.mark.asyncio
+    async def test_paid_unit_exact_division(self):
+        """paid_unit=129000 -> L column should be '12900'."""
+        mock_sh = MagicMock()
+        mock_ws = MagicMock()
+        mock_sh.worksheet.return_value = mock_ws
+        mock_ws.get_all_values.return_value = [["hdr"] * 13]
+
+        kwargs = _base_order_kwargs()
+        kwargs["paid_unit"] = 129000
+
+        await _record_order_to_sourcing_tab(
+            mock_sh,
+            _base_sourcing_info(),
+            **kwargs,
+        )
+
+        row = mock_ws.update.call_args[0][1][0]
+        assert row[11] == "12900"  # L: 129000 // 10
+
+    @pytest.mark.asyncio
+    async def test_paid_unit_rounding(self):
+        """paid_unit=35005 -> L column should be '3500' (integer division truncates)."""
+        mock_sh = MagicMock()
+        mock_ws = MagicMock()
+        mock_sh.worksheet.return_value = mock_ws
+        mock_ws.get_all_values.return_value = [["hdr"] * 13]
+
+        kwargs = _base_order_kwargs()
+        kwargs["paid_unit"] = 35005
+
+        await _record_order_to_sourcing_tab(
+            mock_sh,
+            _base_sourcing_info(),
+            **kwargs,
+        )
+
+        row = mock_ws.update.call_args[0][1][0]
+        assert row[11] == "3500"  # L: 35005 // 10 = 3500
 
 
 # ── match_sourcing_orders_to_coupang ───────────────────────────

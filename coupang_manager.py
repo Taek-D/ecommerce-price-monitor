@@ -903,7 +903,9 @@ async def _record_order_to_sourcing_tab(
         url,  # I: 구매처 URL
         "",  # J: 배송회사
         order_id,  # K: 쿠팡주문ID
-        str(paid_unit) if paid_unit else "",  # L: 판매가격(단가)
+        str(paid_unit // 10)
+        if paid_unit
+        else "",  # L: 판매가격(단가) — salesPrice is 10x, divide to get actual won
         str(buy_price) if buy_price else "",  # M: 매입가격
     ]
 
