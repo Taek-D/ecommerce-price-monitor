@@ -308,15 +308,17 @@ def _base_sourcing_info():
     }
 
 
-class TestRecordOrderToSourcingTab:
-    """Integration tests for _record_order_to_sourcing_tab."""
+class TestAppendRowPosition:
+    """Tests for explicit last-row append (not append_row with table_range)."""
 
     @pytest.mark.asyncio
-    async def test_happy_path_appends_correct_row(self):
-        """When vid found and tab exists: append row with B,G,H,I,L,M columns."""
+    async def test_append_after_last_data_row(self):
+        """When tab has 6 rows (header + 5 data), new row goes to row 7."""
         mock_sh = MagicMock()
         mock_ws = MagicMock()
         mock_sh.worksheet.return_value = mock_ws
+        # Simulate 6 existing rows (1 header + 5 data)
+        mock_ws.get_all_values.return_value = [["hdr"] * 13] + [["data"] * 13] * 5
 
         await _record_order_to_sourcing_tab(
             mock_sh,
@@ -324,8 +326,88 @@ class TestRecordOrderToSourcingTab:
             **_base_order_kwargs(),
         )
 
-        mock_ws.append_row.assert_called_once()
-        row = mock_ws.append_row.call_args[0][0]
+        # append_row must NOT be called (old buggy method)
+        mock_ws.append_row.assert_not_called()
+        # ws.update IS called with correct range
+        mock_ws.update.assert_called_once()
+        call_args = mock_ws.update.call_args
+        assert call_args[0][0] == "A7:M7"
+        # Row data is passed as nested list [[...]]
+        assert isinstance(call_args[0][1], list)
+        assert isinstance(call_args[0][1][0], list)
+
+    @pytest.mark.asyncio
+    async def test_append_sequential_multiple_orders(self):
+        """Two consecutive calls append to row 7 then row 8."""
+        mock_sh = MagicMock()
+        mock_ws = MagicMock()
+        mock_sh.worksheet.return_value = mock_ws
+
+        # First call: 6 existing rows -> new row at 7
+        mock_ws.get_all_values.return_value = [["hdr"] * 13] + [["data"] * 13] * 5
+
+        await _record_order_to_sourcing_tab(
+            mock_sh,
+            _base_sourcing_info(),
+            **_base_order_kwargs(),
+        )
+
+        first_range = mock_ws.update.call_args[0][0]
+        assert first_range == "A7:M7"
+
+        # Second call: now 7 existing rows -> new row at 8
+        mock_ws.reset_mock()
+        mock_ws.get_all_values.return_value = [["hdr"] * 13] + [["data"] * 13] * 6
+
+        await _record_order_to_sourcing_tab(
+            mock_sh,
+            _base_sourcing_info(),
+            **_base_order_kwargs(),
+        )
+
+        second_range = mock_ws.update.call_args[0][0]
+        assert second_range == "A8:M8"
+
+    @pytest.mark.asyncio
+    async def test_append_to_empty_tab(self):
+        """When tab has only 1 header row, new row goes to row 2."""
+        mock_sh = MagicMock()
+        mock_ws = MagicMock()
+        mock_sh.worksheet.return_value = mock_ws
+        # Only header row
+        mock_ws.get_all_values.return_value = [["hdr"] * 13]
+
+        await _record_order_to_sourcing_tab(
+            mock_sh,
+            _base_sourcing_info(),
+            **_base_order_kwargs(),
+        )
+
+        mock_ws.append_row.assert_not_called()
+        mock_ws.update.assert_called_once()
+        call_args = mock_ws.update.call_args
+        assert call_args[0][0] == "A2:M2"
+
+
+class TestRecordOrderToSourcingTab:
+    """Integration tests for _record_order_to_sourcing_tab."""
+
+    @pytest.mark.asyncio
+    async def test_happy_path_appends_correct_row(self):
+        """When vid found and tab exists: write row with B,G,H,I,L,M columns."""
+        mock_sh = MagicMock()
+        mock_ws = MagicMock()
+        mock_sh.worksheet.return_value = mock_ws
+        mock_ws.get_all_values.return_value = [["hdr"] * 13]  # 1 header row
+
+        await _record_order_to_sourcing_tab(
+            mock_sh,
+            _base_sourcing_info(),
+            **_base_order_kwargs(),
+        )
+
+        mock_ws.update.assert_called_once()
+        row = mock_ws.update.call_args[0][1][0]
 
         # Row should be 13 elements (A through M)
         assert len(row) == 13
@@ -353,7 +435,7 @@ class TestRecordOrderToSourcingTab:
         assert row[10] == "ORD-001"  # K: 쿠팡주문ID
 
         # value_input_option should be USER_ENTERED
-        assert mock_ws.append_row.call_args[1]["value_input_option"] == "USER_ENTERED"
+        assert mock_ws.update.call_args[1]["value_input_option"] == "USER_ENTERED"
 
     @pytest.mark.asyncio
     async def test_correct_tab_selected(self):
@@ -471,12 +553,13 @@ class TestRecordOrderToSourcingTab:
         assert any("스프레드시트에 탭 없음" in v for v in field_values)
 
     @pytest.mark.asyncio
-    async def test_append_row_failure_does_not_propagate(self):
-        """When append_row raises, the error is caught (non-blocking)."""
+    async def test_update_failure_does_not_propagate(self):
+        """When ws.update raises, the error is caught (non-blocking)."""
         mock_sh = MagicMock()
         mock_ws = MagicMock()
         mock_sh.worksheet.return_value = mock_ws
-        mock_ws.append_row.side_effect = Exception("Google API quota exceeded")
+        mock_ws.get_all_values.return_value = [["hdr"] * 13]
+        mock_ws.update.side_effect = Exception("Google API quota exceeded")
 
         # Should NOT raise
         await _record_order_to_sourcing_tab(
@@ -491,6 +574,7 @@ class TestRecordOrderToSourcingTab:
         mock_sh = MagicMock()
         mock_ws = MagicMock()
         mock_sh.worksheet.return_value = mock_ws
+        mock_ws.get_all_values.return_value = [["hdr"] * 13]
 
         kwargs = _base_order_kwargs()
         kwargs["paid_unit"] = None
@@ -501,7 +585,7 @@ class TestRecordOrderToSourcingTab:
             **kwargs,
         )
 
-        row = mock_ws.append_row.call_args[0][0]
+        row = mock_ws.update.call_args[0][1][0]
         assert row[11] == ""  # L: paid_unit
 
     @pytest.mark.asyncio
@@ -510,6 +594,7 @@ class TestRecordOrderToSourcingTab:
         mock_sh = MagicMock()
         mock_ws = MagicMock()
         mock_sh.worksheet.return_value = mock_ws
+        mock_ws.get_all_values.return_value = [["hdr"] * 13]
 
         sourcing_info = {
             "12345": {
@@ -525,7 +610,7 @@ class TestRecordOrderToSourcingTab:
             **_base_order_kwargs(),
         )
 
-        row = mock_ws.append_row.call_args[0][0]
+        row = mock_ws.update.call_args[0][1][0]
         assert row[12] == ""  # M: buy_price
 
 

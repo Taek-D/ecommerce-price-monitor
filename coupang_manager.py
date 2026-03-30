@@ -907,9 +907,12 @@ async def _record_order_to_sourcing_tab(
         str(buy_price) if buy_price else "",  # M: 매입가격
     ]
 
-    # f. 행 추가
+    # f. 행 추가 (명시적 마지막 행 탐지)
     try:
-        ws.append_row(row, value_input_option="USER_ENTERED", table_range="A2")
+        existing = ws.get_all_values()
+        next_row = len(existing) + 1
+        cell_range = f"A{next_row}:M{next_row}"
+        ws.update(cell_range, [row], value_input_option="USER_ENTERED")
     except Exception as e:
         _log_sourcing.error(
             f"소싱탭 행 추가 실패: orderId={order_id} tab={tab_name} error={e}"
