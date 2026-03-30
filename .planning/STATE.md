@@ -4,7 +4,7 @@ milestone: v1.4
 milestone_name: 버그픽스3종
 status: planning
 stopped_at: Completed 07-price-sync-fix-01-PLAN.md
-last_updated: "2026-03-30T17:26:15.778Z"
+last_updated: "2026-03-30T17:30:17.028Z"
 last_activity: 2026-03-31 — Roadmap created (Phases 7-8)
 progress:
   total_phases: 2
