@@ -11,6 +11,7 @@ coupang_manager.py
 import asyncio
 import hashlib
 import hmac
+import json
 import os
 import re
 from difflib import SequenceMatcher
@@ -1917,6 +1918,32 @@ _last_product_sheet_refresh_at: datetime | None = None
 
 # 소싱목록 이전 가격 상태 (변경 감지용)
 _sourcing_price_state: dict[int, int] = {}  # {row_num: min_price}
+_SOURCING_PRICE_STATE_FILE = "sourcing_price_state.json"
+
+
+def _load_sourcing_price_state() -> dict[int, int]:
+    """JSON 파일에서 소싱 가격 상태를 읽어 반환. 파일 없거나 손상 시 {} 반환."""
+    try:
+        with open(_SOURCING_PRICE_STATE_FILE, encoding="utf-8") as f:
+            raw = json.load(f)
+        return {int(k): int(v) for k, v in raw.items()}
+    except (FileNotFoundError, json.JSONDecodeError, ValueError, TypeError):
+        return {}
+    except Exception:
+        return {}
+
+
+def _save_sourcing_price_state(state: dict[int, int]) -> None:
+    """소싱 가격 상태를 JSON 파일에 원자적으로 저장 (tmp + os.replace)."""
+    tmp_path = _SOURCING_PRICE_STATE_FILE + ".tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump({str(k): v for k, v in state.items()}, f, ensure_ascii=False)
+        os.replace(tmp_path, _SOURCING_PRICE_STATE_FILE)
+    except Exception as e:
+        _log_sourcing.warning(f"소싱 가격 상태 저장 실패: {e}")
+
+
 _price_guard_warned_missing: set[str] = set()
 _price_guard_warned_low: set[str] = set()
 
@@ -2760,6 +2787,10 @@ async def sync_price_from_sourcing():
     """
     _log_sourcing.info(f"소싱목록 가격 동기화 확인... ({_now_kst_str()})")
 
+    # 재시작 후에도 가격 변동 감지가 가능하도록 이전 상태를 파일에서 복원
+    if not _sourcing_price_state:
+        _sourcing_price_state.update(_load_sourcing_price_state())
+
     try:
         gc = gspread.authorize(_google_creds())
         sh = gc.open_by_key(COUPANG_SHEET_ID)
@@ -2846,6 +2877,7 @@ async def sync_price_from_sourcing():
         return fallback_price
 
     price_changes = []
+    price_failures: list[dict] = []
     soldout_changes = []
     soldout_row_seen = 0
 
@@ -3112,6 +3144,16 @@ async def sync_price_from_sourcing():
                 }
             )
 
+        if failed_ids and not success_ids:
+            # 모든 vendorItemId 실패 — 검증 실패 알림 대상
+            price_failures.append(
+                {
+                    "name": name_cell,
+                    "new": new_price,
+                    "failed_count": len(failed_ids),
+                }
+            )
+
     if soldout_changes:
         lines = []
         for c in soldout_changes:
@@ -3145,10 +3187,37 @@ async def sync_price_from_sourcing():
             embeds=[_build_price_change_embed(change)],
         )
 
+    for failure in price_failures:
+        embeds = [
+            {
+                "title": "⚠️ 판매가 변경 실패",
+                "description": "API 호출 또는 검증 실패",
+                "color": 15158332,
+                "fields": [
+                    {"name": "상품명", "value": failure["name"], "inline": False},
+                    {
+                        "name": "시도 가격",
+                        "value": f"{failure['new']:,}원",
+                        "inline": True,
+                    },
+                    {
+                        "name": "실패 수",
+                        "value": f"{failure['failed_count']}개",
+                        "inline": True,
+                    },
+                    {"name": "처리 시각", "value": _now_kst_str(), "inline": True},
+                ],
+            }
+        ]
+        await post_webhook(COUPANG_ORDER_WEBHOOK, "판매가 변경 실패", embeds=embeds)
+
     if not price_changes and not soldout_changes:
         _log_sourcing.info("변경 없음")
 
     _log_sourcing.info(f"품절 트리거 행 수: {soldout_row_seen}")
+
+    # 현재 가격 상태를 파일에 저장 (봇 재시작 후에도 변동 감지 유지)
+    _save_sourcing_price_state(_sourcing_price_state)
 
 
 # ──────────────────────────────────────────────

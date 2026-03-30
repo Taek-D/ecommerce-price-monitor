@@ -49,7 +49,7 @@ class TestUpdateSalePriceVerification:
             mock_put.return_value = {"code": "SUCCESS"}
             mock_stock.return_value = self._stock_response(50000)
 
-            result = _run(coupang_manager.update_sale_price("VID001", 50000))
+            result = _run(coupang_manager.update_sale_price("12345678", 50000))
 
         assert result is True
 
@@ -66,7 +66,7 @@ class TestUpdateSalePriceVerification:
             # Read-back always returns old price (40000), not new price (50000)
             mock_stock.return_value = self._stock_response(40000)
 
-            result = _run(coupang_manager.update_sale_price("VID001", 50000))
+            result = _run(coupang_manager.update_sale_price("12345678", 50000))
 
         assert result is False
 
@@ -83,11 +83,11 @@ class TestUpdateSalePriceVerification:
             mock_put.return_value = {"code": "SUCCESS", "message": "ok"}
             mock_stock.return_value = self._stock_response(50000)
 
-            _run(coupang_manager.update_sale_price("VID001", 50000))
+            _run(coupang_manager.update_sale_price("12345678", 50000))
 
         # The full response dict must appear somewhere in the info log calls
         log_messages = [str(c) for c in mock_log_info.call_args_list]
-        assert any("SUCCESS" in msg and "VID001" in msg for msg in log_messages), (
+        assert any("SUCCESS" in msg and "12345678" in msg for msg in log_messages), (
             f"Expected full response logged; got: {log_messages}"
         )
 
@@ -107,7 +107,7 @@ class TestUpdateSalePriceVerification:
                 self._stock_response(50000),  # attempt 2 — match
             ]
 
-            result = _run(coupang_manager.update_sale_price("VID001", 50000))
+            result = _run(coupang_manager.update_sale_price("12345678", 50000))
 
         assert result is True
         assert mock_stock.call_count == 2
@@ -124,7 +124,7 @@ class TestUpdateSalePriceVerification:
             mock_put.return_value = {"code": "ERROR", "message": "invalid"}
             mock_stock.return_value = self._stock_response(50000)
 
-            result = _run(coupang_manager.update_sale_price("VID001", 50000))
+            result = _run(coupang_manager.update_sale_price("12345678", 50000))
 
         assert result is False
         # No read-back should be attempted on API error
@@ -132,7 +132,7 @@ class TestUpdateSalePriceVerification:
 
     def test_returns_false_for_non_10_unit_price(self):
         """Price not divisible by 10 → False immediately."""
-        result = _run(coupang_manager.update_sale_price("VID001", 50001))
+        result = _run(coupang_manager.update_sale_price("12345678", 50001))
         assert result is False
 
     def test_waits_before_readback(self):
@@ -152,7 +152,7 @@ class TestUpdateSalePriceVerification:
             mock_put.return_value = {"code": "SUCCESS"}
             mock_stock.return_value = self._stock_response(50000)
 
-            _run(coupang_manager.update_sale_price("VID001", 50000))
+            _run(coupang_manager.update_sale_price("12345678", 50000))
 
         assert len(sleep_calls) >= 1
         assert all(d > 0 for d in sleep_calls), (
@@ -175,7 +175,7 @@ class TestUpdateSalePriceVerification:
                 "quantity": 5,
             }
 
-            result = _run(coupang_manager.update_sale_price("VID001", 50000))
+            result = _run(coupang_manager.update_sale_price("12345678", 50000))
 
         assert result is True
 
@@ -191,7 +191,7 @@ class TestUpdateSalePriceVerification:
             mock_put.return_value = {"code": "SUCCESS"}
             mock_stock.return_value = {"price": 50000, "quantity": 5}
 
-            result = _run(coupang_manager.update_sale_price("VID001", 50000))
+            result = _run(coupang_manager.update_sale_price("12345678", 50000))
 
         assert result is True
 
@@ -207,7 +207,7 @@ class TestUpdateSalePriceVerification:
             mock_put.return_value = {"code": "SUCCESS"}
             mock_stock.side_effect = Exception("network error")
 
-            result = _run(coupang_manager.update_sale_price("VID001", 50000))
+            result = _run(coupang_manager.update_sale_price("12345678", 50000))
 
         assert result is False
 
@@ -310,25 +310,24 @@ class TestDiscordFailureNotifications:
         }.get(col, [])
         return ws
 
-    def test_failure_notification_sent_when_update_returns_false(self):
-        """
-        When update_sale_price returns False (verification failed),
-        a Discord failure embed must be posted via post_webhook.
-        """
+    def _run_sync_with_update_result(self, update_result: bool):
+        """Helper: run sync_price_from_sourcing() with update_sale_price mocked."""
         import coupang_manager as cm
 
-        # Pad to SOURCING_DATA_START (row 3 = index 2)
         pad = [""] * (cm.SOURCING_DATA_START - 1)
         rows_b = pad + ["테스트상품"]
         rows_h = pad + ["10000"]
         rows_k = pad + ["50000"]
-        rows_o = pad + ["VID001"]
-        rows_p = pad + ["VID001"]
+        rows_o = pad + ["12345678"]
+        rows_p = pad + ["12345678"]
 
-        # Pre-seed price state so change is detected (prev != new)
         cm._sourcing_price_state[cm.SOURCING_DATA_START] = 40000
 
         mock_ws = self._make_sheet_ws(rows_b, rows_h, rows_k, rows_o, rows_p)
+        webhook_content = []  # collect (content_arg, embeds_kwarg) tuples
+
+        async def capture_webhook(url, content, **kwargs):
+            webhook_content.append((content, kwargs.get("embeds", [])))
 
         with (
             patch("coupang_manager.gspread") as mock_gspread,
@@ -338,68 +337,10 @@ class TestDiscordFailureNotifications:
             patch(
                 "coupang_manager.get_vendor_item_stock", new_callable=AsyncMock
             ) as mock_stock,
-            patch(
-                "coupang_manager.post_webhook", new_callable=AsyncMock
-            ) as mock_webhook,
+            patch("coupang_manager.post_webhook", side_effect=capture_webhook),
+            patch("coupang_manager._save_sourcing_price_state"),
         ):
-            mock_update.return_value = False  # verification failed
-            mock_stock.return_value = {"salePrice": 40000}  # current price
-
-            gc_mock = MagicMock()
-            mock_gspread.authorize.return_value = gc_mock
-            sh_mock = MagicMock()
-            gc_mock.open_by_key.return_value = sh_mock
-            sh_mock.worksheet.return_value = mock_ws
-
-            # Also mock product sheet for vendorItemId mapping
-            product_ws = MagicMock()
-            product_ws.get_all_values.return_value = []
-            sh_mock.worksheet.side_effect = (
-                lambda name: mock_ws if name == cm.SOURCING_SHEET else product_ws
-            )
-
-            _run(cm.sync_price_from_sourcing())
-
-        # Verify a failure webhook was called
-        webhook_calls = mock_webhook.call_args_list
-        failure_calls = [
-            c for c in webhook_calls if "실패" in str(c) or "FAIL" in str(c).upper()
-        ]
-        assert len(failure_calls) >= 1, (
-            f"Expected failure webhook call; got calls: {webhook_calls}"
-        )
-
-    def test_no_false_success_notification_when_update_fails(self):
-        """
-        When update_sale_price returns False for ALL vendorItemIds,
-        no success Discord notification should be sent.
-        """
-        import coupang_manager as cm
-
-        pad = [""] * (cm.SOURCING_DATA_START - 1)
-        rows_b = pad + ["테스트상품"]
-        rows_h = pad + ["10000"]
-        rows_k = pad + ["50000"]
-        rows_o = pad + ["VID001"]
-        rows_p = pad + ["VID001"]
-
-        cm._sourcing_price_state[cm.SOURCING_DATA_START] = 40000
-
-        mock_ws = self._make_sheet_ws(rows_b, rows_h, rows_k, rows_o, rows_p)
-
-        with (
-            patch("coupang_manager.gspread") as mock_gspread,
-            patch(
-                "coupang_manager.update_sale_price", new_callable=AsyncMock
-            ) as mock_update,
-            patch(
-                "coupang_manager.get_vendor_item_stock", new_callable=AsyncMock
-            ) as mock_stock,
-            patch(
-                "coupang_manager.post_webhook", new_callable=AsyncMock
-            ) as mock_webhook,
-        ):
-            mock_update.return_value = False
+            mock_update.return_value = update_result
             mock_stock.return_value = {"salePrice": 40000}
 
             gc_mock = MagicMock()
@@ -415,8 +356,37 @@ class TestDiscordFailureNotifications:
 
             _run(cm.sync_price_from_sourcing())
 
-        webhook_calls = mock_webhook.call_args_list
-        success_calls = [c for c in webhook_calls if "판매가 자동 변경" in str(c)]
+        return webhook_content
+
+    def test_failure_notification_sent_when_update_returns_false(self):
+        """
+        When update_sale_price returns False (verification failed),
+        a Discord failure embed must be posted via post_webhook.
+        """
+        calls = self._run_sync_with_update_result(False)
+
+        # Should have at least one call whose content arg indicates failure
+        failure_calls = [
+            (content, embeds)
+            for content, embeds in calls
+            if content == "판매가 변경 실패"
+        ]
+        assert len(failure_calls) >= 1, (
+            f"Expected failure webhook call; got calls: {calls}"
+        )
+
+    def test_no_false_success_notification_when_update_fails(self):
+        """
+        When update_sale_price returns False for ALL vendorItemIds,
+        no success Discord notification should be sent.
+        """
+        calls = self._run_sync_with_update_result(False)
+
+        success_calls = [
+            (content, embeds)
+            for content, embeds in calls
+            if content == "판매가 자동 변경"
+        ]
         assert len(success_calls) == 0, (
             f"Expected no success notification; got: {success_calls}"
         )
