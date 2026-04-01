@@ -35,10 +35,6 @@ from config import (
     GMARKET_SOLDOUT_SELECTOR,
     GMARKET_PRICE_STATUS_SELECTOR,
     GMARKET_SOLDOUT_KEYWORDS,
-    # 29CM
-    TWENTYNINE_PREFIXES,
-    TWENTYNINE_PRICE_SELECTOR,
-    TWENTYNINE_SOLDOUT_SELECTOR,
     # 옥션
     AUCTION_PREFIXES,
     AUCTION_PRICE_SELECTOR,
@@ -967,40 +963,6 @@ class GmarketAdapter(BaseAdapter):
         return None, True
 
 
-# ---------------- 29CM ----------------
-class TwentyNineCMAdapter(BaseAdapter):
-    name = "29cm"
-    ALLOWED_PREFIXES = TWENTYNINE_PREFIXES
-    EXACT_PRICE_SELECTOR = TWENTYNINE_PRICE_SELECTOR
-    SOLDOUT_SELECTOR = TWENTYNINE_SOLDOUT_SELECTOR
-    _network_idle_before_retry = True
-    _idle_timeout_ms = 7000
-
-    def webhook_url(self) -> str:
-        return settings.twentynine_webhook or settings.discord_webhook_url
-
-    async def is_sold_out(self, page, stage_trace: list[str] | None = None) -> bool:
-        try:
-            await page.wait_for_selector(
-                self.SOLDOUT_SELECTOR, state="visible", timeout=2500
-            )
-            txt = await page.locator(self.SOLDOUT_SELECTOR).inner_text()
-            return bool(txt and ("품절" in txt or "일시품절" in txt))
-        except Exception:
-            return False
-
-    async def extract_precise(self, page) -> int | None:
-        try:
-            await page.wait_for_selector(
-                self.EXACT_PRICE_SELECTOR, state="visible", timeout=8000
-            )
-            text = await page.locator(self.EXACT_PRICE_SELECTOR).inner_text()
-            p = normalize_price(text)
-            return p if valid_price_value(p) else None
-        except Exception:
-            return None
-
-
 # ---------------- Auction (옥션) ----------------
 class AuctionAdapter(BaseAdapter):
     name = "auction"
@@ -1290,7 +1252,6 @@ ADAPTERS: list[BaseAdapter] = [
     MusinsaAdapter(),
     OliveYoungAdapter(),
     GmarketAdapter(),
-    TwentyNineCMAdapter(),
     AuctionAdapter(),
     ElevenStAdapter(),
     EnuriAdapter(),
@@ -1306,7 +1267,6 @@ def _webhook_routing_summary() -> dict[str, str]:
         "musinsa": "site" if settings.musinsa_webhook else "default",
         "oliveyoung": "site" if settings.olive_webhook else "default",
         "gmarket": "site" if settings.gmarket_webhook else "default",
-        "29cm": "site" if settings.twentynine_webhook else "default",
         "auction": "site" if settings.auction_webhook else "default",
         "11st": "site" if settings.elevenst_webhook else "default",
         "enuri": "default",

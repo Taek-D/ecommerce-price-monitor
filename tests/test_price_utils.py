@@ -18,7 +18,6 @@ from adapters import (
     MusinsaAdapter,
     OliveYoungAdapter,
     GmarketAdapter,
-    TwentyNineCMAdapter,
     AuctionAdapter,
     ElevenStAdapter,
     UniversalAdapter,
@@ -189,10 +188,6 @@ class TestPickAdapter:
     def test_gmarket(self):
         ad = pick_adapter("https://item.gmarket.co.kr/Item?goodscode=123")
         assert isinstance(ad, GmarketAdapter)
-
-    def test_29cm(self):
-        ad = pick_adapter("https://www.29cm.co.kr/products/123")
-        assert isinstance(ad, TwentyNineCMAdapter)
 
     def test_auction(self):
         ad = pick_adapter("http://itempage3.auction.co.kr/DetailView?itemNo=123")

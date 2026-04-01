@@ -126,10 +126,6 @@ GMARKET_SOLDOUT_KEYWORDS = [
     "out of stock",
 ]
 
-# ---------------- 29CM ----------------
-TWENTYNINE_PRICE_SELECTOR = "#pdp_product_price"
-TWENTYNINE_SOLDOUT_SELECTOR = "#pdp_buy_now > span"
-
 # ---------------- 옥션 (Auction) ----------------
 AUCTION_PRICE_SELECTOR = (
     "#frmMain > div.box__item-info > div.price_wrap > div:nth-child(2) > strong"
@@ -170,10 +166,6 @@ GMARKET_PREFIXES = [
     "https://item.gmarket.co.kr/Item",
     "https://item2.gmarket.co.kr/Item",
     "https://mitem.gmarket.co.kr/Item",
-]
-TWENTYNINE_PREFIXES = [
-    "https://www.29cm.co.kr/products/",
-    "https://m.29cm.co.kr/product/",
 ]
 AUCTION_PREFIXES = [
     "http://itempage3.auction.co.kr",
@@ -295,8 +287,6 @@ class Settings(BaseSettings):
     olive_webhook: str = ""
     oliveyoung_webhook: str = ""
     gmarket_webhook: str = ""
-    twentynine_webhook: str = ""
-    twentynine_cm_webhook: str = Field("", alias="29CM_WEBHOOK")
     auction_webhook: str = ""
     elevenst_webhook: str = ""
     elevenstreet_webhook: str = ""
@@ -325,8 +315,6 @@ class Settings(BaseSettings):
             self.discord_webhook_url = self.default_webhook
         if not self.olive_webhook:
             self.olive_webhook = self.oliveyoung_webhook
-        if not self.twentynine_webhook:
-            self.twentynine_webhook = self.twentynine_cm_webhook
         if not self.elevenst_webhook:
             self.elevenst_webhook = self.elevenstreet_webhook
         return self

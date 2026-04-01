@@ -18,7 +18,6 @@ from adapters import (
     ExtractionResult,
     GmarketAdapter,
     MusinsaAdapter,
-    TwentyNineCMAdapter,
 )
 
 
@@ -183,33 +182,7 @@ class TestGmarketAdapterRegression:
 
 
 # ---------------------------------------------------------------------------
-# Test 3: TwentyNineCMAdapter._do_extract returns correct price
-# ---------------------------------------------------------------------------
-
-
-class TestTwentyNineCMAdapterRegression:
-    def test_do_extract_returns_price_result(self):
-        ad = TwentyNineCMAdapter()
-        ad._sleep_after_load = 0
-        ad._network_idle_before_retry = False
-        page = _FakePage(
-            visible_selectors={ad.EXACT_PRICE_SELECTOR},
-            locator_texts={ad.EXACT_PRICE_SELECTOR: ["15,000"]},
-        )
-
-        result = asyncio.run(
-            ad._do_extract(page, "https://www.29cm.co.kr/products/1234567")
-        )
-
-        assert result == ExtractionResult("price", 15000)
-
-    def test_after_goto_is_base_adapter_default(self):
-        ad = TwentyNineCMAdapter()
-        assert type(ad)._after_goto is BaseAdapter._after_goto
-
-
-# ---------------------------------------------------------------------------
-# Test 4: AuctionAdapter._do_extract returns correct price
+# Test 3: AuctionAdapter._do_extract returns correct price
 # ---------------------------------------------------------------------------
 
 
@@ -271,7 +244,6 @@ class TestAfterGotoHookInheritance:
     def test_all_non_gmarket_adapters_use_base_after_goto(self):
         non_gmarket = [
             MusinsaAdapter,
-            TwentyNineCMAdapter,
             AuctionAdapter,
             ElevenStAdapter,
         ]
