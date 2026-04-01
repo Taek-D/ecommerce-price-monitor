@@ -402,10 +402,14 @@ async def send_sms(phone: str, message: str, msg_type: str = "sms") -> dict:
             return {"code": "ERROR", "msg": str(e)}
 
 
-async def send_order_privacy_sms(phone: str) -> bool:
-    """주문 개인정보 고지 LMS 발송."""
+async def send_order_privacy_sms(phone: str) -> tuple[bool, str]:
+    """주문 개인정보 고지 LMS 발송.
+
+    Returns:
+        (성공여부, SMS 잔여건수 문자열)
+    """
     result = await send_sms(phone, ORDER_PRIVACY_SMS_MESSAGE, msg_type="lms")
-    return result.get("code") == "0000"
+    return result.get("code") == "0000", result.get("cols", "")
 
 
 async def send_sms_bulk(phones: list[str], messages: list[str]) -> dict:
@@ -909,10 +913,13 @@ async def _record_order_to_sourcing_tab(
         str(buy_price) if buy_price else "",  # M: 매입가격
     ]
 
-    # f. 행 추가 (명시적 마지막 행 탐지)
+    # f. 행 추가 (K열 = 쿠팡주문ID 기준 마지막 행 탐지)
+    # get_all_values()는 모든 열 중 데이터가 있는 마지막 행까지 반환하므로,
+    # A~M 외 열(수식 등)이 더 아래에 있으면 next_row가 실제 데이터 끝보다 뒤로 밀림.
+    # 실제 주문 데이터가 있는 K열(주문ID)만 조회하여 정확한 마지막 행을 찾는다.
     try:
-        existing = ws.get_all_values()
-        next_row = len(existing) + 1
+        col_k = ws.col_values(11)  # K열 (1-indexed: A=1, ..., K=11)
+        next_row = len(col_k) + 1
         cell_range = f"A{next_row}:M{next_row}"
         ws.update(cell_range, [row], value_input_option="USER_ENTERED")
     except Exception as e:
@@ -1541,8 +1548,9 @@ async def process_new_orders():
 
         # 2. SMS 발송
         sms_sent = False
+        sms_remaining = ""
         if phone and confirmed:
-            sms_sent = await send_order_privacy_sms(phone)
+            sms_sent, sms_remaining = await send_order_privacy_sms(phone)
         elif not phone:
             _log_order.warning("수신번호 없음 — SMS 건너뜀")
 
@@ -1586,6 +1594,11 @@ async def process_new_orders():
                     {
                         "name": "SMS",
                         "value": "✅" if sms_sent else "❌",
+                        "inline": True,
+                    },
+                    {
+                        "name": "SMS 잔여",
+                        "value": f"{sms_remaining}건" if sms_remaining else "-",
                         "inline": True,
                     },
                     {"name": "처리시각", "value": _now_kst_str(), "inline": False},
@@ -1637,7 +1650,7 @@ async def process_new_orders():
         )
         sms_sent = False
         if phone:
-            sms_sent = await send_order_privacy_sms(phone)
+            sms_sent, _ = await send_order_privacy_sms(phone)
         else:
             _log_order.warning(f"수신번호 없음 — SMS 건너뜀 ({order_id})")
 

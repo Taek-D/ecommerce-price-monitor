@@ -313,12 +313,12 @@ class TestAppendRowPosition:
 
     @pytest.mark.asyncio
     async def test_append_after_last_data_row(self):
-        """When tab has 6 rows (header + 5 data), new row goes to row 7."""
+        """When K column has 6 values (header + 5 data), new row goes to row 7."""
         mock_sh = MagicMock()
         mock_ws = MagicMock()
         mock_sh.worksheet.return_value = mock_ws
-        # Simulate 6 existing rows (1 header + 5 data)
-        mock_ws.get_all_values.return_value = [["hdr"] * 13] + [["data"] * 13] * 5
+        # Simulate K column with 6 entries (1 header + 5 data)
+        mock_ws.col_values.return_value = ["주문ID"] + ["ORD-001"] * 5
 
         await _record_order_to_sourcing_tab(
             mock_sh,
@@ -326,6 +326,8 @@ class TestAppendRowPosition:
             **_base_order_kwargs(),
         )
 
+        # col_values called with K column (11)
+        mock_ws.col_values.assert_called_once_with(11)
         # append_row must NOT be called (old buggy method)
         mock_ws.append_row.assert_not_called()
         # ws.update IS called with correct range
@@ -343,8 +345,8 @@ class TestAppendRowPosition:
         mock_ws = MagicMock()
         mock_sh.worksheet.return_value = mock_ws
 
-        # First call: 6 existing rows -> new row at 7
-        mock_ws.get_all_values.return_value = [["hdr"] * 13] + [["data"] * 13] * 5
+        # First call: K column has 6 entries -> new row at 7
+        mock_ws.col_values.return_value = ["주문ID"] + ["ORD-001"] * 5
 
         await _record_order_to_sourcing_tab(
             mock_sh,
@@ -355,9 +357,9 @@ class TestAppendRowPosition:
         first_range = mock_ws.update.call_args[0][0]
         assert first_range == "A7:M7"
 
-        # Second call: now 7 existing rows -> new row at 8
+        # Second call: K column now has 7 entries -> new row at 8
         mock_ws.reset_mock()
-        mock_ws.get_all_values.return_value = [["hdr"] * 13] + [["data"] * 13] * 6
+        mock_ws.col_values.return_value = ["주문ID"] + ["ORD-001"] * 6
 
         await _record_order_to_sourcing_tab(
             mock_sh,
@@ -370,12 +372,12 @@ class TestAppendRowPosition:
 
     @pytest.mark.asyncio
     async def test_append_to_empty_tab(self):
-        """When tab has only 1 header row, new row goes to row 2."""
+        """When K column has only header, new row goes to row 2."""
         mock_sh = MagicMock()
         mock_ws = MagicMock()
         mock_sh.worksheet.return_value = mock_ws
-        # Only header row
-        mock_ws.get_all_values.return_value = [["hdr"] * 13]
+        # Only header in K column
+        mock_ws.col_values.return_value = ["주문ID"]
 
         await _record_order_to_sourcing_tab(
             mock_sh,
