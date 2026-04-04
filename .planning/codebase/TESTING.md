@@ -1,344 +1,283 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-03-25
+**Analysis Date:** 2026-04-04
 
 ## Test Framework
 
 **Runner:**
-- pytest with asyncio support
-- Config: `pyproject.toml` contains pytest configuration
-- `asyncio_mode = "auto"` enables automatic async test handling
+- `pytest` from `requirements.txt`
+- `pytest-asyncio` from `requirements.txt`
+- Config lives in `pyproject.toml`
+
+**Config:**
+- `pyproject.toml` sets:
+  - `testpaths = ["tests"]`
+  - `python_files = ["test_*.py"]`
+  - `asyncio_mode = "auto"`
 
 **Assertion Library:**
-- Standard `assert` statements (no external assertion library)
+- Standard pytest assertions with plain `assert`
+- No custom assertion helpers or third-party matcher library detected
 
 **Run Commands:**
 ```bash
-pytest tests/                    # Run all tests
-pytest tests/test_price_utils.py # Run specific test file
-pytest tests/ -v                 # Verbose output
-pytest tests/ --asyncio-mode=auto  # Explicit async mode
-```
-
-**Test Files Location:**
-```
-tests/
-├── conftest.py                      # Shared fixtures
-├── test_price_utils.py              # Pure function tests
-├── test_adapter_site_extractors.py  # Adapter extraction tests
-├── test_musinsa_price_watch.py      # Integration tests
-├── test_main_lane_lock.py           # Lock/concurrency tests
-├── test_adapter_diagnostics.py      # Diagnostic capture tests
-├── test_notify_pending_preparation.py
-└── test_coupang_utils.py
+pytest
+pytest tests/test_musinsa_price_watch.py
+pytest tests/test_main_lane_lock.py -q
 ```
 
 ## Test File Organization
 
 **Location:**
-- Co-located in `tests/` directory parallel to source
-- `tests/conftest.py` for shared fixtures (currently empty except docstring)
+- All tests live under `tests/`
+- `tests/conftest.py` exists but is intentionally minimal; most helpers stay local to each test module
 
 **Naming:**
-- `test_*.py` files (pytest discovery pattern)
-- Class-based tests: `class Test[Module][Feature]`
-- Method-based tests: `def test_[behavior]`
+- Use `test_*.py` for modules and `test_*` for functions/methods
+- Group related tests into descriptive classes, for example:
+  - `TestNormalizePrice` in `tests/test_price_utils.py`
+  - `TestDbWriteGuarded` in `tests/test_event_logging.py`
+  - `TestGmarketEnhancedExtraction` in `tests/test_adapter_site_extractors.py`
 
 **Structure:**
-```
+```text
 tests/
-└── test_price_utils.py
-    ├── TestNormalizePrice
-    ├── TestLooksLikePriceText
-    ├── TestValidPriceValue
-    ├── TestNormalizeUrl
-    ├── TestIsBlankSheetValue
-    ├── TestIsSoldoutSheetValue
-    ├── TestPickAdapter
-    └── TestElevenStAdapter
+├── conftest.py
+├── test_adapter_diagnostics.py
+├── test_adapter_site_extractors.py
+├── test_coupang_utils.py
+├── test_db.py
+├── test_event_logging.py
+├── test_job_runs.py
+├── test_main_lane_lock.py
+├── test_migration.py
+├── test_musinsa_price_watch.py
+├── test_notify_pending_preparation.py
+├── test_price_sync.py
+├── test_price_utils.py
+├── test_sourcing_tab.py
+├── test_stealth_config.py
+└── test_stealth_regression.py
 ```
 
 ## Test Structure
 
 **Suite Organization:**
 ```python
-# From test_price_utils.py
-class TestNormalizePrice:
-    def test_basic(self):
-        assert normalize_price("65,000원") == 65000
+class TestDbWriteGuarded:
+    async def test_success_returns_true(self, _setup_db, monkeypatch):
+        ...
 
-    def test_no_comma(self):
-        assert normalize_price("12000") == 12000
-
-    def test_with_surrounding_text(self):
-        assert normalize_price("가격: 9,900원 (할인)") == 9900
+class TestGmarketEnhancedExtraction:
+    def test_precise_css_coupon_selector_recovers_price(self):
+        ...
 ```
 
 **Patterns:**
-- One test class per function/component
-- Test method names describe the behavior: `test_basic`, `test_no_comma`, `test_empty_string`
-- No explicit setup/teardown; fixtures passed via function parameters
-- Fixtures created inline via test helper classes (see mocking section below)
-
-## Mocking
-
-**Framework:** Manual mock classes (no external mocking library detected)
-
-**Patterns:**
-
-### Fake Page Object (for Playwright testing):
-```python
-# From test_adapter_site_extractors.py
-class _FakePage:
-    def __init__(
-        self,
-        *,
-        body_text="",
-        visible_selectors=None,
-        locator_texts=None,
-        locator_attrs=None,
-    ):
-        self.body_text = body_text
-        self.visible_selectors = set(visible_selectors or [])
-        self.locator_texts = dict(locator_texts or {})
-        self.locator_attrs = dict(locator_attrs or {})
-
-    async def goto(self, url, wait_until="domcontentloaded", timeout=None):
-        return None
-
-    async def wait_for_selector(self, selector, state="visible", timeout=None):
-        if (
-            selector in self.visible_selectors
-            or self.locator_texts.get(selector)
-            or self.locator_attrs.get(selector)
-        ):
-            return None
-        raise PWTimeout(f"selector not found: {selector}")
-
-    def locator(self, selector):
-        if selector == "body":
-            return _FakeLocator([self.body_text])
-        return _FakeLocator(
-            texts=self.locator_texts.get(selector, []),
-            attrs=self.locator_attrs.get(selector, {}),
-        )
-```
-
-### Fake Locator Object:
-```python
-class _FakeLocator:
-    def __init__(self, texts=None, attrs=None):
-        self._texts = list(texts or [])
-        self._attrs = dict(attrs or {})
-
-    @property
-    def first(self):
-        return self
-
-    async def inner_text(self):
-        return self._texts[0] if self._texts else ""
-
-    async def all_text_contents(self):
-        return list(self._texts)
-
-    async def count(self):
-        return len(self._texts) or (1 if self._attrs else 0)
-
-    async def get_attribute(self, name):
-        return self._attrs.get(name)
-```
-
-### Fake Worksheet and Google Sheets:
-```python
-# From test_musinsa_price_watch.py
-class _FakeWorksheet:
-    def __init__(self, rows):
-        self._rows = rows
-        self.updated_cells = []
-
-    def col_values(self, col_index):
-        values = []
-        for row in self._rows:
-            if len(row) >= col_index:
-                values.append(row[col_index - 1])
-            else:
-                values.append("")
-        return values
-
-    def update_cells(self, cells):
-        self.updated_cells.append(
-            [(cell.row, cell.col, cell.value) for cell in cells]
-        )
-```
-
-### Monkeypatch Usage:
-```python
-def _set_common_mocks(monkeypatch, ws, result_by_url):
-    monkeypatch.setattr(mpw, "_open_sheet", lambda: ws)
-    monkeypatch.setattr(mpw, "async_playwright", lambda: _FakePlaywrightManager())
-    monkeypatch.setattr(mpw, "save_state", lambda: None)
-    monkeypatch.setattr(mpw, "post_webhook", AsyncMock())
-    monkeypatch.setattr(mpw, "datetime", _FrozenDateTime)
-```
-
-**What to Mock:**
-- Playwright page objects → Use `_FakePage` with manually configured selectors and text
-- Google Sheets worksheet → Use `_FakeWorksheet` with pre-loaded rows
-- External API calls → Use `AsyncMock()` from `unittest.mock`
-- Time-dependent code → Subclass `datetime` to return frozen time
-
-**What NOT to Mock:**
-- Pure functions like `normalize_price()`, `looks_like_price_text()` → Test directly
-- Adapter logic flow → Use fake page, test actual extraction logic
-- Result dataclasses → Create instances directly, assert equality
-
-## Fixtures and Factories
-
-**Test Data:**
-```python
-# From test_musinsa_price_watch.py
-def _sheet_rows(url, price="10,000", ts="2026-03-01 00:00:00"):
-    return [
-        ["meta"],
-        ["헤더", "", "", "구매링크", "", "", "", "매입가격", "", "갱신시각"],
-        ["1", "상품", "", url, "", "", "", price, "", ts],
-    ]
-```
-
-**Frozen Time Fixture:**
-```python
-class _FrozenDateTime(datetime):
-    @classmethod
-    def now(cls, tz=None):
-        return cls(2026, 3, 23, 12, 34, 56, tzinfo=tz)
-```
-
-**Location:**
-- Test data factories defined in test file as helper classes (prefixed with `_`)
-- No separate fixtures directory
-- `conftest.py` exists but is minimal (only docstring currently)
+- Use one file per feature area, not one file per source module only.
+- Keep local fake classes near the tests that use them. Examples:
+  - `_FakePage` and `_FakeLocator` in `tests/test_adapter_site_extractors.py`
+  - `_FakeWorksheet` in `tests/test_musinsa_price_watch.py`
+  - scheduler doubles in `tests/test_main_lane_lock.py`
+- Prefer explicit helper names with leading underscores for local factories: `_open()`, `_cleanup()`, `_make_data_row()`, `_base_order_kwargs()`.
+- Assert behavior, side effects, and log text together when the feature is orchestration-heavy.
 
 ## Async Testing
 
-**Pattern:**
+**Framework Behavior:**
+- `asyncio_mode = "auto"` allows native `async def` tests without class-level decorators in many files.
+- The suite also keeps many synchronous `def` tests that call `asyncio.run(...)` directly.
+
+**Current Patterns:**
 ```python
-def test_do_extract_returns_price_when_precise_price_exists(self):
-    ad = ElevenStAdapter()
-    ad._sleep_after_load = 0
-    ad._network_idle_before_retry = False
-    page = _FakePage(locator_texts={ad.EXACT_PRICE_SELECTOR: ["12,345"]})
+async def test_job_start_inserts_running_row(tmp_path, monkeypatch):
+    await _open(tmp_path, monkeypatch)
+    ...
 
-    result = asyncio.run(ad._do_extract(page, "https://www.11st.co.kr/products/123"))
-
-    assert result == ExtractionResult("price", 12345)
+def test_sourcing_match_job_still_skips_when_product_lane_busy(...):
+    async def scenario():
+        ...
+    asyncio.run(scenario())
 ```
 
-- Use `asyncio.run()` to execute async functions in test context
-- Pytest `asyncio_mode = "auto"` eliminates need for `@pytest.mark.asyncio`
-- Mock async functions with `AsyncMock()` from `unittest.mock`
+**Guidance:**
+- Follow the existing style in the surrounding file instead of forcing one async style everywhere.
+- Use `asyncio.run(...)` in synchronous tests when the test is mostly setup-heavy and already structured that way.
+- Use async test functions when the whole module is already written in that style, as in `tests/test_db.py`, `tests/test_job_runs.py`, `tests/test_event_logging.py`, and `tests/test_migration.py`.
 
-## Error Testing
+## Mocking
 
-**Pattern:**
+**Framework:** `pytest.monkeypatch` plus `unittest.mock`
+
+**Primary Tools:**
+- `monkeypatch.setattr(...)` for module globals and helper replacement
+- `AsyncMock` for async collaborators such as `post_webhook`, `save_state`, and API clients
+- `MagicMock` for worksheet and gspread objects
+- `patch(...)` context managers for temporary overrides
+- `caplog` for logger assertions
+
+**Patterns:**
 ```python
-def test_do_extract_returns_error_without_precise_price_or_fallback(
-    self, monkeypatch
-):
-    ad = ElevenStAdapter()
-    ad._sleep_after_load = 0
-    ad._network_idle_before_retry = False
-    page = _FakePage()
+monkeypatch.setattr(mpw, "_open_sheet", lambda: ws)
+monkeypatch.setattr(mpw, "async_playwright", lambda: _FakePlaywrightManager())
+monkeypatch.setattr(mpw, "post_webhook", AsyncMock())
 
-    async def unexpected_fallback(_page):
-        raise AssertionError("fallback should not be called for 11st")
-
-    monkeypatch.setattr(ad, "_fallback", unexpected_fallback)
-
-    result = asyncio.run(ad._do_extract(page, "https://www.11st.co.kr/products/123"))
-
-    assert result == ExtractionResult("error")
+with patch("musinsa_price_watch.post_webhook", new_callable=AsyncMock) as mock_wh:
+    ...
 ```
 
-- Use `monkeypatch` fixture to replace functions and assert side effects
-- For exception testing, create mock that raises expected exception
-- For state verification, capture calls/state in fake objects
+**What to Mock:**
+- External boundaries:
+  - Playwright browser/context/page objects in `tests/test_musinsa_price_watch.py`, `tests/test_adapter_site_extractors.py`, `tests/test_adapter_diagnostics.py`, `tests/test_stealth_config.py`, `tests/test_stealth_regression.py`
+  - Google Sheets / gspread in `tests/test_musinsa_price_watch.py`, `tests/test_sourcing_tab.py`, `tests/test_price_sync.py`
+  - Discord webhook posting in `tests/test_event_logging.py`, `tests/test_notify_pending_preparation.py`, `tests/test_price_sync.py`
+  - APScheduler in `tests/test_main_lane_lock.py`
+  - SQLite DB path and connection state in `tests/test_db.py`, `tests/test_job_runs.py`, `tests/test_event_logging.py`, `tests/test_migration.py`
+
+**What NOT to Mock:**
+- Pure normalization helpers in `utils.py` and `coupang_manager.py`; test them directly as in `tests/test_price_utils.py` and `tests/test_coupang_utils.py`
+- Adapter orchestration in `BaseAdapter._do_extract()`; fake the page surface and exercise the real control flow
+- SQLite schema behavior when a temp file-backed DB can cover it cheaply
+
+## Fixtures and Factories
+
+**Shared Fixtures:**
+- `tests/conftest.py` currently contains only documentation. Do not expect central factory coverage there.
+
+**Local Fixtures:**
+- Use file-local fixtures for reset logic and temp resources:
+  - `_setup_db` async fixture in `tests/test_event_logging.py`
+  - `isolated_product_lane_lock` in `tests/test_main_lane_lock.py`
+  - `reset_pending_preparation_state` autouse fixture in `tests/test_notify_pending_preparation.py`
+
+**Factories and Helpers:**
+- DB tests define `_open()` / `_cleanup()` helpers per file rather than a shared DB fixture module.
+- Sheet-oriented tests define local row builders, for example `_sheet_rows()` in `tests/test_musinsa_price_watch.py` and `_make_mock_rows()` in `tests/test_sourcing_tab.py`.
+- Fake transport objects stay local and lightweight: `_FakeContext`, `_FakeBrowser`, `_FakePlaywrightManager`, `_FakeWorksheet`, `_FakeLocator`, `_FakePage`.
+
+**Example Pattern:**
+```python
+async def _open(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "test_ops.db")
+    monkeypatch.setattr(db, "DB_FILE", db_path)
+    monkeypatch.setattr(db, "_conn", None)
+    await db.open_db()
+```
+
+## DB and State Testing Conventions
+
+**File-Backed SQLite:**
+- Use temp file-backed databases, not `:memory:`, because WAL mode is part of the contract. This rule is stated and repeated in `tests/test_db.py`, `tests/test_job_runs.py`, `tests/test_event_logging.py`, and `tests/test_migration.py`.
+- Patch both `db.DB_FILE` and `db._conn` before opening a test DB.
+
+**State Rules Under Test:**
+- `tests/test_migration.py` and `tests/test_musinsa_price_watch.py` treat `state[url] is None` as sold-out state and missing keys as first-seen state.
+- `tests/test_event_logging.py` validates event classification branches for `first_seen`, `restock`, `soldout`, `price_up`, and `price_down`.
+- `tests/test_musinsa_price_watch.py` checks that unchanged successful checks still update the timestamp column and that errors preserve state.
+
+## Locking and Scheduling Test Conventions
+
+**Lane Lock Coverage:**
+- `tests/test_main_lane_lock.py` verifies product-lane behavior in `main.py`:
+  - `scheduled_sourcing_price_job()` waits when the lane is busy
+  - `scheduled_sourcing_match_job()` skips when the lane is busy
+  - log messages include waiting/acquired/finished details
+- `tests/test_job_runs.py` verifies `_run_with_lane_lock()` writes `job_runs` rows for success and error cases.
+
+**Scheduler Coverage:**
+- `tests/test_main_lane_lock.py` captures APScheduler job definitions with a fake scheduler class.
+- The tests assert the special scheduling overrides for `sourcing_price_job` in both `full` and `sourcing_only` modes.
+
+## Adapter and Extraction Test Conventions
+
+**Primary Pattern:**
+- Avoid real browser sessions in unit tests.
+- Fake only the Playwright methods the adapter touches: `goto()`, `wait_for_selector()`, `is_visible()`, `locator()`, `content()`, `screenshot()`, `on()`, `remove_listener()`.
+
+**Examples:**
+- `tests/test_adapter_site_extractors.py` exercises:
+  - Gmarket selector fallbacks
+  - script and query-string structured price recovery
+  - Smartstore product URL routing and meta-tag extraction
+  - Enuri direct selector extraction
+- `tests/test_adapter_diagnostics.py` exercises:
+  - diagnostic capture on final error
+  - diagnostic capture on recovered non-precise extraction
+  - best-effort behavior when capture writes partially fail
+- `tests/test_stealth_config.py` and `tests/test_stealth_regression.py` cover:
+  - stealth constant presence in `config.py`
+  - Playwright launch/init-script wiring in `musinsa_price_watch.py`
+  - Gmarket Cloudflare wait behavior in `adapters.py`
+  - regression checks that non-Gmarket adapters keep the base `_after_goto()` no-op
+
+## Logging and Error Assertions
+
+**Patterns:**
+- Use `caplog.set_level(..., logger="musinsa_bot.<name>")` and assert fragments in `caplog.text`.
+- Common log assertion targets:
+  - `diagnostic_path=...` in `tests/test_musinsa_price_watch.py`
+  - `failure_stage=...` and `source=...` in `tests/test_adapter_site_extractors.py`
+  - wait/skip/acquired/final timing lines in `tests/test_main_lane_lock.py`
+
+**Exception Testing:**
+- Use `pytest.raises(...)` when the function is expected to propagate after side effects are recorded, for example `_run_with_lane_lock()` in `tests/test_job_runs.py`.
+- For best-effort failure paths, assert that no exception escapes and that downstream effects are absent or reduced.
 
 ## Coverage
 
-**Requirements:** No coverage target enforced (no coverage configuration in `pyproject.toml`)
+**Requirements:** None enforced
 
-**View Coverage:**
-```bash
-pytest --cov=. tests/
-pytest --cov=. tests/ --cov-report=html
-```
+**Current State:**
+- `requirements.txt` does not include `pytest-cov`
+- `pyproject.toml` has no coverage thresholds or coverage report settings
+- There is no repository-level minimum coverage gate
+
+**Coverage Areas Implied by Test Files:**
+- `tests/test_db.py`: SQLite lifecycle, WAL mode, schema initialization, `get_conn()` precondition.
+- `tests/test_job_runs.py`: `job_runs` insert/update behavior plus lane-lock orchestration in `main.py`.
+- `tests/test_main_lane_lock.py`: lane lock waiting/skipping semantics and scheduler job defaults in `main.py`.
+- `tests/test_musinsa_price_watch.py`: queue wait vs extract timeout semantics, sheet reconciliation, state preservation, timestamp updates, diagnostic log propagation.
+- `tests/test_event_logging.py`: guarded DB write counter, one-time alert threshold, price/event/adapter DB logging helpers, DB-before-sheet ordering.
+- `tests/test_adapter_site_extractors.py`: adapter-specific extraction recovery and routing behavior across Gmarket, Olive Young, Smartstore, Enuri, Universal, 11st.
+- `tests/test_adapter_diagnostics.py`: diagnostic artifact capture and classification behavior.
+- `tests/test_price_utils.py`: pure utility helpers and adapter selection.
+- `tests/test_migration.py`: JSON-to-DB migration, backup behavior, and DB-backed `load_state()` / `save_state()`.
+- `tests/test_stealth_config.py` and `tests/test_stealth_regression.py`: stealth flags, browser init script wiring, and Gmarket challenge wait behavior.
+- `tests/test_sourcing_tab.py`, `tests/test_notify_pending_preparation.py`, `tests/test_price_sync.py`, `tests/test_coupang_utils.py`: Coupang spreadsheet mapping, notification formatting, price sync verification, and pure helper behavior in `coupang_manager.py`.
 
 ## Test Types
 
 **Unit Tests:**
-- **Scope:** Individual functions and methods
-- **Location:** `tests/test_price_utils.py`, `tests/test_adapter_site_extractors.py`
-- **Approach:** Direct function call with known inputs, assert output
-- **Example:**
-  ```python
-  class TestNormalizePrice:
-      def test_basic(self):
-          assert normalize_price("65,000원") == 65000
-  ```
+- Dominant test type.
+- Focus on pure helpers, parser behavior, adapter stage flow, and DB helper functions.
+- Typical files: `tests/test_price_utils.py`, `tests/test_coupang_utils.py`, `tests/test_db.py`.
 
-**Integration Tests:**
-- **Scope:** Multi-component workflows (e.g., adapter + sheets + webhook)
-- **Location:** `tests/test_musinsa_price_watch.py`
-- **Approach:** Mock external services (sheets, playwright), test orchestration logic
-- **Example:**
-  ```python
-  def test_check_once_updates_timestamp_for_unchanged_success(monkeypatch):
-      # Setup: fake worksheet, fake result
-      # Call: asyncio.run(mpw.check_once())
-      # Assert: worksheet updated, state preserved
-  ```
+**Integration-Style Unit Tests:**
+- Common for orchestration modules that stitch together multiple collaborators while still using fakes.
+- Typical files:
+  - `tests/test_musinsa_price_watch.py`
+  - `tests/test_event_logging.py`
+  - `tests/test_job_runs.py`
+  - `tests/test_sourcing_tab.py`
+  - `tests/test_price_sync.py`
 
-**E2E Tests:**
-- **Framework:** Not used (no headless browser e2e tests detected)
-- **Note:** Manual testing via main scheduler
+**End-to-End Tests:**
+- Not detected.
+- No test currently runs against live Playwright pages, live Google Sheets, live Discord webhooks, or the live Coupang API.
 
-## Common Patterns
+## Notable Gaps
 
-**Monkeypatch for Module-Level Mocking:**
-```python
-def _set_common_mocks(monkeypatch, ws, result_by_url):
-    monkeypatch.setattr(mpw, "_open_sheet", lambda: ws)
-    monkeypatch.setattr(mpw, "async_playwright", lambda: _FakePlaywrightManager())
-    monkeypatch.setattr(mpw, "post_webhook", AsyncMock())
-    monkeypatch.setattr(mpw, "datetime", _FrozenDateTime)
-```
+**Live Boundary Gaps:**
+- No browser-backed integration test validates selectors against real retailer pages.
+- No test hits the real Google Sheets API, Discord webhook delivery path, or Coupang endpoints.
+- No full-process test covers `main.py` from file lock acquisition through scheduler shutdown.
 
-**Caplog for Log Assertion:**
-```python
-def test_structured_data_key_miss_logs_goodscode(self, caplog):
-    ad = GmarketAdapter()
-    page = _FakePage(locator_texts={"script[type='application/ld+json']": ['{"foo":"bar"}']})
-    long_url = "https://item.gmarket.co.kr/Item?goodscode=3559411802"
-
-    caplog.set_level("INFO", logger="musinsa_bot.price")
-    price, attempted = asyncio.run(ad._extract_structured_price(page, long_url))
-
-    assert "failure_stage=script_key_miss" in caplog.text
-    assert "goodscode=3559411802" in caplog.text
-```
-
-**Instance Assertion on Adapter Routing:**
-```python
-class TestPickAdapter:
-    def test_musinsa(self):
-        ad = pick_adapter("https://www.musinsa.com/products/12345")
-        assert isinstance(ad, MusinsaAdapter)
-
-    def test_unknown_url_returns_universal(self):
-        ad = pick_adapter("https://www.amazon.com/dp/B123")
-        assert isinstance(ad, UniversalAdapter)
-```
+**Behavior Gaps Visible From the Suite:**
+- `main.py` stale PID cleanup and cross-process lock behavior are not covered beyond lane-lock units.
+- The full `check_once()` happy path with real DB writes, sheet writes, browser context, and webhooks together is not covered end-to-end.
+- `config.py` settings alias resolution and env parsing are only indirectly covered.
+- Encoding-sensitive Korean status/tab strings are exercised through fixtures, but there is no dedicated encoding/locale regression suite.
 
 ---
 
-*Testing analysis: 2026-03-25*
+*Testing analysis: 2026-04-04*

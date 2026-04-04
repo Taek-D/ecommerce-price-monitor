@@ -1,201 +1,189 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-03-25
+**Analysis Date:** 2026-04-04
 
 ## Directory Layout
 
-```
+```text
 musinsa-bot/
-├── config.py                    # Settings + selectors (root of dependency chain)
-├── utils.py                     # Shared utilities (price, webhooks, HTTP)
-├── adapters.py                  # Price extraction adapters (8 platforms)
-├── musinsa_price_watch.py       # URL monitoring + sheet I/O
-├── coupang_manager.py           # Coupang API automation
-├── diagnostics.py               # Page capture for debugging
-├── logging_config.py            # Logging setup
-├── main.py                      # Entry point + scheduler
-├── requirements.txt             # pip dependencies
-├── pyproject.toml               # pytest config
-├── README.md                    # User guide
-├── CLAUDE.md                    # Project conventions
-├── AGENTS.md                    # Agent guidelines
-├── .env                         # Environment vars (NOT committed)
-├── .env.example                 # Template for .env
-├── .gitignore                   # Git ignore rules
-├── price_state.json             # Runtime state (generated)
-├── discovery_state.json         # Product discovery state
-├── tests/
-│   ├── __init__.py
-│   ├── conftest.py              # Shared test fixtures
-│   ├── test_musinsa_price_watch.py
-│   ├── test_adapter_site_extractors.py
-│   ├── test_adapter_diagnostics.py
-│   ├── test_main_lane_lock.py
-│   ├── test_notify_pending_preparation.py
-│   ├── test_price_utils.py
-│   └── test_coupang_utils.py
-├── docs/
-│   └── SETUP.md                 # Installation guide
-├── safe/                        # Google service account key (NOT committed)
-│   └── service_account.json
-├── .runtime/
-│   └── diagnostics/             # Generated page captures
-├── .planning/
-│   └── codebase/                # Planning documents
-└── .claude/                     # OMC/Claude metadata
+|-- main.py                     # Runtime entry point, scheduler, lane locks
+|-- musinsa_price_watch.py      # Playwright-based monitoring loop
+|-- adapters.py                 # Site-specific extraction adapters
+|-- coupang_manager.py          # Coupang, SMS, and sheet automation jobs
+|-- db.py                       # SQLite connection and schema
+|-- config.py                   # Shared settings, selectors, constants
+|-- utils.py                    # Shared webhook, parsing, and browser helpers
+|-- diagnostics.py              # Optional capture of failed/degraded pages
+|-- logging_config.py           # Logger bootstrap
+|-- migrate.py                  # Legacy JSON to SQLite migration
+|-- docs/                       # Human docs and support scripts
+|-- tests/                      # Pytest suite
+|-- safe/                       # Local secrets directory, gitignored
+|-- .planning/                  # Planning/reference docs
+|-- .claude/                    # Local agent metadata
+|-- .omc/                       # Local orchestration state
+|-- .omx/                       # Local orchestration state
+|-- requirements.txt            # Pip dependencies
+|-- pyproject.toml              # Pytest configuration
+|-- README.md                   # Project usage notes
+|-- run.bat                     # Windows launcher
+`-- .env.example                # Environment template
 ```
 
 ## Directory Purposes
 
-**Root (.)**
-- Purpose: Core bot modules and configuration
-- Contains: Main application code, entry point, config
-- Key files: `main.py`, `config.py`, `adapters.py`, `coupang_manager.py`
+**Repository Root (`.`):**
+- Purpose: The production code lives directly at the top level. There is no `src/` package split.
+- Contains: Runtime modules, helper scripts, dependency manifests, local runtime artifacts, and operational docs.
+- Key files: `main.py`, `musinsa_price_watch.py`, `adapters.py`, `coupang_manager.py`, `db.py`, `config.py`
 
-**tests/**
-- Purpose: Unit and integration tests
-- Contains: Test files for each major module
-- Key files: `conftest.py` (fixtures), test_*.py files (test suites)
+**`docs/`:**
+- Purpose: Human-facing setup and product notes, plus a Google Apps Script helper.
+- Contains: `docs/SETUP.md`, `docs/PRODUCT_DISCOVERY_PRD.md`, `docs/coupang_prepare_sync_apps_script.gs`
+- Key files: `docs/SETUP.md`
 
-**docs/**
-- Purpose: User documentation
-- Contains: Setup guides, deployment instructions
-- Key files: `SETUP.md`
+**`tests/`:**
+- Purpose: Regression coverage for scheduler behavior, monitoring, DB schema, adapter extraction, and Coupang helpers.
+- Contains: pytest modules and shared fixtures.
+- Key files: `tests/conftest.py`, `tests/test_main_lane_lock.py`, `tests/test_musinsa_price_watch.py`, `tests/test_price_sync.py`, `tests/test_db.py`
 
-**safe/**
-- Purpose: Credentials storage (git-ignored)
-- Contains: Google service account JSON
-- Key files: `service_account.json` (never committed)
+**`safe/`:**
+- Purpose: Local credential storage referenced by `config.py`.
+- Contains: Service-account JSON and nothing that should be committed.
+- Key files: local files only; do not hardcode credentials into source.
 
-**.runtime/diagnostics/**
-- Purpose: Generated debugging artifacts
-- Contains: Page HTML/screenshots captured on extraction failures
-- Generated: Yes
-- Committed: No
+**`.planning/`:**
+- Purpose: Planning artifacts and persistent codebase reference docs consumed by the GSD workflow.
+- Contains: `.planning/codebase/*.md`
+- Key files: `.planning/codebase/ARCHITECTURE.md`, `.planning/codebase/STRUCTURE.md`
 
-**.planning/codebase/**
-- Purpose: Architecture and implementation planning documents
-- Contains: ARCHITECTURE.md, STRUCTURE.md, CONVENTIONS.md, TESTING.md, etc.
-- Generated: No (hand-written by agents)
-- Committed: Yes
+**Local Tooling Directories (`.claude/`, `.omc/`, `.omx/`, `.playwright-mcp/`):**
+- Purpose: Agent/tool runtime metadata, local connector state, and browser tooling support.
+- Contains: Local-only operational data.
+- Key files: not part of the application architecture.
 
 ## Key File Locations
 
 **Entry Points:**
-- `main.py` (lines 303-428): Main scheduler and single-instance lock, runs forever
+- `main.py`: Primary runtime entry point. Run the bot here.
+- `musinsa_price_watch.py`: Standalone monitoring-only entry point for isolated execution.
+- `migrate.py`: One-off migration entry point for legacy JSON state.
+- `run.bat`: Windows convenience launcher for the main runtime.
 
 **Configuration:**
-- `config.py` (lines 1-284): All constants, selectors, Pydantic Settings
-- `.env` (NOT read by this doc, but mentioned in project memory): Environment variables
-- `logging_config.py`: Logger setup
+- `config.py`: Global constants, Playwright stealth settings, sheet column indices, adapter selectors, and `Settings`.
+- `.env.example`: Template for local environment variables.
+- `.gitignore`: Source of truth for local-only and generated files that must stay out of git.
+- `logging_config.py`: Shared logger setup.
 
 **Core Logic:**
-- `adapters.py` (lines 258-1227): BaseAdapter + 9 concrete adapters, pick_adapter routing
-- `musinsa_price_watch.py` (lines 160-430+): URL loading, state management, check_once orchestration
-- `coupang_manager.py` (lines 72-1600+): Order/shipping/stock/settlement automation
+- `adapters.py`: Adapter classes and URL routing.
+- `musinsa_price_watch.py`: Monitoring pipeline and SQLite-backed price/event logging.
+- `coupang_manager.py`: Order, shipping, stock, price-sync, sourcing-match, and settlement flows.
+- `db.py`: SQLite schema and connection lifecycle.
+- `utils.py`: Shared utility functions consumed across monitoring and Coupang flows.
+- `diagnostics.py`: Optional capture pipeline for debugging failed extractions.
 
-**Utilities:**
-- `utils.py` (lines 1-200+): Price normalization, webhook posting, HTTP client, Playwright helpers
-- `diagnostics.py`: Page diagnostic capture
+**Operational Helper Scripts:**
+- `check_sheet.py`: Manual sheet inspection helper.
+- `setup_sheets.py`: Worksheet setup helper.
+- `setup_coupang_match.py`: Manual setup/maintenance for Coupang matching.
+- `fetch_order_sheet.py`: Manual order-sheet retrieval helper.
+- `fix_order_sheet_headers.py`: Manual header repair helper.
 
 **Testing:**
-- `tests/conftest.py`: Fixtures for mocks (FakeWorksheet, FakeBrowser, FakePlaywright)
-- `tests/test_*.py`: Individual test modules
+- `tests/conftest.py`: Shared fixtures and test doubles.
+- `tests/test_adapter_site_extractors.py`: Adapter extraction behavior.
+- `tests/test_adapter_diagnostics.py`: Diagnostics capture integration.
+- `tests/test_job_runs.py`: `job_runs` persistence expectations.
+- `tests/test_event_logging.py`: Monitoring event logging expectations.
+
+## Generated and Runtime Files
+
+**SQLite Runtime State:**
+- `ops.db`: Main local database created and used by `db.py`
+- `ops.db-wal`: SQLite WAL sidecar created while the database is open
+- `ops.db-shm`: SQLite shared-memory sidecar created while the database is open
+
+**Local JSON Runtime State:**
+- `sourcing_price_state.json`: Local cache for sourcing-price change detection in `coupang_manager.py`
+- `price_state.json.bak`: Legacy backup produced by `migrate.py`
+- `discovery_state.json.bak`: Legacy backup produced by `migrate.py`
+
+**Local Process Artifacts:**
+- `.main.lock`: Single-instance lock file managed by `main.py`
+- `__pycache__/`: Python bytecode cache
+- `.pytest_cache/`: pytest cache
+- `.ruff_cache/`: Ruff cache
+- `.runtime/`: Diagnostic capture directory created on demand by `diagnostics.py`
+
+**Local Configuration and Secrets:**
+- `.env`: Local environment file, gitignored
+- `safe/`: Local secret directory, gitignored
 
 ## Naming Conventions
 
 **Files:**
-- Module files: `lowercase_with_underscores.py` (e.g., `musinsa_price_watch.py`)
-- Test files: `test_<module>.py` (e.g., `test_adapter_site_extractors.py`)
-- State files: `<name>_state.json` (e.g., `price_state.json`, `discovery_state.json`)
+- Runtime modules use snake_case at the repository root: `musinsa_price_watch.py`, `coupang_manager.py`, `logging_config.py`
+- Tests use `test_<subject>.py`: `tests/test_main_lane_lock.py`
+- Runtime cache/state files use descriptive root-level filenames: `ops.db`, `sourcing_price_state.json`, `.main.lock`
 
-**Functions:**
-- Public: `async_job_name()`, `function_name()` — uses snake_case
-- Private: `_private_helper()` — leading underscore for internal functions
-- Async: All async functions use `async def` (asyncio convention)
-
-**Variables:**
-- Globals: `CONSTANT_NAME` for constants, `_private_global` for module-level state
-- Locals: `local_var_name` — snake_case
-- Semaphores: `_<LANE>_LANE_LOCK` (e.g., `_ORDER_LANE_LOCK`, `_PRODUCT_LANE_LOCK`)
-
-**Classes:**
-- Adapters: `<PlatformName>Adapter` (e.g., `MusinsaAdapter`, `GmarketAdapter`)
-- Base classes: `Base<Domain>` (e.g., `BaseAdapter`)
-- Data classes: `<CamelCase>Result` (e.g., `ExtractionResult`)
-
-**Selectors/Constants:**
-- CSS selectors: `<PLATFORM>_<TYPE>_SELECTOR` (e.g., `MUSINSA_EXACT_PRICE_SELECTOR`)
-- XPath: `<PLATFORM>_<TYPE>_XPATH` (e.g., `GMARKET_COUPON_XPATH`)
-- Prefixes (URL): `<PLATFORM>_PREFIXES` — list of strings (e.g., `MUSINSA_PREFIXES`)
-- Column indices: `<COL_>_COL_INDEX` or `COL_<NAME>` (e.g., `D_COL_INDEX`, `COL_VENDOR_ITEM_ID`)
-
-**Log names:**
-- Format: `"musinsa_bot.<subsystem>"` (e.g., `"musinsa_bot.price"`, `"musinsa_bot.coupang.order"`)
+**Directories:**
+- Product code is not grouped by package directory; feature boundaries are module-based.
+- Tests stay under `tests/`.
+- Human docs stay under `docs/`.
+- Planning/reference docs stay under `.planning/codebase/`.
 
 ## Where to Add New Code
 
-**New Price Extraction Adapter (e.g., new ecommerce platform):**
-- Implementation: `adapters.py` — inherit from `BaseAdapter`
-- Steps:
-  1. Create class `<PlatformName>Adapter(BaseAdapter)`
-  2. Set `ALLOWED_PREFIXES = ["https://platform.com/..."]`
-  3. Set `name = "platform_name"`
-  4. Override `async def extract_precise(self, page) -> int | None:` — main extraction
-  5. Override `async def is_sold_out(self, page, stage_trace) -> bool:` — if needed
-  6. Add selectors to `config.py`
-  7. Append to `ADAPTERS` list in `adapters.py` (BEFORE UniversalAdapter)
-  8. Add test in `tests/test_adapter_site_extractors.py`
+**New Monitoring Feature:**
+- Primary code: `musinsa_price_watch.py`
+- Adapter-specific extraction logic: `adapters.py`
+- Shared selector or timeout configuration: `config.py`
+- Tests: `tests/test_musinsa_price_watch.py` or `tests/test_adapter_site_extractors.py`
 
-**New Scheduled Job (e.g., new automation task):**
-- Implementation: `coupang_manager.py` — add async function, then register in `main.py`
-- Steps:
-  1. Define `async def new_automation_job()` in `coupang_manager.py`
-  2. Create wrapper in `main.py`: `async def scheduled_new_automation_job()` calling `run_order_lane_job()` or `run_product_lane_job()`
-  3. Register in `main()` via `sched.add_job(scheduled_new_automation_job, trigger=IntervalTrigger(...))`
-  4. If order-related: use `_ORDER_LANE_LOCK`, if product-related: use `_PRODUCT_LANE_LOCK`
-  5. Add tests in `tests/test_main_lane_lock.py`
+**New Scheduled or Coupang Workflow:**
+- Business logic: `coupang_manager.py`
+- Scheduler and lane registration: `main.py`
+- Tests: `tests/test_main_lane_lock.py` plus a focused module test such as `tests/test_price_sync.py` or a new `tests/test_<workflow>.py`
 
-**Utilities (shared helpers):**
-- Location: `utils.py` — for price/URL/webhook utilities
-- Location: `coupang_manager.py` — for Coupang-specific helpers (sheet, API, etc.)
-- Naming: `_private_helper()` for internal, `public_function()` for exports
+**New Database-backed Feature:**
+- Schema and connection lifecycle: `db.py`
+- One-time migration or legacy import logic: `migrate.py`
+- Consumers: `musinsa_price_watch.py` or `main.py`, depending on whether the data is monitoring state or scheduler/job state
+- Tests: `tests/test_db.py`, `tests/test_job_runs.py`, `tests/test_event_logging.py`
 
-**New Test Suite:**
-- Location: `tests/test_<module>.py`
-- Config: Uses pytest with asyncio_mode="auto" (pyproject.toml line 4)
-- Fixtures: Import from conftest.py (_FakeWorksheet, _FakeBrowser, etc.)
-- Pattern: Use monkeypatch to inject mocks, not unittest.mock (see test_musinsa_price_watch.py)
+**New Shared Utility:**
+- Generic helper: `utils.py`
+- Diagnostics-only helper: `diagnostics.py`
+- Logging setup changes: `logging_config.py`
+
+**New Documentation or Operator Setup Material:**
+- Setup/usage docs: `docs/`
+- Planning/reference docs: `.planning/codebase/`
 
 ## Special Directories
 
-**.runtime/diagnostics/**
-- Purpose: Captured page diagnostics (HTML dumps, screenshots)
-- Generated: By `capture_page_diagnostic()` on extraction failures
-- Committed: No (should be in .gitignore)
-- Retention: Manual cleanup; no auto-expiry
-
-**safe/**
-- Purpose: Secrets storage
-- Generated: Manual (copy Google service account JSON)
+**`safe/`:**
+- Purpose: Local credentials referenced by `settings.google_service_account_json` in `config.py`
+- Generated: No
 - Committed: No
-- Contents: `service_account.json` (path from config.google_service_account_json)
 
-**.planning/**
-- Purpose: GSD planning documents and phase execution logs
-- Generated: By `/gsd:*` orchestrator commands
+**`.planning/`:**
+- Purpose: Persistent planning and codebase-reference artifacts
+- Generated: Partly; files are written by workflow tools and agents
 - Committed: Yes
-- Subdirs:
-  - `.planning/codebase/`: Architecture/structure analysis (this directory)
-  - `.planning/phases/`: Phase implementation plans
-  - `.planning/logs/`: Execution logs
 
-**.env (root)**
-- Purpose: Runtime environment variables
-- Generated: Manual (copy from .env.example, fill in secrets)
+**`.runtime/`:**
+- Purpose: Diagnostics output created by `diagnostics.py`
+- Generated: Yes
 - Committed: No
-- Required vars: DISCORD_WEBHOOK_URL, GOOGLE_SERVICE_ACCOUNT_JSON, COUPANG_ACCESS_KEY, etc.
+
+**Local Agent/Tool Directories (`.claude/`, `.omc/`, `.omx/`, `.playwright-mcp/`):**
+- Purpose: Tool-specific local metadata
+- Generated: Yes
+- Committed: Mostly no; treat as local tooling state
 
 ---
 
-*Structure analysis: 2026-03-25*
+*Structure analysis: 2026-04-04*

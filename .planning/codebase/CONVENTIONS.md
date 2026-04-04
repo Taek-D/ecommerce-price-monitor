@@ -1,201 +1,226 @@
 # Coding Conventions
 
-**Analysis Date:** 2026-03-25
+**Analysis Date:** 2026-04-04
 
 ## Naming Patterns
 
 **Files:**
-- Lowercase with underscores: `utils.py`, `adapters.py`, `musinsa_price_watch.py`
-- Modules grouped by function: price monitoring, Coupang integration, configuration
-- Test files: `test_*.py` (e.g., `test_price_utils.py`, `test_adapter_site_extractors.py`)
+- Use snake_case module names for runtime code: `main.py`, `musinsa_price_watch.py`, `adapters.py`, `config.py`, `db.py`, `logging_config.py`, `utils.py`.
+- Keep top-level modules organized by concern instead of packages. Runtime orchestration lives in `main.py`; price-monitoring workflow lives in `musinsa_price_watch.py`; site extractors live in `adapters.py`.
+- Use `test_*.py` for pytest modules under `tests/`: `tests/test_main_lane_lock.py`, `tests/test_musinsa_price_watch.py`, `tests/test_adapter_site_extractors.py`.
 
 **Functions:**
-- Lowercase with underscores: `normalize_price()`, `looks_like_price_text()`, `extract_price_fallback_generic()`
-- Private/internal functions prefixed with single underscore: `_normalize_url()`, `_domain_key()`, `_build_log_context()`
-- Async functions use `async def`: `async def extract()`, `async def process_one_url()`
-- Adapter methods follow template pattern: `extract()`, `_do_extract()`, `extract_precise()`, `is_sold_out()`, `_fallback()`
+- Use snake_case for all functions and methods: `process_one_url()`, `check_once()`, `_db_log_price_event()`, `run_product_lane_job()`.
+- Prefix internal helpers with `_` even when they are imported across modules: `_try_db_job_start()` in `main.py`, `_build_url_reload_stats()` in `musinsa_price_watch.py`, `_extract_price_from_scripts()` in `adapters.py`.
+- Name scheduler wrappers `scheduled_*` in `main.py` and keep them thin around lane-lock helpers.
+- Name adapter extension points consistently in `adapters.py`: `matches()`, `extract()`, `_do_extract()`, `extract_precise()`, `is_sold_out()`, `_extract_site_fallback()`, `_extract_structured_price()`, `_fallback()`.
 
 **Variables:**
-- Lowercase with underscores: `state`, `urls`, `ws`, `adapter`, `page`
-- Constants in UPPERCASE: `STATE_FILE`, `MIN_PRICE`, `WEB_TIMEOUT`, `URL_TOTAL_TIMEOUT`, `D_COL_INDEX`, `H_COL_INDEX`, `J_COL_INDEX`
-- Module-level loggers: `_log`, `_log_webhook`, `_log_price`, `_log_sheet` (private module loggers)
-- Selector constants: `MUSINSA_EXACT_PRICE_SELECTOR`, `OLIVE_PRICE_SELECTOR`, `GMARKET_COUPON_XPATH`
+- Use lower_snake_case for locals and module state: `state`, `URLS`, `_last_url_reload_stats`, `row_by_url`, `queue_wait_total`.
+- Reserve UPPER_SNAKE_CASE for constants and selector tables in `config.py`: `WEB_TIMEOUT`, `URL_TOTAL_TIMEOUT`, `STEALTH_CHROME_ARGS`, `MUSINSA_EXACT_PRICE_SELECTOR`.
+- Prefix module-private locks, counters, and logger handles with `_`: `_ORDER_LANE_LOCK`, `_PRODUCT_LANE_LOCK`, `_db_fail_count`, `_log_sheet`.
 
 **Types:**
-- Use PEP 604 union syntax: `int | None`, `str | None`, `dict[str, str]`
-- Return type hints always present on public functions
-- Dataclass used for result containers: `@dataclass(frozen=True, slots=True) class ExtractionResult`
+- Use Python 3.11 style annotations throughout the repo: `int | None`, `dict[str, int]`, `list[gspread.Cell]`.
+- Use explicit container annotations for mutable module globals: `URLS: list[str] = []`, `_conn: aiosqlite.Connection | None = None`.
+- Use dataclasses for small immutable result objects. `adapters.py` defines `ExtractionResult` as `@dataclass(frozen=True, slots=True)`.
+- Use `BaseSettings` for env-backed configuration in `config.py` and validate with `Field(...)` plus `@model_validator`.
 
 ## Code Style
 
 **Formatting:**
-- No explicit formatter config detected; code style appears hand-maintained
-- Line length varies but tends toward reasonable limits
-- Consistent indentation (4 spaces)
-- Module docstrings present: `"""Module purpose\n[imports]\n"""` at file top
+- Keep four-space indentation and standard Python import grouping.
+- Prefer module docstrings at the top of runtime modules and test modules: `main.py`, `musinsa_price_watch.py`, `adapters.py`, `tests/test_db.py`.
+- Prefer f-strings for log messages and user-facing text.
+- Keep complex imports grouped in parenthesized `from ... import (...)` blocks when a module exports many constants, as in `config.py` and `musinsa_price_watch.py`.
+- Preserve existing hand-formatted style. `requirements.txt` includes `ruff`, but the repository does not define a `ruff` or formatter configuration file. `pyproject.toml` only configures pytest.
 
 **Linting:**
-- Type hints used throughout (Python 3.11+)
-- No linting config file detected (`pyproject.toml` has only pytest config)
-- Code follows PEP 8 conventions
-
-**Async/Await:**
-- Consistent use of `async def` for all async functions
-- `await` used for all async calls (e.g., `await page.goto()`, `await loc.count()`)
-- Exception types caught: `TimeoutError as PWTimeout`, `Exception` (generic)
-- Semaphores used for concurrency control: `asyncio.Semaphore`, `asyncio.Lock`
+- No enforced lint profile is detected in `pyproject.toml`, `ruff.toml`, or `.ruff.toml`.
+- Follow the existing code rather than introducing Black- or Ruff-specific rewrites that the repo does not currently enforce.
+- Keep new public functions annotated. Runtime modules already annotate most parameters and return values, especially in `main.py`, `musinsa_price_watch.py`, `adapters.py`, and `db.py`.
 
 ## Import Organization
 
 **Order:**
-1. Standard library: `asyncio`, `json`, `logging`, `os`, `re`, `pathlib`
-2. Third-party: `playwright`, `httpx`, `pydantic`, `apscheduler`, `gspread`
-3. Local modules: `config`, `utils`, `adapters`
+1. Standard library imports first: `asyncio`, `logging`, `os`, `sys`, `datetime`, `pathlib`, `urllib.parse`.
+2. Third-party imports second: `apscheduler`, `dotenv`, `gspread`, `playwright`, `pydantic_settings`, `aiosqlite`.
+3. Local modules last: `config`, `db`, `utils`, `diagnostics`, `logging_config`, `adapters`, `coupang_manager`.
 
 **Path Aliases:**
-- No path aliases detected; absolute imports used: `from config import settings`
-- Local imports relative to module: `from utils import normalize_price`
+- No path aliases are used.
+- Import local modules by direct module name from the project root, for example `import db` and `from config import settings`.
+- Avoid relative imports. Current runtime and test modules import siblings directly.
 
-**Example from `adapters.py`:**
-```python
-import asyncio
-import logging
-from dataclasses import dataclass
-from playwright.async_api import TimeoutError as PWTimeout
-from config import WEB_TIMEOUT, MUSINSA_PREFIXES
-from utils import normalize_price, valid_price_value
-```
+## Async Patterns
+
+**Coroutines:**
+- Implement I/O-heavy workflows as `async def`. That includes browser automation in `musinsa_price_watch.py`, DB lifecycle in `db.py`, scheduler jobs in `main.py`, and many operations in `coupang_manager.py`.
+- Keep synchronous wrappers only at entrypoints, for example `asyncio.run(main())` in `main.py`.
+- In tests, both patterns are in use:
+  - `async def` tests under pytest auto-async mode, such as `tests/test_event_logging.py`
+  - synchronous `def` tests that call `asyncio.run(...)`, such as `tests/test_main_lane_lock.py`
+
+**Concurrency Control:**
+- Use `asyncio.Lock` to serialize shared side effects instead of relying on scheduler settings alone.
+- `db.py` exports a module-level `_write_lock`; all DB write helpers in `musinsa_price_watch.py` and `main.py` acquire it before mutating SQLite state.
+- `main.py` separates scheduled jobs into two lanes:
+  - `_ORDER_LANE_LOCK` for order/shipping/settlement work
+  - `_PRODUCT_LANE_LOCK` for sync/match/price/stock work
+- `musinsa_price_watch.py` uses `asyncio.Semaphore` for browser concurrency:
+  - one global semaphore from `settings.max_concurrency`
+  - one per-domain semaphore keyed by `_domain_key(url)`
+
+**Scheduling:**
+- Register APScheduler jobs in `main.py`, not inside worker modules.
+- Wrap scheduled jobs with `run_order_lane_job()` or `run_product_lane_job()` so the job gets lock protection and `job_runs` logging.
+- Keep `sourcing_price_job` special-cased:
+  - `scheduled_sourcing_price_job()` waits for the product lane instead of skipping
+  - scheduler overrides use `_SOURCING_PRICE_JOB_DEFAULTS` with `coalesce=False`, `max_instances=2`, `misfire_grace_time=900`
+- All other scheduled lane jobs default to skip when their lane is already locked.
+
+**Single-Instance Rule:**
+- `main.py` owns a process lock file at `.main.lock`.
+- Acquire the file lock with `acquire_single_instance_lock()` before starting the event loop and release it in a `finally` block.
+- Treat stale lock cleanup as a logged recovery path, not as an unconditional overwrite.
+
+## Adapter Return Semantics
+
+**Primary Contract:**
+- All adapter extraction flows in `adapters.py` resolve to `ExtractionResult`.
+- Valid `ExtractionResult.kind` values are:
+  - `"price"` with `value` set to an `int`
+  - `"soldout"` with `value=None`
+  - `"error"` with `value=None`
+- `ExtractionResult.meta` carries non-routing metadata such as `final_source`, `stage_trace`, and `diagnostic`.
+
+**Routing Rules:**
+- `pick_adapter(url)` in `adapters.py` must always return an adapter instance. `UniversalAdapter()` is the last entry in `ADAPTERS` and acts as the catch-all fallback.
+- Add new site adapters before `UniversalAdapter()` in `ADAPTERS`.
+- `process_one_url()` in `musinsa_price_watch.py` converts `ExtractionResult` into a normalized dict with keys like `url`, `adapter`, `kind`, `value`, `elapsed`, `meta`, and optional `error`.
+- `check_once()` only branches on `kind`. If a new status is ever added, update:
+  - `musinsa_price_watch.py`
+  - any DB event logging branches in `musinsa_price_watch.py`
+  - relevant tests in `tests/test_musinsa_price_watch.py` and `tests/test_event_logging.py`
+
+**Price Validation:**
+- Treat raw extractor output as tentative until it passes `valid_price_value()` from `utils.py`.
+- Site-specific fallbacks and generic fallbacks should return `None` instead of inventing a sentinel.
+- Keep exact-price extraction, site fallback, structured data fallback, and generic fallback ordered the way `BaseAdapter._do_extract()` already does.
+
+## State Handling Rules
+
+**Runtime State:**
+- `musinsa_price_watch.py` owns the in-memory `state` dict and the active `URLS` list.
+- `load_state()` populates `state` from the SQLite `price_state` table in `ops.db`; `save_state()` persists the dict back into that table.
+- Do not reintroduce JSON persistence for the main price state. Migration tests in `tests/test_migration.py` assert the DB-backed behavior.
+
+**Price Semantics:**
+- `state[url] is None` means the item is currently sold out.
+- `url not in state` means the item has never been seen in the current state store.
+- `check_once()` distinguishes these cases for event classification:
+  - not in state -> `first_seen`
+  - previously `None`, now price -> `restock`
+  - price to `None` -> `soldout`
+  - price to higher/lower price -> `price_up` / `price_down`
+
+**Sheet Reconciliation:**
+- Build row mappings from the sheet with `build_sheet_row_index()` and normalize URL keys through `_normalize_url()` in `utils.py`.
+- Always update the timestamp column on successful `"price"` and `"soldout"` checks, even when the price state is unchanged.
+- Only update the sheet price column when the visible sheet value is blank, out-of-sync, or needs soldout reconciliation.
+- Keep DB writes before pending sheet writes. `tests/test_event_logging.py` explicitly checks the DB-first ordering.
 
 ## Error Handling
 
-**Patterns:**
-- Generic `except Exception:` used throughout for broad error catching
-- Specific exception types caught when known: `except PWTimeout:`, `except ProcessLookupError:`, `except PermissionError:`
-- No bare `except:` statements (verified via code review)
-- Errors logged via logging module: `_log.error()`, `_log_webhook.error()`
-- Errors do not raise; instead return error indicators in results
+**General Strategy:**
+- Prefer best-effort continuation for scraper and integration boundaries.
+- Catch broad `Exception` around selectors, browser cleanup, sheet access, webhook posting, and diagnostic capture when failure should not crash the whole run.
+- Catch `playwright.async_api.TimeoutError` explicitly in adapter retry loops when timeout behavior is part of site policy.
 
-**Example from `adapters.py`:**
-```python
-try:
-    await page.wait_for_selector(selector, state="visible", timeout=timeout_ms)
-except Exception:
-    pass
-```
+**Current Patterns:**
+- `adapters.py` swallows selector-level failures and keeps trying the next extraction stage.
+- `musinsa_price_watch.py` logs URL reload and sheet index failures, then falls back to cached `URLS` or skips the run safely.
+- `_db_write_guarded()` in `musinsa_price_watch.py` counts consecutive DB write failures and escalates with one Discord warning at the configured threshold.
+- `main.py` records job lifecycle failures in `job_runs` but re-raises the original exception after the DB update path runs.
 
-**Example from `utils.py`:**
-```python
-try:
-    return int(m.group(1).replace(",", ""))
-except Exception:
-    return None
-```
-
-**In musinsa_price_watch.py:**
-- File I/O wrapped: `try/except Exception` with fallback to empty state
-- Sheet operations wrapped: catch exceptions, log, continue
+**Cleanup Rule:**
+- Close Playwright pages and contexts in `finally` blocks or best-effort cleanup sections.
+- Reset module-level resources through dedicated functions instead of direct external mutation when possible:
+  - `release_single_instance_lock()` in `main.py`
+  - `close_db()` in `db.py`
 
 ## Logging
 
-**Framework:** Standard `logging` module with named loggers
+**Framework:** Python `logging`
 
-**Loggers by module:**
-- `musinsa_bot.price` — Price extraction and monitoring (`_log`)
-- `musinsa_bot.sheet` — Google Sheets I/O (`_log_sheet`)
-- `musinsa_bot.webhook` — Discord webhook sends (`_log_webhook`)
-- `musinsa_bot.main` — Main scheduler and instance lock (`_log`)
+**Root Setup:**
+- `logging_config.py` configures a single `musinsa_bot` logger tree with stdout output and the format `%(asctime)s [%(name)s] %(levelname)s %(message)s`.
+- Runtime modules obtain child loggers instead of reconfiguring logging themselves.
 
-**Patterns:**
-- Info level for normal flow: `_log.info("URL reload summary: ...")`
-- Warning level for recoverable issues: `_log.warning(f"Already running (pid={existing_pid})")`
-- Error level for failures: `_log_webhook.error(f"Webhook send failed: {e}")`
-- Debug level for dry-run/low-priority: `_log_webhook.debug("DRY_RUN webhook skipped")`
+**Named Loggers:**
+- `main.py`: `musinsa_bot.main`
+- `musinsa_price_watch.py`: `musinsa_bot.price`, `musinsa_bot.sheet`, `musinsa_bot.db_log`
+- `adapters.py`: `musinsa_bot.price`, `musinsa_bot.webhook`
+- `db.py`: `musinsa_bot.db`
 
-**Structured logging:**
-- Key=value pairs appended to messages: `f"url={url} adapter={ad.name} kind={result.kind}"`
-- Context built with `_build_log_context(url, **fields)` in adapters
-
-**Example from `musinsa_price_watch.py`:**
-```python
-_log.info(
-    "URL reload summary: "
-    f"sheet_rows_considered={stats['sheet_rows_considered']} "
-    f"sheet_nonempty_urls={stats['sheet_nonempty_urls']} "
-)
-```
+**Logging Style:**
+- Favor structured key=value text inside a single message, for example queue waits, URL reload summaries, and adapter extraction summaries.
+- Use `info` for normal orchestration milestones, `warning` for recoverable degradation, and `error` for failed writes/extractions.
+- Keep logs machine-searchable. Existing code logs fields like `job_name=...`, `lane_name=...`, `queue_wait_total=...`, `diagnostic_path=...`.
 
 ## Comments
 
 **When to Comment:**
-- Docstrings on all modules and public classes/functions
-- Inline comments for non-obvious logic: `# wait a bit for JS to finish`, `# anti-detection`
-- Section separators: `# ── function_name ────────────────────────────────────`
-- No JSDoc/doctest patterns observed
+- Use module docstrings to state a file's role.
+- Add short inline comments where the reason matters more than the statement itself, especially around:
+  - lane ordering and sheet contention in `main.py`
+  - DB-first writes in `musinsa_price_watch.py`
+  - catch-all adapter ordering in `adapters.py`
+- Avoid narrating obvious assignment or control flow.
 
-**Example from `utils.py`:**
-```python
-# ────────── 공유 httpx.AsyncClient (lazy init) ────────────
-_http_client: httpx.AsyncClient | None = None
-
-def _get_http_client() -> httpx.AsyncClient:
-    global _http_client
-    if _http_client is None or _http_client.is_closed:
-        _http_client = httpx.AsyncClient(timeout=20)
-    return _http_client
-```
+**Docstrings:**
+- Public or reusable helpers often include short docstrings, especially in `db.py`, `main.py`, and test helpers under `tests/`.
+- Keep docstrings concise and behavior-focused.
 
 ## Function Design
 
 **Size:**
-- Functions typically 5–30 lines
-- Helper functions extracted for reuse (e.g., price extraction helpers)
-- Long methods broken into `_do_extract()`, `_fallback()`, `_extract_site_fallback()` chains
+- Extract reusable helpers aggressively for parsing, DB writes, and test doubles.
+- Keep orchestration functions larger only when they coordinate multiple boundaries, such as `check_once()` in `musinsa_price_watch.py` and `main()` in `main.py`.
 
 **Parameters:**
-- Type hints on all parameters
-- Keyword-only parameters used for optional flags: `def extract_once(..., *, wait_for_lock: bool = False)`
-- Self parameter in methods, explicit context for adapters
+- Prefer explicit keyword-only flags for behavior toggles, for example `wait_for_lock: bool = False` in `_run_with_lane_lock()`.
+- Pass external resources explicitly when already available, as in `process_one_url(url, context, global_sem, domain_sems)`.
 
 **Return Values:**
-- Type hints always present
-- Union types for optional returns: `int | None`, `str | None`
-- Structured returns via dataclass: `ExtractionResult(kind, value, meta)`
-- Tuple returns for multi-value results: `tuple[int | None, str | None]`
-
-**Example from `adapters.py`:**
-```python
-async def _extract_price_from_selectors(
-    page, selectors: list[str], *, timeout_ms: int = 1500
-) -> int | None:
-    for selector in selectors:
-        try:
-            await page.wait_for_selector(selector, state="visible", timeout=timeout_ms)
-        except Exception:
-            pass
-        # ...
-    return None
-```
+- Return structured values instead of side-channel booleans when downstream logic depends on multiple fields:
+  - `ExtractionResult` in `adapters.py`
+  - result dicts from `process_one_url()` in `musinsa_price_watch.py`
+- Use `None` consistently for "no price" or "sold out" state, not `0` or empty strings.
 
 ## Module Design
 
 **Exports:**
-- Public adapters explicitly imported: `from adapters import pick_adapter, GmarketAdapter, ExtractionResult`
-- Utility functions re-exported from `utils`: `from utils import normalize_price, post_webhook`
-- Config singleton exported: `from config import settings`
+- Keep low-level modules reusable and side-effect-light:
+  - `config.py` exports constants and the `settings` singleton
+  - `db.py` exports connection lifecycle helpers and `_write_lock`
+  - `adapters.py` exports adapter classes, `ExtractionResult`, webhook-routing helpers, and `pick_adapter()`
+- Keep entrypoint side effects at runtime boundaries:
+  - `load_dotenv(...)` and process lock setup in `main.py`
+  - browser launch inside `check_once()` in `musinsa_price_watch.py`
 
 **Barrel Files:**
-- No `__init__.py` barrel files; modules import directly from source
+- None used. Import concrete modules directly.
 
-**Module Dependencies (non-cyclic):**
-```
-config ← utils ← adapters ← musinsa_price_watch ← main
-config ← coupang_manager ← main
-```
-
-**Initialization:**
-- Singletons created at module level: `settings = Settings()`, `state = {}`, `URLS: list[str] = []`
-- Lazy initialization for expensive resources: `_http_client` lazily created on first use
+**Dependency Direction:**
+- Preserve the current dependency flow:
+  - `config.py` is a low-level dependency
+  - `db.py` depends on `config.py`
+  - `adapters.py` depends on `config.py`, `utils.py`, and `diagnostics.py`
+  - `musinsa_price_watch.py` depends on `config.py`, `utils.py`, `adapters.py`, and `db.py`
+  - `main.py` depends on `db.py`, `logging_config.py`, `adapters.py`, `musinsa_price_watch.py`, and `coupang_manager.py`
+- Avoid introducing reverse imports into `config.py` or `db.py`.
 
 ---
 
-*Convention analysis: 2026-03-25*
+*Convention analysis: 2026-04-04*
