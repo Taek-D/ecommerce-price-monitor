@@ -271,7 +271,13 @@ class TestOliveYoungEnhancedExtraction:
         ad = OliveYoungAdapter()
         ad._sleep_after_load = 0
         ad._network_idle_before_retry = False
-        page = _FakePage(locator_texts={"#main [class*='price'] span": ["16,900"]})
+        page = _FakePage(
+            locator_texts={
+                "#main [data-qa-name='text-product-discount-price'] span:first-child": [
+                    "16,900"
+                ]
+            }
+        )
 
         caplog.set_level("INFO", logger="musinsa_bot.price")
         result = asyncio.run(

@@ -112,7 +112,11 @@ def test_olive_recovered_non_precise_capture(monkeypatch, tmp_path):
     page = _FakePage(
         title="OliveYoung Item",
         body_text="정상 상품 페이지",
-        locator_texts={"#main [class*='price'] span": ["16,900"]},
+        locator_texts={
+            "#main [data-qa-name='text-product-discount-price'] span:first-child": [
+                "16,900"
+            ]
+        },
     )
 
     result = asyncio.run(
@@ -198,7 +202,11 @@ def test_diagnostic_capture_exception_does_not_override_success(monkeypatch, tmp
     page = _FakePage(
         title="OliveYoung Item",
         body_text="정상 상품 페이지",
-        locator_texts={"#main [class*='price'] span": ["16,900"]},
+        locator_texts={
+            "#main [data-qa-name='text-product-discount-price'] span:first-child": [
+                "16,900"
+            ]
+        },
     )
 
     async def broken_capture(**kwargs):
@@ -257,7 +265,11 @@ def test_final_error_capture_has_priority_over_recovery(monkeypatch, tmp_path):
     recovery_page = _FakePage(
         title="OliveYoung Item",
         body_text="정상 상품 페이지",
-        locator_texts={"#main [class*='price'] span": ["16,900"]},
+        locator_texts={
+            "#main [data-qa-name='text-product-discount-price'] span:first-child": [
+                "16,900"
+            ]
+        },
     )
     recovery_result = asyncio.run(
         olive._do_extract(

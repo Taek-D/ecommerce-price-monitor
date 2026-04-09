@@ -5,7 +5,7 @@ milestone_name: 버그픽스3종
 status: completed
 stopped_at: Completed 08-sourcing-tab-record-bug-fix-01-PLAN.md
 last_updated: "2026-03-30T18:35:52.360Z"
-last_activity: 2026-03-31 — Phase 8 plan 01 executed (sourcing tab bug fix)
+last_activity: 2026-04-09 — Completed quick task 260409-pfn: 올리브영 할인가 셀렉터 수정
 progress:
   total_phases: 2
   completed_phases: 2
@@ -54,6 +54,12 @@ None.
 ### Blockers/Concerns
 
 None.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260409-pfn | 올리브영 할인가 셀렉터 수정 | 2026-04-09 | pending | [260409-pfn-fix-discount-price](./quick/260409-pfn-fix-discount-price/) |
 
 ## Session Continuity
 

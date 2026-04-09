@@ -54,7 +54,9 @@ MUSINSA_EXACT_PRICE_SELECTOR = 'span[class*="Price__CalculatedPrice"]'
 MUSINSA_SOLDOUT_SELECTOR = 'div[class*="Purchase__Container"] button > div > span'
 
 # ---------------- 올리브영 ----------------
-OLIVE_PRICE_SELECTOR = "#main > div.page_product-details-wrapper___t38G > div > div.page_right-section__Plw5V > div > div.GoodsDetailInfo_goods-info__NvhCW > div.GoodsDetailInfo_price-area__RE0Gc.GoodsDetailInfo_margin-top__41aCw > div > div > span > span:nth-child(1)"
+OLIVE_PRICE_SELECTOR = (
+    "#main [data-qa-name='text-product-discount-price'] > span:first-child"
+)
 OLIVE_SOLDOUT_PRIMARY = "#Contents > div.prd_detail_box.renew > div.right_area > div > div.prd_btn_area.new-style.type1 > button.btnSoldout.recoPopBtn.temprecobell"
 OLIVE_SOLDOUT_FALLBACKS = ".btnSoldout, button[disabled], .soldout, .btnL.stSoldOut"
 OLIVE_SOLDOUT_NEW_PRIMARY = "#main > div.page_product-details-wrapper___t38G > div > div.page_right-section__Plw5V > div > div.PurchaseBottom_purchase-bottom__C_GnK > div.PurchaseBottom_purchase-bottom-contents__ztB1w > div.PurchaseBottom_btn-area__mJJ9z.PurchaseBottom_padding-top__GCRfX > button.PurchaseBottom_btn-square__oefbI.btn-soldout.css-1rhuta5 > span"
@@ -65,12 +67,11 @@ OLIVE_SOLDOUT_NEW_FALLBACKS = (
     "#main button[disabled] span"
 )
 OLIVE_PRICE_FALLBACK_SELECTORS = [
+    "#main [data-qa-name='text-product-discount-price'] span:first-child",
+    "#main span[class*='GoodsDetailInfo_price__'] > span:first-child",
     "#main [class*='ProductPrice'] strong",
     "#main [class*='ProductPrice'] span",
     "#main [class*='Price'] strong",
-    "#main [class*='Price'] span",
-    "#main [class*='price'] strong",
-    "#main [class*='price'] span",
     "#main [class*='sale'] span",
     "#Contents div.price strong",
     "#Contents div.price span.price-2",
