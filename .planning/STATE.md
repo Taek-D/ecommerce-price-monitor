@@ -59,7 +59,7 @@ None.
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
-| 260409-pfn | 올리브영 할인가 셀렉터 수정 | 2026-04-09 | pending | [260409-pfn-fix-discount-price](./quick/260409-pfn-fix-discount-price/) |
+| 260409-pfn | 올리브영 할인가 셀렉터 수정 | 2026-04-09 | 228c4d5 | [260409-pfn-fix-discount-price](./quick/260409-pfn-fix-discount-price/) |
 
 ## Session Continuity
 
